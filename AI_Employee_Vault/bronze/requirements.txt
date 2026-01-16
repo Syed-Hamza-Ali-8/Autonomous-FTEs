@@ -1,0 +1,9 @@
+# AI Employee Vault - Bronze Tier Dependencies
+# Generated from pyproject.toml for compatibility
+
+# Core dependencies
+watchdog>=4.0.0
+pyyaml>=6.0.1
+
+# Development dependencies (optional)
+# Install with: pip install -r requirements.txt -r requirements-dev.txt

@@ -1,0 +1,23 @@
+[project]
+name = "email-mcp-server"
+version = "1.0.0"
+description = "Email MCP Server for Silver Tier AI Assistant"
+requires-python = ">=3.13"
+dependencies = [
+    "mcp>=0.9.0",
+    "google-auth>=2.47.0",
+    "google-api-python-client>=2.187.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["email_server"]

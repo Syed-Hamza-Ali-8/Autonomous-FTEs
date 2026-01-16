@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Processing Log Entry",
+  "description": "Schema for system action log entries",
+  "type": "object",
+  "required": [
+    "timestamp",
+    "action_type",
+    "actor",
+    "target",
+    "result"
+  ],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp of the action",
+      "example": "2026-01-12T15:30:00Z"
+    },
+    "action_type": {
+      "type": "string",
+      "enum": [
+        "file_detected",
+        "metadata_created",
+        "file_moved",
+        "file_processed",
+        "dashboard_updated",
+        "error"
+      ],
+      "description": "Type of action performed"
+    },
+    "actor": {
+      "type": "string",
+      "enum": [
+        "watcher",
+        "claude_code",
+        "human"
+      ],
+      "description": "Component that performed the action"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target of the action (filename, path, etc.)",
+      "example": "document.pdf"
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Additional action parameters",
+      "additionalProperties": true,
+      "example": {
+        "size": 1024000,
+        "type": "pdf"
+      }
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failure",
+        "pending"
+      ],
+      "description": "Action result status"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error details if result is failure",
+      "example": "Permission denied"
+    }
+  },
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "result": {
+        "const": "failure"
+      }
+    }
+  },
+  "then": {
+    "required": ["error_message"]
+  },
+  "examples": [
+    {
+      "timestamp": "2026-01-12T15:30:00Z",
+      "action_type": "file_detected",
+      "actor": "watcher",
+      "target": "document.pdf",
+      "parameters": {
+        "size": 1024000,
+        "type": "pdf"
+      },
+      "result": "success"
+    },
+    {
+      "timestamp": "2026-01-12T15:30:01Z",
+      "action_type": "metadata_created",
+      "actor": "watcher",
+      "target": "FILE_document.pdf_20260112153000.md",
+      "parameters": {
+        "original_file": "document.pdf"
+      },
+      "result": "success"
+    },
+    {
+      "timestamp": "2026-01-12T15:30:15Z",
+      "action_type": "file_processed",
+      "actor": "claude_code",
+      "target": "document.pdf",
+      "parameters": {
+        "summary_length": 250
+      },
+      "result": "success"
+    },
+    {
+      "timestamp": "2026-01-12T15:35:00Z",
+      "action_type": "file_processed",
+      "actor": "claude_code",
+      "target": "corrupted.pdf",
+      "result": "failure",
+      "error_message": "Unable to read PDF: corrupted file header"
+    }
+  ]
+}

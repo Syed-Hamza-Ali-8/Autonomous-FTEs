@@ -1,0 +1,14 @@
+Team Sync Meeting Notes
+
+Topics Discussed:
+1. Bronze tier demo and walkthrough
+2. Obsidian integration feedback
+3. Graph view customization options
+4. Silver tier feature requests
+
+Decisions Made:
+- Proceed with current architecture
+- Add more wikilinks for better graph connections
+- Create index pages for file collections
+
+Next Meeting: Next week same time

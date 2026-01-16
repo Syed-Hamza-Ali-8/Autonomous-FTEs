@@ -1,0 +1,17 @@
+{
+  "action_id": "{{ACTION_ID}}",
+  "action_type": "{{ACTION_TYPE}}",
+  "to": "{{RECIPIENT_EMAIL}}",
+  "cc": [],
+  "bcc": [],
+  "subject": "{{EMAIL_SUBJECT}}",
+  "body": "{{EMAIL_BODY}}",
+  "attachments": [],
+  "from": "{{SENDER_EMAIL}}",
+  "metadata": {
+    "created_at": "{{CREATED_AT}}",
+    "approved_at": "{{APPROVED_AT}}",
+    "risk_level": "{{RISK_LEVEL}}",
+    "requires_approval": true
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "id": "18d1a2b3c4d5e6f7",
+  "threadId": "18d1a2b3c4d5e6f7",
+  "labelIds": [
+    "INBOX",
+    "UNREAD",
+    "IMPORTANT"
+  ],
+  "snippet": "Hi, I wanted to follow up on the project proposal we discussed last week. Could you please review the attached document and...",
+  "payload": {
+    "partId": "",
+    "mimeType": "multipart/alternative",
+    "filename": "",
+    "headers": [
+      {
+        "name": "Delivered-To",
+        "value": "you@example.com"
+      },
+      {
+        "name": "From",
+        "value": "John Doe <john.doe@example.com>"
+      },
+      {
+        "name": "To",
+        "value": "you@example.com"
+      },
+      {
+        "name": "Subject",
+        "value": "Follow-up: Project Proposal Review"
+      },
+      {
+        "name": "Date",
+        "value": "Sat, 13 Jan 2026 10:30:45 -0800"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<CABc123xyz@mail.gmail.com>"
+      }
+    ],
+    "body": {
+      "size": 0
+    },
+    "parts": [
+      {
+        "partId": "0",
+        "mimeType": "text/plain",
+        "filename": "",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "text/plain; charset=\"UTF-8\""
+          }
+        ],
+        "body": {
+          "size": 342,
+          "data": "SGksIEkgd2FudGVkIHRvIGZvbGxvdyB1cCBvbiB0aGUgcHJvamVjdCBwcm9wb3NhbCB3ZSBkaXNjdXNzZWQgbGFzdCB3ZWVrLiBDb3VsZCB5b3UgcGxlYXNlIHJldmlldyB0aGUgYXR0YWNoZWQgZG9jdW1lbnQgYW5kIGxldCBtZSBrbm93IHlvdXIgdGhvdWdodHM_IEknZCBsb3ZlIHRvIHNjaGVkdWxlIGEgY2FsbCB0aGlzIHdlZWsgdG8gZGlzY3VzcyBuZXh0IHN0ZXBzLgoKVGhhbmtzLApKb2hu"
+        }
+      },
+      {
+        "partId": "1",
+        "mimeType": "text/html",
+        "filename": "",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "text/html; charset=\"UTF-8\""
+          }
+        ],
+        "body": {
+          "size": 512,
+          "data": "PGRpdj5IaSwgSSB3YW50ZWQgdG8gZm9sbG93IHVwIG9uIHRoZSBwcm9qZWN0IHByb3Bvc2FsIHdlIGRpc2N1c3NlZCBsYXN0IHdlZWsuIENvdWxkIHlvdSBwbGVhc2UgcmV2aWV3IHRoZSBhdHRhY2hlZCBkb2N1bWVudCBhbmQgbGV0IG1lIGtub3cgeW91ciB0aG91Z2h0cz8gSSYjMzk7ZCBsb3ZlIHRvIHNjaGVkdWxlIGEgY2FsbCB0aGlzIHdlZWsgdG8gZGlzY3VzcyBuZXh0IHN0ZXBzLjwvZGl2PjxkaXY+PGJyPjwvZGl2PjxkaXY+VGhhbmtzLDwvZGl2PjxkaXY+Sm9objwvZGl2Pg=="
+        }
+      }
+    ]
+  },
+  "sizeEstimate": 4523,
+  "historyId": "123456",
+  "internalDate": "1705167045000"
+}

@@ -1,0 +1,177 @@
+# Approval Rules Configuration
+# This file defines which actions require human approval
+
+# ============================================
+# Sensitive Actions (Require Approval)
+# ============================================
+sensitive_actions:
+  # Email sending
+  - action_type: send_email
+    requires_approval: true
+    auto_approve_threshold: null  # Never auto-approve
+    timeout_minutes: 1440  # 24 hours
+    notification_urgency: normal
+    risk_factors:
+      - external_recipient
+      - irreversible
+      - reputation_impact
+
+  # LinkedIn posting (if enabled)
+  - action_type: post_linkedin
+    requires_approval: true
+    auto_approve_threshold: null
+    timeout_minutes: 1440  # 24 hours
+    notification_urgency: normal
+    risk_factors:
+      - public_visibility
+      - professional_reputation
+      - irreversible
+
+  # File deletion
+  - action_type: delete_file
+    requires_approval: true
+    auto_approve_threshold: null
+    timeout_minutes: 60  # 1 hour
+    notification_urgency: critical
+    risk_factors:
+      - data_loss
+      - irreversible
+
+  # External API calls
+  - action_type: api_call
+    requires_approval: true
+    auto_approve_threshold: 30  # Auto-approve if risk score < 30
+    timeout_minutes: 120  # 2 hours
+    notification_urgency: normal
+    risk_factors:
+      - external_service
+      - potential_cost
+      - data_exposure
+
+  # File move/rename
+  - action_type: move_file
+    requires_approval: true
+    auto_approve_threshold: 20
+    timeout_minutes: 240  # 4 hours
+    notification_urgency: low
+    risk_factors:
+      - data_organization
+
+# ============================================
+# Non-Sensitive Actions (No Approval Required)
+# ============================================
+non_sensitive_actions:
+  # Read operations
+  - action_type: read_file
+    requires_approval: false
+
+  - action_type: search_vault
+    requires_approval: false
+
+  # Plan creation
+  - action_type: create_plan
+    requires_approval: false
+
+  # Dashboard updates
+  - action_type: update_dashboard
+    requires_approval: false
+
+  # Log operations
+  - action_type: write_log
+    requires_approval: false
+
+# ============================================
+# Notification Settings
+# ============================================
+notification_settings:
+  enabled: true
+
+  # Urgency levels
+  low:
+    sound: false
+    desktop: true
+    priority: low
+
+  normal:
+    sound: true
+    desktop: true
+    priority: normal
+
+  critical:
+    sound: true
+    desktop: true
+    priority: critical
+    repeat_interval: 300  # Repeat every 5 minutes until acknowledged
+
+# ============================================
+# Approval Workflow Settings
+# ============================================
+workflow:
+  # Polling interval for checking approval status
+  poll_interval: 10  # seconds
+
+  # Folders
+  folders:
+    pending: "Pending_Approval"
+    approved: "Approved"
+    rejected: "Rejected"
+    done: "Done"
+
+  # Timeout behavior
+  timeout_behavior:
+    action: "reject"  # reject or expire
+    reason: "Timeout - no response within {timeout_minutes} minutes"
+
+  # Notification timing
+  notifications:
+    immediate: true  # Notify immediately when approval request created
+    reminder_before_timeout: 60  # minutes before timeout to send reminder
+
+# ============================================
+# Risk Assessment
+# ============================================
+risk_assessment:
+  # Risk score calculation weights
+  weights:
+    external_recipient: 40
+    irreversible: 30
+    contains_pii: 20
+    has_cost: 10
+    public_visibility: 40
+    professional_reputation: 30
+    data_loss: 50
+    external_service: 20
+    potential_cost: 15
+    data_exposure: 25
+    data_organization: 5
+
+  # Risk levels
+  levels:
+    low: 0-20
+    medium: 21-50
+    high: 51-100
+
+  # Auto-approve thresholds by risk level
+  auto_approve:
+    low: true  # Auto-approve low-risk actions
+    medium: false  # Require approval for medium-risk
+    high: false  # Require approval for high-risk
+
+# ============================================
+# Audit Logging
+# ============================================
+audit:
+  enabled: true
+  log_file: "Logs/{date}.json"
+
+  # What to log
+  log_events:
+    - approval_request_created
+    - approval_granted
+    - approval_rejected
+    - approval_timeout
+    - action_executed
+    - action_failed
+
+  # Retention
+  retention_days: 90  # Keep audit logs for 90 days

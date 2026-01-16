@@ -1,0 +1,1 @@
+Invoice #12345\nDate: 2026-01-12\nAmount: 00.00\nCustomer: Acme Corp

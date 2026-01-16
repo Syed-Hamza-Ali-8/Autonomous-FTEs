@@ -1,0 +1,84 @@
+# File Metadata Schema
+
+type: object
+required:
+  - type
+  - original_name
+  - size
+  - detected_at
+  - status
+  - file_type
+
+properties:
+  type:
+    type: string
+    const: file_drop
+    description: Entity type identifier
+
+  original_name:
+    type: string
+    minLength: 1
+    description: Original filename with extension
+    example: document.pdf
+
+  size:
+    type: integer
+    minimum: 0
+    description: File size in bytes
+    example: 1024000
+
+  detected_at:
+    type: string
+    format: date-time
+    description: ISO-8601 timestamp of detection
+    example: "2026-01-12T15:30:00Z"
+
+  status:
+    type: string
+    enum:
+      - pending
+      - processing
+      - completed
+      - error
+    description: Processing status
+    default: pending
+
+  file_type:
+    type: string
+    enum:
+      - text
+      - pdf
+      - image
+      - document
+      - unknown
+    description: Detected file type category
+    example: pdf
+
+  mime_type:
+    type: string
+    description: MIME type if detected
+    example: application/pdf
+
+  processing_notes:
+    type: string
+    description: Notes from processing or errors
+    example: "Corrupted file header"
+
+additionalProperties: false
+
+examples:
+  - type: file_drop
+    original_name: quarterly-report.pdf
+    size: 2048576
+    detected_at: "2026-01-12T15:30:00Z"
+    status: pending
+    file_type: pdf
+    mime_type: application/pdf
+
+  - type: file_drop
+    original_name: notes.txt
+    size: 5120
+    detected_at: "2026-01-12T15:35:00Z"
+    status: completed
+    file_type: text
+    mime_type: text/plain

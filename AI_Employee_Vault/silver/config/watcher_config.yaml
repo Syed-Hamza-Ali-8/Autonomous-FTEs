@@ -1,0 +1,102 @@
+# Watcher Configuration
+# This file configures all communication channel watchers
+
+# ============================================
+# Gmail Watcher Configuration
+# ============================================
+gmail:
+  enabled: true
+  check_interval: 300  # seconds (5 minutes)
+  credentials_path: "silver/config/.env"
+
+  # Gmail API filters
+  filters:
+    - "is:unread"
+    - "in:inbox"
+
+  # Maximum messages to fetch per check
+  max_results: 10
+
+  # Mark messages as read after processing
+  mark_as_read: false
+
+  # Labels to apply after processing
+  labels_to_add:
+    - "AI_PROCESSED"
+
+# ============================================
+# WhatsApp Watcher Configuration
+# ============================================
+whatsapp:
+  enabled: true
+  check_interval: 300  # seconds (5 minutes)
+  session_path: "silver/config/whatsapp_session"
+
+  # Run browser in headless mode
+  headless: true
+
+  # Browser timeout (seconds)
+  timeout: 30
+
+  # Only process unread messages
+  unread_only: true
+
+  # Maximum messages to fetch per check
+  max_results: 10
+
+# ============================================
+# LinkedIn Poster Configuration
+# ============================================
+# Note: Uses Playwright automation (no API required)
+linkedin:
+  enabled: true
+  post_interval: 86400  # seconds (24 hours - daily posting)
+  session_path: "silver/config/linkedin_session"
+
+  # Run browser in headless mode
+  headless: true
+
+  # Browser timeout (seconds)
+  timeout: 30
+
+  # Auto-generate business content
+  auto_generate: true
+
+  # Topics for business posts (rotated)
+  topics:
+    - "AI automation"
+    - "business productivity"
+    - "workflow optimization"
+    - "digital transformation"
+    - "sales automation"
+
+  # Posting schedule (hour of day, 24h format)
+  post_time: 9  # 9 AM daily
+
+# ============================================
+# General Watcher Settings
+# ============================================
+general:
+  # Vault path (root directory)
+  vault_path: "/mnt/d/hamza/autonomous-ftes/AI_Employee_Vault"
+
+  # Output folder for action files
+  output_folder: "Needs_Action"
+
+  # Deduplication settings
+  deduplication:
+    enabled: true
+    cache_file: "silver/config/.message_cache.json"
+    cache_ttl: 86400  # seconds (24 hours)
+
+  # Error handling
+  error_handling:
+    max_consecutive_failures: 5
+    failure_cooldown: 900  # seconds (15 minutes)
+    notify_on_failure: true
+
+  # Logging
+  logging:
+    level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format: "json"  # json or text
+    file: "Logs/watchers.log"

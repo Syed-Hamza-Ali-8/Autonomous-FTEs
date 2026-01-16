@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+silver/config/.env
+bronze/config/.env
+
+# Credentials and secrets
+**/credentials.json
+**/token.json
+**/*_credentials.json
+**/*_token.json
+
+# WhatsApp session data
+silver/.whatsapp_session/
+silver/config/whatsapp_session/
+
+# Process IDs
+silver/.pids/
+*.pid
+
+# MCP Server secrets
+silver/mcp/**/.env
+silver/mcp/**/credentials.json
+
+# Logs
+*.log
+logs/
+Logs/*.json
+Logs/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js (for MCP server)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

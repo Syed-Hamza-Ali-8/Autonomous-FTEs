@@ -1,0 +1,21 @@
+{
+  "id": "whatsapp_msg_1705167045_abc123",
+  "chat_id": "1234567890@c.us",
+  "chat_name": "Sarah Johnson",
+  "sender": "Sarah Johnson",
+  "sender_number": "+1234567890",
+  "timestamp": "2026-01-13T10:30:45Z",
+  "timestamp_display": "10:30 AM",
+  "message_type": "text",
+  "is_group": false,
+  "is_unread": true,
+  "body": "Hey! Just wanted to check if you're available for a quick call this afternoon? I have some questions about the project timeline.",
+  "quoted_message": null,
+  "media": null,
+  "metadata": {
+    "is_forwarded": false,
+    "is_starred": false,
+    "delivery_status": "delivered",
+    "read_status": "unread"
+  }
+}
