@@ -6,7 +6,7 @@ using Playwright browser automation.
 """
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import os
 import logging
 import time
@@ -47,7 +47,7 @@ class WhatsAppSender:
             raise ImportError("Playwright not available")
 
         # Session path for persistent login
-        self.session_path = self.vault_path / "silver" / ".whatsapp_session"
+        self.session_path = self.vault_path / "silver" / "config" / "whatsapp_session"
         self.session_path.mkdir(parents=True, exist_ok=True)
 
         # Configuration

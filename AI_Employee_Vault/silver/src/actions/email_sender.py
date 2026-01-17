@@ -6,7 +6,7 @@ with OAuth2 authentication and error handling.
 """
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import os
 import base64
 from email.mime.text import MIMEText

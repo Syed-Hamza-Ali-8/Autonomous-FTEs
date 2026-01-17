@@ -298,6 +298,15 @@ class ApprovalChecker:
         """
         self.logger.info(f"Starting approval checker (poll interval: {self.poll_interval}s)")
 
+        # Import ActionExecutor for executing approved actions
+        from ..actions.action_executor import ActionExecutor
+
+        # Initialize executor
+        executor = ActionExecutor(str(self.vault_path), str(self.config_path))
+
+        # Register action handlers
+        self._register_action_handlers(executor)
+
         try:
             while True:
                 # Poll for approvals
@@ -309,8 +318,19 @@ class ApprovalChecker:
                         f"Processed approval: {approval['request_id']} → {approval['status']}"
                     )
 
-                    # TODO: Trigger action execution for approved requests
-                    # This will be implemented when we integrate with ApprovalManager
+                    # Execute approved actions
+                    if approval['status'] == 'approved':
+                        try:
+                            self.logger.info(f"Executing approved action: {approval['request_id']}")
+                            result = executor.execute_action(approval['file_path'])
+
+                            if result['success']:
+                                self.logger.info(f"✅ Action executed successfully: {approval['request_id']}")
+                            else:
+                                self.logger.error(f"❌ Action execution failed: {approval['request_id']} - {result.get('error')}")
+
+                        except Exception as e:
+                            self.logger.error(f"Failed to execute action {approval['request_id']}: {e}")
 
                 # Sleep until next poll
                 time.sleep(self.poll_interval)
@@ -320,6 +340,69 @@ class ApprovalChecker:
         except Exception as e:
             self.logger.error(f"Approval checker error: {e}")
             raise
+
+    def _register_action_handlers(self, executor) -> None:
+        """
+        Register action handlers with the executor.
+
+        Args:
+            executor: ActionExecutor instance
+        """
+        self.logger.info("Registering action handlers...")
+
+        # Register email handler
+        def send_email_handler(action_details: Dict[str, Any]) -> Dict[str, Any]:
+            """Handler for send_email actions."""
+            from ..actions.email_sender import EmailSender
+
+            sender = EmailSender(str(self.vault_path))
+
+            return sender.send_email(
+                to=action_details.get('to', ''),
+                subject=action_details.get('subject', ''),
+                body=action_details.get('body', ''),
+                cc=action_details.get('cc'),
+                bcc=action_details.get('bcc'),
+                attachments=action_details.get('attachments')
+            )
+
+        executor.register_handler('send_email', send_email_handler)
+        self.logger.info("Registered handler: send_email")
+
+        # Register LinkedIn handler
+        def post_linkedin_handler(action_details: Dict[str, Any]) -> Dict[str, Any]:
+            """Handler for post_linkedin actions."""
+            from ..watchers.linkedin_poster import LinkedInPoster
+
+            poster = LinkedInPoster(str(self.vault_path))
+
+            return poster.post_update(
+                content=action_details.get('content', ''),
+                image_path=action_details.get('image_path')
+            )
+
+        executor.register_handler('post_linkedin', post_linkedin_handler)
+        self.logger.info("Registered handler: post_linkedin")
+
+        # Register WhatsApp handler (if implemented)
+        try:
+            def send_whatsapp_handler(action_details: Dict[str, Any]) -> Dict[str, Any]:
+                """Handler for send_whatsapp actions."""
+                from ..actions.whatsapp_sender import WhatsAppSender
+
+                sender = WhatsAppSender(str(self.vault_path))
+
+                return sender.send_message(
+                    to=action_details.get('to', ''),
+                    message=action_details.get('message', '')
+                )
+
+            executor.register_handler('send_whatsapp', send_whatsapp_handler)
+            self.logger.info("Registered handler: send_whatsapp")
+        except ImportError:
+            self.logger.debug("WhatsApp handler not available (module not found)")
+
+        self.logger.info("Action handlers registered successfully")
 
 
 def main():
