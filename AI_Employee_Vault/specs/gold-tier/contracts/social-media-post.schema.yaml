@@ -1,0 +1,263 @@
+# Social Media Post Schema
+
+**Version**: 1.0
+**Last Updated**: 2026-01-17
+**Format**: YAML Frontmatter + Markdown
+
+## Purpose
+
+Defines the structure for social media post files across all platforms (LinkedIn, Twitter, Facebook, Instagram).
+
+## Schema Definition
+
+```yaml
+---
+# Required Fields
+type: "social_post"
+post_id: string
+platform: string (enum)
+content: string
+status: string (enum)
+approval_required: boolean
+created_at: string (ISO-8601 datetime)
+
+# Optional Fields
+media_urls: array of strings
+scheduled_at: string (ISO-8601 datetime)
+published_at: string (ISO-8601 datetime)
+approved_by: string
+engagement: object
+hashtags: array of strings
+mentions: array of strings
+---
+```
+
+## Field Definitions
+
+### type
+- **Type**: String constant
+- **Required**: Yes
+- **Value**: `"social_post"`
+- **Description**: Entity type identifier
+
+### post_id
+- **Type**: String
+- **Required**: Yes
+- **Format**: `post_{platform}_{timestamp}`
+- **Example**: `post_linkedin_20260115_103000`
+- **Description**: Unique post identifier
+
+### platform
+- **Type**: String enum
+- **Required**: Yes
+- **Values**: `linkedin`, `twitter`, `facebook`, `instagram`
+- **Description**: Target social media platform
+
+### content
+- **Type**: String (multiline)
+- **Required**: Yes
+- **Max Length**: Platform-dependent (280 for Twitter, 3000 for LinkedIn)
+- **Description**: Post content/text
+
+### status
+- **Type**: String enum
+- **Required**: Yes
+- **Values**: `draft`, `pending_approval`, `approved`, `scheduled`, `published`, `failed`
+- **Description**: Current post status
+
+### approval_required
+- **Type**: Boolean
+- **Required**: Yes
+- **Description**: Whether post requires HITL approval
+
+### created_at
+- **Type**: ISO-8601 datetime string
+- **Required**: Yes
+- **Format**: `YYYY-MM-DDTHH:MM:SSZ`
+- **Example**: `2026-01-15T10:00:00Z`
+- **Description**: When post was created
+
+### engagement
+- **Type**: Object
+- **Required**: No
+- **Structure**:
+  ```yaml
+  engagement:
+    likes: integer
+    comments: integer
+    shares: integer
+    impressions: integer
+    clicks: integer
+    last_updated: string (ISO-8601 datetime)
+  ```
+
+## Validation Rules
+
+1. **Content Length**:
+   - Twitter: Max 280 characters
+   - LinkedIn: Max 3000 characters
+   - Facebook: Max 63,206 characters
+   - Instagram: Max 2,200 characters
+
+2. **Status Transitions**:
+   - `draft` → `pending_approval` (if approval_required)
+   - `draft` → `scheduled` (if no approval required)
+   - `pending_approval` → `approved`
+   - `approved` → `scheduled`
+   - `scheduled` → `published`
+   - Any → `failed`
+
+3. **Approval Rules**:
+   - If `approval_required` = true, must go through approval workflow
+   - `approved_by` required if status = "approved"
+
+4. **Engagement Rules**:
+   - All engagement metrics must be >= 0
+   - `last_updated` must be after `published_at`
+
+## Example
+
+```yaml
+---
+type: social_post
+post_id: post_linkedin_20260115_103000
+platform: linkedin
+content: |
+  Excited to share our latest project milestone! 🚀
+
+  We've successfully delivered Phase 2 of Project Alpha,
+  bringing innovative solutions to our clients.
+
+  Key achievements:
+  ✅ 99.9% uptime
+  ✅ 50% performance improvement
+  ✅ Zero critical bugs
+
+  Thank you to our amazing team for making this possible!
+
+  #ProjectManagement #Innovation #Success #TeamWork
+media_urls: []
+scheduled_at: 2026-01-15T10:30:00Z
+published_at: 2026-01-15T10:30:05Z
+status: published
+engagement:
+  likes: 45
+  comments: 8
+  shares: 12
+  impressions: 1250
+  clicks: 67
+  last_updated: 2026-01-16T10:00:00Z
+approval_required: true
+approved_by: human
+created_at: 2026-01-15T10:00:00Z
+hashtags:
+  - ProjectManagement
+  - Innovation
+  - Success
+  - TeamWork
+---
+
+## Post Content
+
+Excited to share our latest project milestone! 🚀
+
+We've successfully delivered Phase 2 of Project Alpha,
+bringing innovative solutions to our clients.
+
+Key achievements:
+✅ 99.9% uptime
+✅ 50% performance improvement
+✅ Zero critical bugs
+
+Thank you to our amazing team for making this possible!
+
+#ProjectManagement #Innovation #Success #TeamWork
+
+## Performance Metrics
+
+- **Likes**: 45
+- **Comments**: 8
+- **Shares**: 12
+- **Impressions**: 1,250
+- **Clicks**: 67
+- **Engagement Rate**: 5.2% (65 engagements / 1,250 impressions)
+
+## Analysis
+
+Strong engagement rate (5.2%) compared to average (3.1%).
+Post performed above average, likely due to:
+- Specific achievements listed
+- Visual formatting with emojis and checkmarks
+- Relevant hashtags
+- Posted during peak engagement time (10:30 AM)
+
+## Recommendations
+
+- Use similar format for future milestone announcements
+- Include specific metrics when possible
+- Post during 10:00-11:00 AM window for maximum reach
+```
+
+## Platform-Specific Considerations
+
+### LinkedIn
+- **Max Length**: 3,000 characters
+- **Best Practices**: Professional tone, industry hashtags, tag company pages
+- **Optimal Times**: Tuesday-Thursday, 10:00 AM - 12:00 PM
+
+### Twitter
+- **Max Length**: 280 characters
+- **Best Practices**: Concise, use threads for longer content, trending hashtags
+- **Optimal Times**: Monday-Friday, 12:00 PM - 3:00 PM
+
+### Facebook
+- **Max Length**: 63,206 characters
+- **Best Practices**: Engaging questions, visual content, community focus
+- **Optimal Times**: Wednesday-Friday, 1:00 PM - 4:00 PM
+
+### Instagram
+- **Max Length**: 2,200 characters
+- **Best Practices**: Visual-first, story-driven, lifestyle hashtags
+- **Optimal Times**: Monday-Friday, 11:00 AM - 1:00 PM
+
+## Usage
+
+### Creation
+```python
+from gold.src.actions.social_poster import SocialPoster
+
+poster = SocialPoster(vault_path)
+post = poster.create_post(
+    platform="linkedin",
+    content="Excited to share...",
+    approval_required=True
+)
+```
+
+### Publishing
+```python
+from gold.src.actions.social_poster import SocialPoster
+
+poster = SocialPoster(vault_path)
+result = poster.publish_post(post_id="post_linkedin_20260115_103000")
+```
+
+### Engagement Tracking
+```python
+from gold.src.actions.social_analytics import SocialAnalytics
+
+analytics = SocialAnalytics(vault_path)
+engagement = analytics.get_engagement(post_id="post_linkedin_20260115_103000")
+```
+
+## Related Schemas
+
+- **CEO Briefing Schema**: Aggregates social media performance
+- **Audit Log Schema**: All post actions logged
+- **Approval Request Schema**: Links to HITL approval workflow
+
+---
+
+**Schema Version**: 1.0
+**Status**: Active
+**Maintainer**: Gold Tier Development Team

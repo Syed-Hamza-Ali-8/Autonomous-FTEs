@@ -1,0 +1,228 @@
+# Xero Transaction Schema
+
+**Version**: 1.0
+**Last Updated**: 2026-01-17
+**Format**: YAML Frontmatter + Markdown
+
+## Purpose
+
+Defines the structure for Xero transaction files synced from Xero accounting platform.
+
+## Schema Definition
+
+```yaml
+---
+# Required Fields
+type: "xero_transaction"
+transaction_id: string
+date: string (ISO-8601 date)
+amount: number (decimal, 2 places)
+currency: string (ISO 4217 code)
+category: string (enum)
+description: string
+business_related: boolean
+tax_deductible: boolean
+synced_at: string (ISO-8601 datetime)
+
+# Optional Fields
+subcategory: string
+vendor: string
+invoice_id: string
+payment_method: string
+reference: string
+notes: string
+---
+```
+
+## Field Definitions
+
+### type
+- **Type**: String constant
+- **Required**: Yes
+- **Value**: `"xero_transaction"`
+- **Description**: Entity type identifier
+
+### transaction_id
+- **Type**: String
+- **Required**: Yes
+- **Format**: `xero_tx_{xero_id}`
+- **Example**: `xero_tx_12345`
+- **Description**: Unique transaction identifier from Xero
+
+### date
+- **Type**: ISO-8601 date string
+- **Required**: Yes
+- **Format**: `YYYY-MM-DD`
+- **Example**: `2026-01-15`
+- **Description**: Transaction date
+
+### amount
+- **Type**: Decimal number
+- **Required**: Yes
+- **Format**: Two decimal places
+- **Example**: `500.00`
+- **Description**: Transaction amount (positive for income, negative for expense)
+
+### currency
+- **Type**: String (ISO 4217 currency code)
+- **Required**: Yes
+- **Example**: `USD`, `EUR`, `GBP`
+- **Description**: Transaction currency
+
+### category
+- **Type**: String enum
+- **Required**: Yes
+- **Values**: `income`, `expense`, `transfer`
+- **Description**: High-level transaction category
+
+### subcategory
+- **Type**: String
+- **Required**: No
+- **Examples**: `software_subscription`, `client_payment`, `office_supplies`
+- **Description**: Detailed transaction category
+
+### description
+- **Type**: String
+- **Required**: Yes
+- **Max Length**: 500 characters
+- **Example**: `Monthly Notion subscription`
+- **Description**: Transaction description from Xero
+
+### vendor
+- **Type**: String
+- **Required**: No
+- **Example**: `Notion Labs Inc`
+- **Description**: Vendor or client name
+
+### invoice_id
+- **Type**: String
+- **Required**: No
+- **Format**: `INV-YYYY-NNN`
+- **Example**: `INV-2026-001`
+- **Description**: Related invoice ID if applicable
+
+### business_related
+- **Type**: Boolean
+- **Required**: Yes
+- **Description**: Whether transaction is business-related
+
+### tax_deductible
+- **Type**: Boolean
+- **Required**: Yes
+- **Description**: Whether transaction is tax-deductible
+
+### synced_at
+- **Type**: ISO-8601 datetime string
+- **Required**: Yes
+- **Format**: `YYYY-MM-DDTHH:MM:SSZ`
+- **Example**: `2026-01-15T10:30:00Z`
+- **Description**: When transaction was synced from Xero
+
+## Validation Rules
+
+1. **Amount Validation**:
+   - Must be non-zero
+   - Income: amount > 0
+   - Expense: amount < 0 (or stored as positive with category="expense")
+
+2. **Date Validation**:
+   - `date` must be valid ISO-8601 date
+   - `date` should not be in the future
+   - `synced_at` must be after `date`
+
+3. **Category Rules**:
+   - If `category` = "income", `amount` should be positive
+   - If `category` = "expense", `amount` should be negative (or positive with category indicator)
+   - If `category` = "transfer", both accounts should be tracked
+
+4. **Tax Rules**:
+   - If `tax_deductible` = true, `business_related` must be true
+   - Personal expenses cannot be tax-deductible
+
+## Example
+
+```yaml
+---
+type: xero_transaction
+transaction_id: xero_tx_12345
+date: 2026-01-15
+amount: -15.00
+currency: USD
+category: expense
+subcategory: software_subscription
+description: Monthly Notion subscription
+vendor: Notion Labs Inc
+business_related: true
+tax_deductible: true
+synced_at: 2026-01-15T10:30:00Z
+payment_method: credit_card
+reference: NOTION-JAN-2026
+notes: Subscription has been inactive for 45 days. Consider cancellation.
+---
+
+## Transaction Details
+- **Date**: January 15, 2026
+- **Amount**: $15.00 (expense)
+- **Category**: Software Subscription
+- **Vendor**: Notion Labs Inc
+
+## Classification
+- **Business Related**: Yes
+- **Tax Deductible**: Yes
+- **Recurring**: Yes (monthly)
+
+## Analysis
+Subscription has been inactive for 45 days based on login tracking.
+**Recommendation**: Consider cancellation to save $15/month ($180/year).
+
+## Actions
+- [ ] Review usage in last 90 days
+- [ ] Create approval request for cancellation
+- [ ] Update subscription tracking spreadsheet
+```
+
+## Usage
+
+### Creation
+```python
+from gold.src.watchers.xero_watcher import XeroWatcher
+
+watcher = XeroWatcher(vault_path)
+transaction_file = watcher.create_transaction_file(xero_transaction_data)
+```
+
+### Parsing
+```python
+from gold.src.utils.yaml_parser import parse_frontmatter
+
+content = read_file(transaction_file_path)
+frontmatter, body = parse_frontmatter(content)
+
+amount = frontmatter['amount']
+category = frontmatter['category']
+tax_deductible = frontmatter['tax_deductible']
+```
+
+### Categorization
+```python
+from gold.src.intelligence.transaction_categorizer import categorize_transaction
+
+category, subcategory = categorize_transaction(
+    description="Monthly Notion subscription",
+    vendor="Notion Labs Inc",
+    amount=-15.00
+)
+# Returns: ("expense", "software_subscription")
+```
+
+## Related Schemas
+
+- **CEO Briefing Schema**: Aggregates transaction data for revenue/expense analysis
+- **Audit Log Schema**: All transaction syncs logged
+- **Invoice Schema**: Links transactions to invoices
+
+---
+
+**Schema Version**: 1.0
+**Status**: Active
+**Maintainer**: Gold Tier Development Team

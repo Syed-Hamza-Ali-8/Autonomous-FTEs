@@ -1,0 +1,380 @@
+# Cross-Domain Context Schema
+
+**Version**: 1.0
+**Last Updated**: 2026-01-17
+**Format**: YAML Frontmatter + Markdown
+
+## Purpose
+
+Defines the structure for cross-domain context files that track reasoning and actions across personal and business domains.
+
+## Schema Definition
+
+```yaml
+---
+# Required Fields
+type: "cross_domain_context"
+context_id: string
+trigger_event: string
+trigger_domain: string (enum)
+created_at: string (ISO-8601 datetime)
+status: string (enum)
+
+# Event Details
+event_type: string
+event_source: string
+event_data: object
+
+# Impact Analysis
+personal_impact: object
+business_impact: object
+
+# Actions Generated
+actions: array of objects
+
+# Optional Fields
+completed_at: string (ISO-8601 datetime)
+error: string
+notes: string
+---
+```
+
+## Field Definitions
+
+### type
+- **Type**: String constant
+- **Required**: Yes
+- **Value**: `"cross_domain_context"`
+- **Description**: Entity type identifier
+
+### context_id
+- **Type**: String
+- **Required**: Yes
+- **Format**: `ctx_{domain}_{timestamp}`
+- **Example**: `ctx_personal_20260115_103000`
+- **Description**: Unique context identifier
+
+### trigger_event
+- **Type**: String
+- **Required**: Yes
+- **Max Length**: 200 characters
+- **Example**: `Payment received from Client A`
+- **Description**: Human-readable description of triggering event
+
+### trigger_domain
+- **Type**: String enum
+- **Required**: Yes
+- **Values**: `personal`, `business`
+- **Description**: Domain where event originated
+
+### created_at
+- **Type**: ISO-8601 datetime string
+- **Required**: Yes
+- **Format**: `YYYY-MM-DDTHH:MM:SSZ`
+- **Example**: `2026-01-15T10:00:00Z`
+- **Description**: When context was created
+
+### status
+- **Type**: String enum
+- **Required**: Yes
+- **Values**: `analyzing`, `actions_generated`, `executing`, `completed`, `failed`
+- **Description**: Current processing status
+
+### event_type
+- **Type**: String
+- **Required**: Yes
+- **Examples**: `payment_received`, `expense_recorded`, `message_received`, `task_completed`
+- **Description**: Categorized event type
+
+### event_source
+- **Type**: String
+- **Required**: Yes
+- **Examples**: `gmail`, `whatsapp`, `xero`, `linkedin`
+- **Description**: Source system/integration
+
+### event_data
+- **Type**: Object
+- **Required**: Yes
+- **Description**: Structured event data
+- **Structure**:
+  ```yaml
+  event_data:
+    amount: number (optional)
+    currency: string (optional)
+    from: string (optional)
+    to: string (optional)
+    subject: string (optional)
+    body: string (optional)
+    metadata: object (optional)
+  ```
+
+### personal_impact
+- **Type**: Object
+- **Required**: Yes
+- **Description**: Analysis of personal domain impact
+- **Structure**:
+  ```yaml
+  personal_impact:
+    affected: boolean
+    impact_level: string (enum: "none", "low", "medium", "high")
+    description: string
+    suggested_actions: array of strings
+  ```
+
+### business_impact
+- **Type**: Object
+- **Required**: Yes
+- **Description**: Analysis of business domain impact
+- **Structure**:
+  ```yaml
+  business_impact:
+    affected: boolean
+    impact_level: string (enum: "none", "low", "medium", "high")
+    description: string
+    suggested_actions: array of strings
+  ```
+
+### actions
+- **Type**: Array of objects
+- **Required**: Yes
+- **Description**: Actions generated from cross-domain reasoning
+- **Structure**:
+  ```yaml
+  actions:
+    - action_id: string
+      domain: string (enum: "personal", "business")
+      action_type: string
+      description: string
+      priority: string (enum: "low", "medium", "high", "critical")
+      status: string (enum: "pending", "approved", "executing", "completed", "failed")
+      requires_approval: boolean
+      created_at: string (ISO-8601 datetime)
+      completed_at: string (ISO-8601 datetime, optional)
+      result: string (optional)
+      error: string (optional)
+  ```
+
+## Validation Rules
+
+1. **Domain Consistency**:
+   - `trigger_domain` must be either "personal" or "business"
+   - At least one impact (personal or business) must have `affected: true`
+
+2. **Status Transitions**:
+   - `analyzing` → `actions_generated`
+   - `actions_generated` → `executing`
+   - `executing` → `completed` or `failed`
+
+3. **Action Validation**:
+   - Each action must have unique `action_id`
+   - If `requires_approval: true`, status must go through approval workflow
+   - `completed_at` required if status = "completed"
+
+4. **Impact Validation**:
+   - If `impact_level` = "none", `affected` must be false
+   - If `affected: true`, `suggested_actions` should not be empty
+
+## Example
+
+```yaml
+---
+type: cross_domain_context
+context_id: ctx_personal_20260115_103000
+trigger_event: Payment received from Client A ($1,500)
+trigger_domain: personal
+created_at: 2026-01-15T10:00:00Z
+status: completed
+event_type: payment_received
+event_source: gmail
+event_data:
+  amount: 1500.00
+  currency: USD
+  from: client-a@example.com
+  subject: "Payment for Invoice INV-2026-001"
+  body: "Hi, payment has been sent via bank transfer. Please confirm receipt."
+  metadata:
+    invoice_id: INV-2026-001
+    payment_method: bank_transfer
+personal_impact:
+  affected: true
+  impact_level: high
+  description: Payment received increases personal cash flow and requires acknowledgment
+  suggested_actions:
+    - Send thank you message to client
+    - Update personal budget tracker
+    - File payment confirmation
+business_impact:
+  affected: true
+  impact_level: high
+  description: Revenue recorded, invoice marked paid, financial reports updated
+  suggested_actions:
+    - Update Xero invoice status to PAID
+    - Record revenue in monthly tracking
+    - Update CEO Briefing metrics
+    - Generate financial report
+actions:
+  - action_id: act_20260115_103001
+    domain: personal
+    action_type: send_message
+    description: Send thank you message to Client A via Gmail
+    priority: high
+    status: completed
+    requires_approval: false
+    created_at: 2026-01-15T10:00:05Z
+    completed_at: 2026-01-15T10:00:15Z
+    result: Message sent successfully
+  - action_id: act_20260115_103002
+    domain: business
+    action_type: xero_update
+    description: Mark invoice INV-2026-001 as PAID in Xero
+    priority: critical
+    status: completed
+    requires_approval: false
+    created_at: 2026-01-15T10:00:05Z
+    completed_at: 2026-01-15T10:00:20Z
+    result: Invoice updated successfully
+  - action_id: act_20260115_103003
+    domain: business
+    action_type: revenue_tracking
+    description: Record $1,500 revenue in monthly tracking
+    priority: high
+    status: completed
+    requires_approval: false
+    created_at: 2026-01-15T10:00:05Z
+    completed_at: 2026-01-15T10:00:25Z
+    result: Revenue recorded for January 2026
+completed_at: 2026-01-15T10:00:30Z
+---
+
+## Cross-Domain Context: Payment Received
+
+### Trigger Event
+**Event**: Payment received from Client A ($1,500)
+**Source**: Gmail (client-a@example.com)
+**Time**: January 15, 2026 at 10:00 AM UTC
+
+### Event Details
+- **Amount**: $1,500.00 USD
+- **Invoice**: INV-2026-001
+- **Payment Method**: Bank transfer
+- **Client Message**: "Hi, payment has been sent via bank transfer. Please confirm receipt."
+
+### Impact Analysis
+
+#### Personal Domain Impact
+**Impact Level**: High
+**Affected**: Yes
+
+**Description**: Payment received increases personal cash flow and requires acknowledgment to maintain client relationship.
+
+**Suggested Actions**:
+1. Send thank you message to client
+2. Update personal budget tracker
+3. File payment confirmation
+
+#### Business Domain Impact
+**Impact Level**: High
+**Affected**: Yes
+
+**Description**: Revenue recorded, invoice marked paid, financial reports updated. This payment contributes to monthly revenue target.
+
+**Suggested Actions**:
+1. Update Xero invoice status to PAID
+2. Record revenue in monthly tracking
+3. Update CEO Briefing metrics
+4. Generate financial report
+
+### Actions Taken
+
+#### Action 1: Send Thank You Message ✅
+- **Domain**: Personal
+- **Priority**: High
+- **Status**: Completed
+- **Result**: Message sent successfully to client-a@example.com
+- **Time**: 10:00:15 UTC (15 seconds)
+
+#### Action 2: Update Xero Invoice ✅
+- **Domain**: Business
+- **Priority**: Critical
+- **Status**: Completed
+- **Result**: Invoice INV-2026-001 marked as PAID
+- **Time**: 10:00:20 UTC (20 seconds)
+
+#### Action 3: Record Revenue ✅
+- **Domain**: Business
+- **Priority**: High
+- **Status**: Completed
+- **Result**: $1,500 revenue recorded for January 2026
+- **Time**: 10:00:25 UTC (25 seconds)
+
+### Summary
+
+**Total Actions**: 3
+**Completed**: 3
+**Failed**: 0
+**Total Time**: 30 seconds
+
+**Outcome**: Successfully processed payment across both personal and business domains. Client acknowledged, accounting updated, revenue tracked.
+
+---
+
+*Generated by Cross-Domain Reasoner v1.0*
+```
+
+## Usage
+
+### Creation
+```python
+from gold.src.intelligence.cross_domain_reasoner import CrossDomainReasoner
+
+reasoner = CrossDomainReasoner(vault_path)
+context = reasoner.create_context(
+    trigger_event="Payment received from Client A ($1,500)",
+    trigger_domain="personal",
+    event_type="payment_received",
+    event_source="gmail",
+    event_data={
+        "amount": 1500.00,
+        "currency": "USD",
+        "from": "client-a@example.com",
+        "subject": "Payment for Invoice INV-2026-001"
+    }
+)
+```
+
+### Analysis
+```python
+from gold.src.intelligence.cross_domain_reasoner import CrossDomainReasoner
+
+reasoner = CrossDomainReasoner(vault_path)
+context = reasoner.analyze_event(event)
+
+# Returns impact analysis and suggested actions
+personal_impact = context['personal_impact']
+business_impact = context['business_impact']
+```
+
+### Action Execution
+```python
+from gold.src.intelligence.cross_domain_reasoner import CrossDomainReasoner
+
+reasoner = CrossDomainReasoner(vault_path)
+results = reasoner.execute_actions(context_id="ctx_personal_20260115_103000")
+
+# Returns execution results for all actions
+for result in results:
+    print(f"Action {result['action_id']}: {result['status']}")
+```
+
+## Related Schemas
+
+- **CEO Briefing Schema**: Aggregates cross-domain insights
+- **Audit Log Schema**: All context creation and actions logged
+- **Xero Transaction Schema**: Business actions may create transactions
+- **Social Media Post Schema**: Business actions may create posts
+
+---
+
+**Schema Version**: 1.0
+**Status**: Active
+**Maintainer**: Gold Tier Development Team
