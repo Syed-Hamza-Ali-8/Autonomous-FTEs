@@ -1,0 +1,80 @@
+{
+  "timestamp": "2026-01-19T02:53:28.773361",
+  "overall_status": "ok",
+  "pm2": {
+    "status": "ok",
+    "message": "All processes healthy",
+    "processes": {
+      "gold-health-monitor": {
+        "status": "online",
+        "restarts": 1,
+        "memory_mb": 16.0,
+        "uptime": 1768766348476
+      },
+      "gold-watchdog": {
+        "status": "online",
+        "restarts": 1,
+        "memory_mb": 15.12,
+        "uptime": 1768766348475
+      },
+      "gold-facebook-watcher": {
+        "status": "online",
+        "restarts": 1,
+        "memory_mb": 16.0,
+        "uptime": 1768766348712
+      },
+      "gold-instagram-watcher": {
+        "status": "online",
+        "restarts": 1,
+        "memory_mb": 16.0,
+        "uptime": 1768766348719
+      },
+      "gold-twitter-watcher": {
+        "status": "online",
+        "restarts": 1,
+        "memory_mb": 15.88,
+        "uptime": 1768766348941
+      },
+      "gold-ceo-briefing": {
+        "status": "online",
+        "restarts": 1,
+        "memory_mb": 16.5,
+        "uptime": 1768766348965
+      },
+      "gold-system-monitor": {
+        "status": "online",
+        "restarts": 0,
+        "memory_mb": 13.62,
+        "uptime": 1768772307488
+      }
+    },
+    "issues": []
+  },
+  "logs": {
+    "status": "ok",
+    "message": "0 errors in last hour",
+    "errors": []
+  },
+  "outputs": {
+    "status": "ok",
+    "message": "All outputs generating",
+    "checks": {
+      "health_reports": {
+        "status": "ok",
+        "count": 5,
+        "expected": "3-5 in last 5 minutes"
+      },
+      "social_action_items": {
+        "status": "ok",
+        "count": 3,
+        "expected": "Variable (depends on engagement)"
+      },
+      "ceo_briefings": {
+        "status": "ok",
+        "count": 2,
+        "expected": "Weekly (Sunday 7 AM)"
+      }
+    },
+    "issues": []
+  }
+}

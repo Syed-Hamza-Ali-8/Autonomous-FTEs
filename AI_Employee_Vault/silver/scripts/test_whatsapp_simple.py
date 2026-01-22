@@ -24,7 +24,7 @@ print()
 vault_path = Path('/mnt/d/hamza/autonomous-ftes/AI_Employee_Vault')
 session_path = vault_path / "silver" / "config" / "whatsapp_session"
 
-recipient = "Mr Honey"
+recipient = "Mr Honey 😎"  # Note: Include the emoji as it appears in WhatsApp
 message = "🧪 Test from AI Employee - WhatsApp working!"
 
 print(f"Recipient: {recipient}")
@@ -43,10 +43,20 @@ try:
         page = browser.pages[0] if browser.pages else browser.new_page()
 
         print("2. Going to WhatsApp Web...")
-        page.goto('https://web.whatsapp.com', timeout=90000)
+        page.goto('https://web.whatsapp.com', timeout=120000)
 
-        print("3. Waiting for WhatsApp to load (30 seconds)...")
-        time.sleep(30)  # Just wait, don't check for specific elements
+        print("3. Waiting for WhatsApp to load (smart wait for chat list)...")
+        # Use the same approach as production script - wait for chat list to appear
+        # Try longer timeout since messages are taking time to load
+        try:
+            page.wait_for_selector('div[aria-label="Chat list"]', timeout=180000)  # 3 minutes
+            print("   ✅ Chat list loaded!")
+        except Exception as e:
+            print(f"   ⚠️ Chat list timeout after 3 minutes: {e}")
+            print("   Trying alternative approach - waiting for search box directly...")
+            # If chat list doesn't appear, try waiting for search box instead
+            page.wait_for_selector('div[contenteditable="true"][data-tab="3"]', timeout=60000)
+            print("   ✅ Search box found!")
 
         print("4. Searching for contact...")
 
@@ -54,8 +64,8 @@ try:
         try:
             # Click search box using the exact selector from whatsapp_sender.py
             search_box = page.locator('div[contenteditable="true"][data-tab="3"]')
-            search_box.click()
-            time.sleep(1)
+            search_box.click()  # No explicit timeout - use default after chat list is loaded
+            time.sleep(0.5)  # Match production script timing
 
             # Type contact name
             search_box.fill(recipient)
@@ -89,8 +99,8 @@ try:
             print("Check your WhatsApp to verify!")
 
             # Keep browser open to see result
-            print("Keeping browser open for 10 seconds...")
-            time.sleep(10)
+            print("Keeping browser open for 30 seconds...")
+            time.sleep(30)
 
             browser.close()
 

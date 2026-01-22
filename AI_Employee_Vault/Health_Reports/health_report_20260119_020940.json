@@ -1,0 +1,77 @@
+{
+  "overall_status": "unhealthy",
+  "overall_healthy": false,
+  "timestamp": "2026-01-19T02:09:40.707021",
+  "components": [
+    {
+      "name": "mcp_email",
+      "status": "unhealthy",
+      "last_check": "2026-01-19T02:09:38.068896",
+      "response_time_ms": 1417.937994003296,
+      "error_message": "Server email not found in MCP list",
+      "metadata": {
+        "server_name": "email"
+      }
+    },
+    {
+      "name": "mcp_xero",
+      "status": "unhealthy",
+      "last_check": "2026-01-19T02:09:39.371728",
+      "response_time_ms": 1302.8061389923096,
+      "error_message": "Server xero not found in MCP list",
+      "metadata": {
+        "server_name": "xero"
+      }
+    },
+    {
+      "name": "mcp_social",
+      "status": "unhealthy",
+      "last_check": "2026-01-19T02:09:40.699998",
+      "response_time_ms": 1328.2442092895508,
+      "error_message": "Server social not found in MCP list",
+      "metadata": {
+        "server_name": "social"
+      }
+    },
+    {
+      "name": "vault_access",
+      "status": "healthy",
+      "last_check": "2026-01-19T02:09:40.700724",
+      "response_time_ms": null,
+      "error_message": null,
+      "metadata": {
+        "vault_path": "/mnt/d/hamza/autonomous-ftes/AI_Employee_Vault"
+      }
+    },
+    {
+      "name": "log_directory",
+      "status": "healthy",
+      "last_check": "2026-01-19T02:09:40.706677",
+      "response_time_ms": null,
+      "error_message": null,
+      "metadata": {
+        "log_dir": "/mnt/d/hamza/autonomous-ftes/AI_Employee_Vault/Logs"
+      }
+    },
+    {
+      "name": "disk_space",
+      "status": "healthy",
+      "last_check": "2026-01-19T02:09:40.706997",
+      "response_time_ms": null,
+      "error_message": null,
+      "metadata": {
+        "total_gb": 97.66,
+        "used_gb": 55.09,
+        "free_gb": 42.57,
+        "used_percent": 56.41
+      }
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "healthy": 3,
+    "degraded": 0,
+    "unhealthy": 3,
+    "unknown": 0
+  }
+}

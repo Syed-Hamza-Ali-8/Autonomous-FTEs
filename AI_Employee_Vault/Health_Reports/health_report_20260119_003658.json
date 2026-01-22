@@ -1,0 +1,8 @@
+{
+  "overall_status": "unhealthy",
+  "overall_healthy": false,
+  "timestamp": "2026-01-19T00:36:58.571678",
+  "components": [
+    {
+      "name": "mcp_email",
+      "status": 
