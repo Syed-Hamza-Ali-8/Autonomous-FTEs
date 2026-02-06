@@ -42,7 +42,10 @@ def setup_linkedin_session(vault_path: str):
     print("- Stay logged in (don't logout)")
     print("=" * 60 + "\n")
 
-    input("Press Enter to open browser...")
+    # Auto-start browser (no input required)
+    print("🚀 Starting browser in 2 seconds...")
+    import time
+    time.sleep(2)
 
     try:
         with sync_playwright() as p:
@@ -58,7 +61,7 @@ def setup_linkedin_session(vault_path: str):
 
             # Navigate to LinkedIn
             print("📱 Navigating to LinkedIn...")
-            page.goto("https://www.linkedin.com/login", wait_until="networkidle")
+            page.goto("https://www.linkedin.com/login", wait_until="load", timeout=60000)
 
             print("\n✅ Browser opened!")
             print("\nPlease:")

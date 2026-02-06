@@ -101,16 +101,22 @@ class WhatsAppWatcher(BaseWatcher):
                 )
 
                 page = browser.pages[0] if browser.pages else browser.new_page()
-                page.goto('https://web.whatsapp.com', timeout=self.timeout)
+
+                # Increased timeout for slow connections
+                page.goto('https://web.whatsapp.com', wait_until='load', timeout=90000)
+
+                # Wait a moment for page to stabilize
+                page.wait_for_timeout(2000)
 
                 # Check if logged in
                 if not self._is_logged_in(page):
-                    self.logger.error("WhatsApp session expired. Please re-scan QR code.")
+                    self.logger.warning("⚠️  WhatsApp session expired")
+                    self.logger.warning("   To fix: python3 silver/scripts/setup_whatsapp.py")
                     browser.close()
                     return []
 
-                # Wait for chat list to load
-                page.wait_for_selector(self.SELECTORS["chat_list"], timeout=self.timeout)
+                # Wait for chat list to load with extended timeout (5 minutes for large chat histories)
+                page.wait_for_selector(self.SELECTORS["chat_list"], timeout=300000)
                 self.logger.debug("Chat list loaded")
 
                 # Get unread chats
@@ -153,8 +159,8 @@ class WhatsAppWatcher(BaseWatcher):
                 self.logger.warning("QR code detected - not logged in")
                 return False
 
-            # Check for login success indicator
-            page.wait_for_selector(self.SELECTORS["login_success"], timeout=10000)
+            # Check for login success indicator (extended timeout for slow connections)
+            page.wait_for_selector(self.SELECTORS["login_success"], timeout=30000)
             self.logger.debug("Login verified")
             return True
 

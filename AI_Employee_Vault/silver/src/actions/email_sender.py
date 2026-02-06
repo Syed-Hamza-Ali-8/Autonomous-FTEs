@@ -73,21 +73,22 @@ class EmailSender:
                     "Run: python silver/scripts/setup_gmail.py"
                 )
 
-            # Create credentials object
+            # Create credentials object with scopes
             creds = Credentials(
                 token=None,
                 refresh_token=refresh_token,
                 token_uri="https://oauth2.googleapis.com/token",
                 client_id=client_id,
                 client_secret=client_secret,
+                scopes=[
+                    'https://www.googleapis.com/auth/gmail.readonly',
+                    'https://www.googleapis.com/auth/gmail.send'
+                ]
             )
 
-            # Refresh token if needed
+            # Refresh token to get access token
             if not creds.valid:
-                if creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    raise ValueError("Invalid credentials")
+                creds.refresh(Request())
 
             # Build Gmail API service
             self.service = build('gmail', 'v1', credentials=creds)

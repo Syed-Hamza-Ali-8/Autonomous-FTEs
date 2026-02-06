@@ -1,155 +1,172 @@
 #!/usr/bin/env python3
 """
-Simple LinkedIn session debug script.
-
-This script opens LinkedIn in a visible browser to verify your session is working.
+LinkedIn debug script - opens browser in visible mode to see what's happening.
 """
 
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
-import os
+from playwright.sync_api import sync_playwright
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import get_logger
 
-# Playwright imports
-try:
-    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
 
+def debug_linkedin():
+    """Debug LinkedIn posting by opening browser in visible mode."""
+    logger = get_logger("linkedin_debug")
 
-def debug_linkedin_session():
-    """Debug LinkedIn session by opening browser and checking login status."""
-
-    logger = get_logger("debug_linkedin")
-
-    if not PLAYWRIGHT_AVAILABLE:
-        print("❌ Playwright not installed")
-        print("Run: pip install playwright && playwright install chromium")
-        return False
-
-    # Get vault path
-    vault_path = Path(__file__).parent.parent.parent
-
-    # Load environment variables
-    env_path = vault_path / "silver" / "config" / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-
-    # Get LinkedIn session path
-    session_path = os.getenv(
-        "LINKEDIN_SESSION_PATH",
-        str(vault_path / "silver" / "config" / "linkedin_session")
-    )
+    vault_path = Path(__file__).parent.parent.parent.absolute()
+    session_path = vault_path / "silver" / "config" / "linkedin_session"
 
     print("=" * 60)
-    print("LinkedIn Session Debug Script")
+    print("LinkedIn Debug - Visual Mode")
     print("=" * 60)
-    print(f"\n📂 Session path: {session_path}")
-
-    # Check if session exists
-    if not Path(session_path).exists():
-        print("❌ Session directory not found!")
-        print("\nRun: python silver/scripts/setup_linkedin.py")
-        return False
-
-    print("✅ Session directory exists")
-    print("\n⚠️  Opening LinkedIn in visible browser...")
-    print("   Browser will stay open for 30 seconds\n")
-
-    input("Press Enter to start...")
+    print()
+    print("This will open a visible browser window.")
+    print("You can see exactly what's happening on LinkedIn.")
+    print()
+    print("=" * 60)
+    print()
 
     try:
         with sync_playwright() as p:
-            print("\n1️⃣  Launching browser...")
-
-            # Launch browser with persistent session - VISIBLE
+            # Launch browser in VISIBLE mode
+            print("🌐 Opening browser (visible mode)...")
             browser = p.chromium.launch_persistent_context(
-                session_path,
-                headless=False,  # VISIBLE BROWSER
+                str(session_path),
+                headless=False,  # VISIBLE browser
                 args=['--no-sandbox', '--disable-setuid-sandbox']
             )
 
             page = browser.new_page()
 
-            # Navigate to LinkedIn
-            print("2️⃣  Navigating to LinkedIn feed...")
+            # Navigate to LinkedIn feed
+            print("📱 Navigating to LinkedIn feed...")
             page.goto("https://www.linkedin.com/feed/", wait_until="load", timeout=30000)
 
-            # Wait for page to load
-            page.wait_for_timeout(3000)
-
             # Check if logged in
-            print("\n3️⃣  Checking login status...")
+            current_url = page.url
+            print(f"✅ Current URL: {current_url}")
 
-            if "login" in page.url.lower() or "authwall" in page.url.lower():
-                print("❌ NOT LOGGED IN")
-                print(f"   Current URL: {page.url}")
-                print("\n   Your session has expired.")
-                print("   Run: python silver/scripts/setup_linkedin.py")
+            if "login" in current_url.lower() or "authwall" in current_url.lower():
+                print("❌ Not logged in! Session expired.")
+                print("   Please run: python silver/scripts/setup_linkedin.py")
                 browser.close()
-                return False
+                return
 
-            print("✅ LOGGED IN")
-            print(f"   Current URL: {page.url}")
+            print("✅ Logged in successfully!")
+            print()
 
-            # Check for "Start a post" button
-            print("\n4️⃣  Checking page elements...")
-            start_post_count = page.locator('button:has-text("Start a post")').count()
-            print(f"   'Start a post' buttons found: {start_post_count}")
-
-            if start_post_count > 0:
-                print("   ✅ Post button is available")
-            else:
-                print("   ⚠️  Post button not found (page may still be loading)")
+            # Wait for page to load
+            print("⏳ Waiting for page to load (5 seconds)...")
+            page.wait_for_timeout(5000)
 
             # Take screenshot
-            screenshot_path = vault_path / "linkedin_debug.png"
+            screenshot_path = vault_path / "silver" / "Logs" / "linkedin_debug.png"
             page.screenshot(path=str(screenshot_path))
-            print(f"\n📸 Screenshot saved: {screenshot_path}")
+            print(f"📸 Screenshot saved: {screenshot_path}")
+            print()
 
-            # Keep browser open
-            print("\n5️⃣  Browser will stay open for 30 seconds...")
-            print("   (You can manually check your LinkedIn profile)")
+            # Try to find "Start a post" button
+            print("🔍 Looking for 'Start a post' button...")
+            print()
+
+            # Try different selectors
+            selectors = [
+                'button:has-text("Start a post")',
+                'button:has-text("Start a Post")',
+                'button:has-text("Share")',
+                'button:has-text("share")',
+                '[data-test-id="share-box-open"]',
+                '.share-box-feed-entry__trigger',
+                'button[aria-label*="Start a post"]',
+                'button[aria-label*="Share"]',
+            ]
+
+            found_buttons = []
+
+            for selector in selectors:
+                try:
+                    count = page.locator(selector).count()
+                    if count > 0:
+                        print(f"✅ Found {count} element(s) with selector: {selector}")
+                        found_buttons.append(selector)
+
+                        # Get button text
+                        for i in range(min(count, 3)):  # Check first 3
+                            try:
+                                text = page.locator(selector).nth(i).inner_text()
+                                print(f"   Button {i+1} text: '{text}'")
+                            except:
+                                pass
+                    else:
+                        print(f"❌ Not found: {selector}")
+                except Exception as e:
+                    print(f"❌ Error with {selector}: {e}")
+
+            print()
+
+            if found_buttons:
+                print(f"✅ Found {len(found_buttons)} working selector(s)!")
+                print()
+                print("Recommended selector:")
+                print(f"   {found_buttons[0]}")
+                print()
+
+                # Try clicking the first one
+                print("🖱️  Attempting to click the button...")
+                try:
+                    page.click(found_buttons[0], timeout=5000)
+                    print("✅ Button clicked successfully!")
+                    print()
+
+                    # Wait for modal
+                    page.wait_for_timeout(2000)
+
+                    # Check if modal appeared
+                    modal_count = page.locator('[role="dialog"]').count()
+                    if modal_count > 0:
+                        print(f"✅ Modal appeared! ({modal_count} dialog(s) found)")
+
+                        # Take screenshot of modal
+                        modal_screenshot = vault_path / "silver" / "Logs" / "linkedin_modal.png"
+                        page.screenshot(path=str(modal_screenshot))
+                        print(f"📸 Modal screenshot: {modal_screenshot}")
+                    else:
+                        print("⚠️  No modal appeared")
+
+                except Exception as e:
+                    print(f"❌ Click failed: {e}")
+            else:
+                print("❌ No working selectors found!")
+                print()
+                print("Possible reasons:")
+                print("1. LinkedIn UI has changed")
+                print("2. Different language/region")
+                print("3. Account type (personal vs business)")
+                print("4. Page not fully loaded")
+
+            print()
+            print("=" * 60)
+            print("Browser will stay open for 30 seconds.")
+            print("You can inspect the page manually.")
+            print("=" * 60)
+            print()
+
+            # Keep browser open for inspection
             page.wait_for_timeout(30000)
 
             browser.close()
+            print("✅ Debug complete!")
 
-            print("\n" + "=" * 60)
-            print("✅ Session debug completed!")
-            print("=" * 60)
-            print("\nYour LinkedIn session is working correctly.")
-            print("You can now use: python3 silver/scripts/debug_linkedin_post.py")
-
-            return True
-
-    except PlaywrightTimeout as e:
-        print(f"\n❌ Timeout: {e}")
-        return False
     except Exception as e:
-        print(f"\n❌ Error: {e}")
-        logger.error(f"Debug script failed: {e}")
-        return False
-
-
-def main():
-    """Main entry point."""
-    print("\n🐛 LinkedIn Session Debug Script")
-    print("   This script checks if your LinkedIn session is working\n")
-
-    success = debug_linkedin_session()
-
-    if not success:
-        print("\n❌ Session debug failed")
-        sys.exit(1)
-
-    sys.exit(0)
+        logger.error(f"Debug error: {e}")
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
-    main()
+    debug_linkedin()

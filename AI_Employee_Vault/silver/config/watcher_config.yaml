@@ -33,10 +33,10 @@ whatsapp:
   session_path: "silver/config/whatsapp_session"
 
   # Run browser in headless mode
-  headless: true
+  headless: false  # Show browser window (visible for debugging)
 
   # Browser timeout (seconds)
-  timeout: 30
+  timeout: 90  # Increased from 30s
 
   # Only process unread messages
   unread_only: true
@@ -54,10 +54,10 @@ linkedin:
   session_path: "silver/config/linkedin_session"
 
   # Run browser in headless mode
-  headless: true
+  headless: false  # Show browser window (visible for debugging)
 
   # Browser timeout (seconds)
-  timeout: 30
+  timeout: 90  # Increased from 30s
 
   # Auto-generate business content
   auto_generate: true

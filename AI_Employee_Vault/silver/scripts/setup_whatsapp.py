@@ -75,45 +75,88 @@ def setup_whatsapp_session(vault_path: str) -> None:
                 print("⚠️  QR code not found - you may already be logged in")
                 print()
 
-            # Wait for login success
-            print("⏳ Waiting for login...")
-            print("   This may take a minute...")
+            # Verify login by checking if we're on the main WhatsApp Web page
+            print("⏳ Verifying WhatsApp Web session...")
             print()
 
+            # Wait a moment for the page to settle
+            page.wait_for_timeout(3000)
+
+            # Check if we're logged in by looking for the main app container
+            # This appears immediately if logged in, regardless of message loading
             try:
-                page.wait_for_selector(
-                    'div[data-testid="default-user"]',
-                    timeout=120000  # 2 minutes
-                )
+                # Try multiple selectors that appear early
+                selectors_to_try = [
+                    '#app',  # Main WhatsApp app container
+                    'div[data-testid="conversation-panel-wrapper"]',  # Chat panel
+                    'header[data-testid="chatlist-header"]',  # Chat list header
+                    'div[id="side"]',  # Sidebar (appears before messages load)
+                ]
 
-                print()
-                print("✅ Login successful!")
-                print("   Session saved to:", session_path)
-                print()
+                logged_in = False
+                for selector in selectors_to_try:
+                    try:
+                        page.wait_for_selector(selector, timeout=10000)
+                        print(f"✅ Found WhatsApp Web element: {selector}")
+                        logged_in = True
+                        break
+                    except PlaywrightTimeout:
+                        continue
 
-                # Keep browser open for a moment to ensure session is saved
-                print("💾 Saving session...")
-                page.wait_for_timeout(3000)
+                if not logged_in:
+                    # Last resort: check if URL is still web.whatsapp.com (not redirected to login)
+                    current_url = page.url
+                    if 'web.whatsapp.com' in current_url and 'login' not in current_url.lower():
+                        print("✅ Verified: Still on WhatsApp Web (not redirected to login)")
+                        logged_in = True
 
-                browser.close()
+                if logged_in:
+                    print()
+                    print("✅ WhatsApp Web session is valid!")
+                    print()
+                    print("📱 Browser will stay open so you can:")
+                    print("   - Watch your chats load")
+                    print("   - Verify everything works")
+                    print("   - Interact with WhatsApp if needed")
+                    print()
+                    print("💾 Session is being saved automatically...")
+                    print("   Session path:", session_path)
+                    print()
+                    print("⏸️  Take your time - no timeout!")
+                    print("   Your messages will continue loading in the background.")
+                    print()
+                    print("━" * 60)
+                    input("Press Enter when you're ready to close the browser...")
+                    print("━" * 60)
+                    print()
 
-                print()
-                print("✅ WhatsApp Web setup complete!")
-                print()
-                print("Next steps:")
-                print("   1. Test the connection: python silver/scripts/test_watchers.sh whatsapp")
-                print("   2. Start the watcher: python -m silver.src.watchers.whatsapp_watcher")
-                print()
-                print("Note: The session will remain active until you log out from")
-                print("      WhatsApp Web or unlink the device from your phone.")
-                print()
+                    browser.close()
 
-            except PlaywrightTimeout:
+                    print()
+                    print("✅ WhatsApp Web setup complete!")
+                    print()
+                    print("Next steps:")
+                    print("   1. Test the connection: python silver/scripts/test_watchers.sh whatsapp")
+                    print("   2. Start the watcher: python -m silver.src.watchers.whatsapp_watcher")
+                    print()
+                    print("Note: The session will remain active until you log out from")
+                    print("      WhatsApp Web or unlink the device from your phone.")
+                    print()
+                else:
+                    print()
+                    print("❌ Could not verify WhatsApp Web session")
+                    print()
+                    print("Please make sure:")
+                    print("   1. You scanned the QR code with your phone")
+                    print("   2. Your phone has internet connection")
+                    print("   3. WhatsApp is running on your phone")
+                    print()
+                    browser.close()
+                    sys.exit(1)
+
+            except Exception as e:
                 print()
-                print("❌ Login timeout - QR code was not scanned in time")
-                print()
-                print("Please try again:")
-                print("   python silver/scripts/setup_whatsapp.py")
+                print(f"❌ Error verifying session: {e}")
                 print()
                 browser.close()
                 sys.exit(1)

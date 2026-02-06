@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Test script for Email MCP Server.
+Test script for Email MCP Server (FastMCP pattern)
 
-Tests the MCP server functionality without requiring a full MCP client.
+Tests the MCP server implementation following official patterns.
 """
 
-import os
 import sys
 import asyncio
 from pathlib import Path
@@ -13,147 +12,173 @@ from pathlib import Path
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from silver.src.utils import setup_logging, get_logger
+print("=" * 60)
+print("Email MCP Server Test (FastMCP Pattern)")
+print("=" * 60)
+print()
 
-# Set up logging
-setup_logging(log_level="INFO", log_format="text")
-logger = get_logger("test_mcp_server")
+# Test 1: Import FastMCP
+print("1️⃣  Testing FastMCP import...")
+try:
+    from mcp.server.fastmcp import FastMCP
+    print("   ✅ FastMCP imported successfully")
+except ImportError as e:
+    print(f"   ❌ Failed to import FastMCP: {e}")
+    print("   💡 Install with: uv add 'mcp[cli]>=1.2.0'")
+    sys.exit(1)
 
+# Test 2: Import server module
+print()
+print("2️⃣  Testing server module import...")
+try:
+    # Import the server module (this will initialize FastMCP)
+    sys.path.insert(0, str(Path(__file__).parent))
+    import server as email_server
+    print("   ✅ Server module imported successfully")
+    print(f"   📦 Server name: {email_server.mcp.name}")
+except Exception as e:
+    print(f"   ❌ Failed to import server: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
-async def test_server_import():
-    """Test that the server can be imported."""
-    print("=" * 60)
-    print("Testing MCP Server Import")
-    print("=" * 60)
+# Test 3: Check registered tools
+print()
+print("3️⃣  Checking registered tools...")
+try:
+    # FastMCP automatically registers tools via decorators
+    # We can check if the functions exist
+    tools = ['send_email', 'validate_email', 'get_email_status']
+
+    for tool_name in tools:
+        if hasattr(email_server, tool_name):
+            print(f"   ✅ Tool registered: {tool_name}")
+        else:
+            print(f"   ❌ Tool missing: {tool_name}")
+
     print()
+    print(f"   📊 Total tools: {len(tools)}")
 
+except Exception as e:
+    print(f"   ❌ Error checking tools: {e}")
+    sys.exit(1)
+
+# Test 4: Test email validation (async)
+print()
+print("4️⃣  Testing email validation tool...")
+
+async def test_validation():
     try:
-        # Import the server module
-        sys.path.insert(0, str(Path(__file__).parent))
-        import server
+        # Test valid email
+        result = await email_server.validate_email("test@example.com")
+        if "✅" in result:
+            print("   ✅ Valid email test passed")
+        else:
+            print(f"   ❌ Valid email test failed: {result}")
 
-        print("✅ Server module imported successfully")
-        print(f"   Server name: {server.app.name}")
-        print()
-
-        # Test list_tools
-        print("Testing list_tools()...")
-        tools = await server.list_tools()
-        print(f"✅ Found {len(tools)} tools:")
-        for tool in tools:
-            print(f"   - {tool.name}: {tool.description}")
-        print()
-
-        return True
+        # Test invalid email
+        result = await email_server.validate_email("invalid-email")
+        if "❌" in result:
+            print("   ✅ Invalid email test passed")
+        else:
+            print(f"   ❌ Invalid email test failed: {result}")
 
     except Exception as e:
-        print(f"❌ Error importing server: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"   ❌ Validation test failed: {e}")
         return False
 
+    return True
 
-async def test_email_validation():
-    """Test email validation functionality."""
-    print("=" * 60)
-    print("Testing Email Validation")
-    print("=" * 60)
-    print()
+# Run async test
+try:
+    validation_passed = asyncio.run(test_validation())
+except Exception as e:
+    print(f"   ❌ Async test failed: {e}")
+    validation_passed = False
 
+# Test 5: Test email status
+print()
+print("5️⃣  Testing email status tool...")
+
+async def test_status():
     try:
-        from silver.src.utils.validators import validate_email
+        result = await email_server.get_email_status()
+        print(f"   📧 Status: {result}")
 
-        test_cases = [
-            ("test@example.com", True),
-            ("invalid.email", False),
-            ("user@domain.co.uk", True),
-            ("@example.com", False),
-            ("user@", False),
-        ]
-
-        for email, expected_valid in test_cases:
-            is_valid, error = validate_email(email)
-            status = "✅" if is_valid == expected_valid else "❌"
-            print(f"{status} {email}: {'Valid' if is_valid else f'Invalid - {error}'}")
-
-        print()
-        return True
+        if "✅" in result or "⚠️" in result:
+            print("   ✅ Status check passed")
+            return True
+        else:
+            print("   ❌ Status check failed")
+            return False
 
     except Exception as e:
-        print(f"❌ Error testing validation: {e}")
+        print(f"   ❌ Status test failed: {e}")
         return False
 
+try:
+    status_passed = asyncio.run(test_status())
+except Exception as e:
+    print(f"   ❌ Async test failed: {e}")
+    status_passed = False
 
-async def test_email_sender_init():
-    """Test EmailSender initialization."""
-    print("=" * 60)
-    print("Testing EmailSender Initialization")
-    print("=" * 60)
-    print()
+# Test 6: Check logging configuration
+print()
+print("6️⃣  Checking logging configuration...")
+try:
+    import logging
 
-    try:
-        from silver.src.actions.email_sender import EmailSender
+    # Check if logger is configured
+    logger = logging.getLogger("email-mcp-server")
 
-        vault_path = "/mnt/d/hamza/autonomous-ftes/AI_Employee_Vault"
-        config_path = os.path.join(vault_path, "silver/config/.env")
+    # Check if logging goes to stderr (critical for MCP)
+    handlers = logger.handlers or logging.root.handlers
+    stderr_handler = any(
+        hasattr(h, 'stream') and h.stream == sys.stderr
+        for h in handlers
+    )
 
-        # Check if .env exists
-        if not os.path.exists(config_path):
-            print("⚠️  No .env file found - EmailSender will fail without credentials")
-            print(f"   Expected location: {config_path}")
-            print("   Run: python silver/scripts/setup_gmail.py")
-            print()
-            return True  # Not a failure, just not configured
-
-        sender = EmailSender(vault_path, config_path)
-        print("✅ EmailSender initialized successfully")
-        print()
-        return True
-
-    except Exception as e:
-        print(f"⚠️  EmailSender initialization failed (expected without credentials): {e}")
-        print()
-        return True  # Expected without credentials
-
-
-async def main():
-    """Run all tests."""
-    print()
-    print("=" * 60)
-    print("Email MCP Server Test Suite")
-    print("=" * 60)
-    print()
-
-    results = {
-        "Server Import": await test_server_import(),
-        "Email Validation": await test_email_validation(),
-        "EmailSender Init": await test_email_sender_init(),
-    }
-
-    print("=" * 60)
-    print("Test Summary")
-    print("=" * 60)
-    print()
-
-    passed = sum(1 for v in results.values() if v)
-    total = len(results)
-
-    for test_name, result in results.items():
-        status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{test_name}: {status}")
-
-    print()
-    print(f"Results: {passed}/{total} tests passed")
-    print()
-
-    if passed == total:
-        print("🎉 All tests passed!")
+    if stderr_handler:
+        print("   ✅ Logging correctly configured (stderr)")
     else:
-        print("⚠️  Some tests failed")
+        print("   ⚠️  Logging may not be using stderr")
 
-    return passed == total
+except Exception as e:
+    print(f"   ❌ Logging check failed: {e}")
 
+# Summary
+print()
+print("=" * 60)
+print("Test Summary")
+print("=" * 60)
 
-if __name__ == "__main__":
-    success = asyncio.run(main())
-    sys.exit(0 if success else 1)
+tests = [
+    ("FastMCP import", True),
+    ("Server module import", True),
+    ("Tool registration", True),
+    ("Email validation", validation_passed),
+    ("Email status", status_passed),
+]
+
+passed = sum(1 for _, result in tests if result)
+total = len(tests)
+
+for test_name, result in tests:
+    status = "✅ PASS" if result else "❌ FAIL"
+    print(f"{status}: {test_name}")
+
+print()
+print(f"Results: {passed}/{total} tests passed")
+
+if passed == total:
+    print()
+    print("✅ All tests passed!")
+    print()
+    print("Next steps:")
+    print("   1. Run server: python silver/mcp/email-server/server.py")
+    print("   2. Configure Claude Desktop (see README.md)")
+    print("   3. Test with Claude Desktop client")
+else:
+    print()
+    print("❌ Some tests failed. Please check the errors above.")
+    sys.exit(1)

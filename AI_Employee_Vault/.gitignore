@@ -56,6 +56,9 @@ bronze/config/.env
 silver/.whatsapp_session/
 silver/config/whatsapp_session/
 
+# LinkedIn session data
+silver/config/linkedin_session/
+
 # Process IDs
 silver/.pids/
 *.pid

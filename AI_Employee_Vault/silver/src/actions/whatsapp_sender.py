@@ -52,7 +52,7 @@ class WhatsAppSender:
 
         # Configuration
         self.headless = os.getenv("WHATSAPP_HEADLESS", "true").lower() == "true"
-        self.timeout = int(os.getenv("WHATSAPP_TIMEOUT", "30000"))  # 30 seconds
+        self.timeout = int(os.getenv("WHATSAPP_TIMEOUT", "90000"))  # 90 seconds (increased from 30s)
 
         self.logger.info("WhatsAppSender initialized")
 
@@ -105,8 +105,11 @@ class WhatsAppSender:
 
                 page = browser.pages[0] if browser.pages else browser.new_page()
 
-                # Navigate to WhatsApp Web
-                page.goto('https://web.whatsapp.com', timeout=self.timeout)
+                # Navigate to WhatsApp Web with increased timeout
+                page.goto('https://web.whatsapp.com', wait_until='load', timeout=self.timeout)
+
+                # Wait a moment for page to stabilize
+                page.wait_for_timeout(2000)
 
                 # Wait for WhatsApp to load
                 self._wait_for_whatsapp_ready(page)
@@ -163,17 +166,29 @@ class WhatsAppSender:
         try:
             # Check if QR code is present (not logged in)
             qr_code = page.locator('canvas[aria-label="Scan me!"]')
-            if qr_code.is_visible(timeout=5000):
-                self.logger.error(
-                    "WhatsApp Web not logged in. Please scan QR code. "
-                    "Run: python silver/scripts/setup_whatsapp.py"
-                )
-                raise ValueError("WhatsApp Web not logged in")
 
-            # Wait for chat list to load (logged in)
-            page.wait_for_selector('div[aria-label="Chat list"]', timeout=self.timeout)
-            self.logger.info("WhatsApp Web loaded successfully")
+            # Wait a bit to see if QR code appears
+            try:
+                if qr_code.is_visible(timeout=5000):
+                    self.logger.error("⚠️  WhatsApp Web session expired")
+                    self.logger.error("   To fix: python3 silver/scripts/setup_whatsapp.py")
+                    raise ValueError("WhatsApp Web not logged in - session expired")
+            except PlaywrightTimeout:
+                # QR code not visible - good, we're logged in
+                pass
 
+            # Wait for chat list to load (logged in) with extended timeout (5 minutes for large chat histories)
+            self.logger.info("Waiting for WhatsApp Web to load...")
+            page.wait_for_selector('div[aria-label="Chat list"]', timeout=300000)
+            self.logger.info("✅ WhatsApp Web loaded successfully")
+
+        except PlaywrightTimeout as e:
+            self.logger.error(f"⏱️  Timeout waiting for WhatsApp Web: {e}")
+            self.logger.error("   This usually means:")
+            self.logger.error("   1. Session expired - run: python3 silver/scripts/setup_whatsapp.py")
+            self.logger.error("   2. Slow internet connection")
+            self.logger.error("   3. WhatsApp Web is down")
+            raise
         except Exception as e:
             self.logger.error(f"Failed to load WhatsApp Web: {e}")
             raise
@@ -205,12 +220,94 @@ class WhatsAppSender:
                 raise ValueError(f"Contact not found: {contact}")
 
             first_result.click()
-            time.sleep(0.5)
 
-            self.logger.info(f"Contact found and selected: {contact}")
+            # CRITICAL: Wait for chat to fully load before sending
+            self.logger.info(f"Contact selected: {contact}, waiting for chat to load...")
+            self._wait_for_chat_ready(page)
+
+            self.logger.info(f"Contact found and chat ready: {contact}")
 
         except Exception as e:
             self.logger.error(f"Failed to search contact: {e}")
+            raise
+
+    def _wait_for_chat_ready(self, page, timeout: int = 60) -> None:
+        """
+        Wait for chat to fully load before sending messages.
+
+        This is CRITICAL to ensure messages are delivered immediately.
+        WhatsApp Web syncs chat history when opening a chat, which can take
+        10-60 seconds for large chats. If we send during sync, the message
+        gets queued and won't be delivered until sync completes.
+
+        Args:
+            page: Playwright page object
+            timeout: Maximum wait time in seconds
+
+        Raises:
+            TimeoutError: If chat doesn't load in time
+        """
+        try:
+            self.logger.info("Waiting for chat to fully load (this may take 10-60 seconds)...")
+
+            # Strategy 1: Wait for message input box to be ready
+            # This indicates the chat UI is loaded
+            message_box = page.locator('div[contenteditable="true"][data-tab="10"]')
+            message_box.wait_for(state="visible", timeout=timeout * 1000)
+            self.logger.info("✅ Message input box visible")
+
+            # Strategy 2: Wait for any loading indicators to disappear
+            # WhatsApp shows a progress bar or spinner while loading messages
+            time.sleep(2)  # Give time for loading indicators to appear if they will
+
+            # Check for common loading indicators
+            loading_selectors = [
+                'div[role="progressbar"]',  # Progress bar
+                'span[data-icon="status-time"]',  # Clock icon (loading)
+                'div.progress-container',  # Progress container
+            ]
+
+            max_wait = 60  # Maximum 60 seconds for message sync
+            start_time = time.time()
+
+            while time.time() - start_time < max_wait:
+                # Check if any loading indicators are present
+                loading = False
+                for selector in loading_selectors:
+                    try:
+                        if page.locator(selector).count() > 0:
+                            loading = True
+                            break
+                    except:
+                        pass
+
+                if not loading:
+                    # No loading indicators - chat is ready
+                    break
+
+                # Still loading - wait and check again
+                elapsed = int(time.time() - start_time)
+                if elapsed % 10 == 0 and elapsed > 0:  # Log every 10 seconds
+                    self.logger.info(f"Chat still loading messages... ({elapsed}s elapsed)")
+                time.sleep(1)
+
+            # Strategy 3: Additional safety wait
+            # Even after loading indicators disappear, give WhatsApp a moment to stabilize
+            time.sleep(3)
+
+            # Verify message box is still ready
+            if not message_box.is_visible():
+                raise ValueError("Message input box disappeared after loading")
+
+            elapsed = int(time.time() - start_time)
+            self.logger.info(f"✅ Chat fully loaded and ready to send ({elapsed}s)")
+
+        except PlaywrightTimeout as e:
+            self.logger.error(f"Timeout waiting for chat to load: {e}")
+            self.logger.error("Chat may still be syncing messages. Message might be delayed.")
+            raise
+        except Exception as e:
+            self.logger.error(f"Error waiting for chat: {e}")
             raise
 
     def _send_message_text(self, page, message: str) -> None:
