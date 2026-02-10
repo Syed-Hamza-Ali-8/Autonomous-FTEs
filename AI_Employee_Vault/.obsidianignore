@@ -1,0 +1,32 @@
+# Obsidian Ignore File
+# Files and directories listed here will be ignored by Obsidian
+
+# Configuration directories with browser sessions
+silver/config/
+gold/config/
+
+# Virtual environments
+silver/.venv/
+gold/.venv/
+bronze/.venv/
+**/.venv/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Logs
+Logs/
+**/*.log
+
+# Git
+.git/
+
+# Node modules
+node_modules/
+
+# Browser session files
+**/SingletonCookie
+**/SingletonLock
+**/SingletonSocket

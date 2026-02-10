@@ -89,3 +89,36 @@ yarn.lock
 *.tmp
 *.temp
 .cache/
+
+# Gold Tier - Odoo
+gold/.env
+gold/.credentials/
+gold/mcp/odoo-mcp-python/*test*.py
+gold/mcp/odoo-mcp-python/check_*.py
+gold/mcp/odoo-mcp-python/debug_*.py
+gold/mcp/odoo-mcp-python/install_*.py
+gold/mcp/odoo-mcp-python/populate_*.py
+gold/mcp/odoo-mcp-python/search_*.py
+
+# Obsidian workspace (user-specific)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/app.json
+.obsidian/appearance.json
+.obsidian/hotkeys.json
+.obsidian/graph.json
+.obsidian/plugins/*/data.json
+
+# Workflow artifacts (current state - don't commit)
+Needs_Action/msg_*.md
+Needs_Action/fb_*.md
+Needs_Action/ig_*.md
+Needs_Action/tw_*.md
+Pending_Approval/
+Archive/
+Failed/
+
+# Debug files
+silver/debug_screenshots/
+silver/linkedin_*.png
+silver/.obsidian/
