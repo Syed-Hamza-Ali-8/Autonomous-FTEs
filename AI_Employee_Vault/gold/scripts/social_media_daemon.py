@@ -55,6 +55,9 @@ class SocialMediaApprovalHandler(FileSystemEventHandler):
         self.done_dir.mkdir(exist_ok=True)
         self.failed_dir.mkdir(exist_ok=True)
 
+        # Track processed files to avoid duplicates
+        self.processed_files = set()
+
         # Initialize Playwright posters
         if PLAYWRIGHT_AVAILABLE:
             print("🔧 Initializing Playwright posters...")
@@ -83,6 +86,60 @@ class SocialMediaApprovalHandler(FileSystemEventHandler):
         # Only process approval files
         if not file_path.name.startswith("approval_"):
             return
+
+        print(f"\n🔔 EVENT DETECTED: File created - {file_path.name}")
+
+        # Small delay to ensure file is fully written
+        time.sleep(1)
+
+        # Process the approval
+        self._process_approval(file_path)
+
+    def on_moved(self, event):
+        """Handle files moved into Approved/ folder (drag from Obsidian)."""
+        if event.is_directory:
+            return
+
+        # Check if file was moved INTO the Approved/ folder
+        dest_path = Path(event.dest_path)
+
+        if dest_path.parent != self.approved_dir:
+            return
+
+        # Only process approval files
+        if not dest_path.name.startswith("approval_"):
+            return
+
+        print(f"\n🔔 EVENT DETECTED: File moved - {dest_path.name}")
+
+        # Small delay to ensure file is fully written
+        time.sleep(1)
+
+        # Process the approval
+        self._process_approval(dest_path)
+
+    def on_modified(self, event):
+        """Handle file modifications (some systems trigger this instead of created)."""
+        if event.is_directory:
+            return
+
+        file_path = Path(event.src_path)
+
+        # Only process approval files
+        if not file_path.name.startswith("approval_"):
+            return
+
+        # Check if this file was already processed (to avoid duplicate processing)
+        if not hasattr(self, '_processed_files'):
+            self._processed_files = set()
+
+        if file_path in self._processed_files:
+            return
+
+        print(f"\n🔔 EVENT DETECTED: File modified - {file_path.name}")
+
+        # Mark as processed
+        self._processed_files.add(file_path)
 
         # Small delay to ensure file is fully written
         time.sleep(1)
@@ -145,8 +202,31 @@ class SocialMediaApprovalHandler(FileSystemEventHandler):
 
         return None
 
+    def poll_approved_folder(self):
+        """Poll the Approved/ folder for new files (backup for WSL2 event issues)."""
+        try:
+            approval_files = list(self.approved_dir.glob("approval_*.md"))
+
+            for file_path in approval_files:
+                # Skip if already processed
+                if str(file_path) in self.processed_files:
+                    continue
+
+                print(f"\n🔍 POLLING: Found new file - {file_path.name}")
+
+                # Mark as processed
+                self.processed_files.add(str(file_path))
+
+                # Process the approval
+                self._process_approval(file_path)
+        except Exception as e:
+            print(f"⚠️  Polling error: {e}")
+
     def _process_approval(self, file_path: Path):
         """Process an approved social media post."""
+        # Mark as processed to avoid duplicates
+        self.processed_files.add(str(file_path))
+
         print()
         print("=" * 60)
         print(f"📝 APPROVED: {file_path.name}")
@@ -273,12 +353,26 @@ def main():
     # Initialize handler
     handler = SocialMediaApprovalHandler(str(VAULT_PATH))
 
+    # Process any existing files in Approved/ folder (files that were moved before daemon started)
+    print("🔍 Checking for existing approval files in Approved/ folder...")
+    existing_files = list(handler.approved_dir.glob("approval_*.md"))
+    if existing_files:
+        print(f"   Found {len(existing_files)} existing approval file(s)")
+        for file_path in existing_files:
+            print(f"   Processing: {file_path.name}")
+            handler._process_approval(file_path)
+    else:
+        print("   No existing approval files found")
+    print()
+
     # Setup watchdog observer
     observer = Observer()
     observer.schedule(handler, str(handler.approved_dir), recursive=False)
 
     print("👀 Watching: " + str(handler.approved_dir))
     print("   When you drag files to Approved/, browser will open and post!")
+    print()
+    print("⚠️  WSL2 Note: Using polling every 3 seconds (WSL2 event detection issue)")
     print()
     print("✅ Daemon started!")
     print("   Press Ctrl+C to stop")
@@ -289,8 +383,16 @@ def main():
     observer.start()
 
     try:
+        poll_counter = 0
         while True:
             time.sleep(1)
+            poll_counter += 1
+
+            # Poll every 3 seconds (backup for WSL2 event issues)
+            if poll_counter >= 3:
+                handler.poll_approved_folder()
+                poll_counter = 0
+
     except KeyboardInterrupt:
         print()
         print("🛑 Stopping daemon...")
