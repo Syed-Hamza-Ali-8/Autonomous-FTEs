@@ -24,6 +24,25 @@ gmail:
   labels_to_add:
     - "AI_PROCESSED"
 
+  # Keyword filtering (only process emails with these keywords)
+  # Set enabled: false to process ALL emails
+  keyword_filter:
+    enabled: true
+    keywords:
+      - "urgent"
+      - "fast"
+      - "important"
+      - "asap"
+      - "help"
+      - "priority"
+      - "emergency"
+      - "critical"
+      - "immediate"
+      - "quick"
+      - "now"
+      - "please"
+    case_sensitive: false  # Match keywords regardless of case
+
 # ============================================
 # WhatsApp Watcher Configuration
 # ============================================
@@ -43,6 +62,25 @@ whatsapp:
 
   # Maximum messages to fetch per check
   max_results: 10
+
+  # Keyword filtering (only process messages with these keywords)
+  # Set enabled: false to process ALL messages
+  keyword_filter:
+    enabled: true
+    keywords:
+      - "urgent"
+      - "fast"
+      - "important"
+      - "asap"
+      - "help"
+      - "priority"
+      - "emergency"
+      - "critical"
+      - "immediate"
+      - "quick"
+      - "now"
+      - "please"
+    case_sensitive: false  # Match keywords regardless of case
 
 # ============================================
 # LinkedIn Poster Configuration

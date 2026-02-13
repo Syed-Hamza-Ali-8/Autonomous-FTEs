@@ -63,6 +63,17 @@ class WhatsAppWatcher(BaseWatcher):
         self.headless = self.config["whatsapp"].get("headless", True)
         self.timeout = self.config["whatsapp"].get("timeout", 30) * 1000  # Convert to ms
 
+        # Keyword filtering settings
+        keyword_config = self.config["whatsapp"].get("keyword_filter", {})
+        self.keyword_filter_enabled = keyword_config.get("enabled", False)
+        self.keywords = keyword_config.get("keywords", [])
+        self.case_sensitive = keyword_config.get("case_sensitive", False)
+
+        if self.keyword_filter_enabled:
+            self.logger.info(f"Keyword filtering enabled with {len(self.keywords)} keywords")
+        else:
+            self.logger.info("Keyword filtering disabled - processing all messages")
+
         # Selectors (from Agent Skill reference)
         self.SELECTORS = {
             "chat_list": 'div[aria-label="Chat list"]',
@@ -76,6 +87,10 @@ class WhatsAppWatcher(BaseWatcher):
             "qr_code": 'canvas[aria-label="Scan this QR code to link a device!"]',
             "login_success": 'div[data-testid="default-user"]',
         }
+
+        # Track processed messages to avoid re-processing
+        # Store as set of (chat_name, message_text, timestamp) tuples
+        self.processed_messages = set()
 
         self.logger.info("WhatsApp watcher initialized successfully")
 
@@ -119,6 +134,13 @@ class WhatsAppWatcher(BaseWatcher):
                 page.wait_for_selector(self.SELECTORS["chat_list"], timeout=300000)
                 self.logger.debug("Chat list loaded")
 
+                # CRITICAL: Wait for chats to sync from server (especially with 133+ messages)
+                # WhatsApp Web loads UI fast but chat data syncs slowly
+                sync_wait = 30  # 30 seconds for large message histories
+                self.logger.info(f"⏳ Waiting {sync_wait}s for chats to sync from server...")
+                page.wait_for_timeout(sync_wait * 1000)
+                self.logger.info("✅ Chat sync complete")
+
                 # Get unread chats
                 unread_chats = self._get_unread_chats(page)
                 self.logger.info(f"Found {len(unread_chats)} unread chats")
@@ -154,18 +176,35 @@ class WhatsAppWatcher(BaseWatcher):
         """
         try:
             # Check for QR code (not logged in)
-            qr_code = page.query_selector(self.SELECTORS["qr_code"])
-            if qr_code:
-                self.logger.warning("QR code detected - not logged in")
+            # Use multiple possible QR code selectors
+            qr_selectors = [
+                'canvas[aria-label="Scan me!"]',
+                'canvas[aria-label="Scan this QR code to link a device!"]',
+                self.SELECTORS["qr_code"]
+            ]
+
+            for selector in qr_selectors:
+                try:
+                    qr_code = page.locator(selector)
+                    if qr_code.is_visible(timeout=3000):
+                        self.logger.warning("QR code detected - not logged in")
+                        return False
+                except PlaywrightTimeout:
+                    # QR code not visible with this selector, try next
+                    continue
+
+            # If no QR code found, check for chat list (indicates logged in)
+            # This is more reliable than checking for specific user elements
+            try:
+                page.wait_for_selector(self.SELECTORS["chat_list"], timeout=60000)
+                self.logger.debug("Login verified - chat list loaded")
+                return True
+            except PlaywrightTimeout:
+                self.logger.warning("Chat list not found - login status unclear")
                 return False
 
-            # Check for login success indicator (extended timeout for slow connections)
-            page.wait_for_selector(self.SELECTORS["login_success"], timeout=30000)
-            self.logger.debug("Login verified")
-            return True
-
-        except PlaywrightTimeout:
-            self.logger.warning("Login verification timeout")
+        except Exception as e:
+            self.logger.error(f"Error checking login status: {e}")
             return False
 
     def _get_unread_chats(self, page: Page) -> List[Any]:
@@ -240,6 +279,34 @@ class WhatsAppWatcher(BaseWatcher):
             self.logger.error(f"Failed to process chat: {e}")
             return []
 
+    def _contains_keywords(self, text: str) -> bool:
+        """
+        Check if message text contains any of the configured keywords.
+
+        Args:
+            text: Message text to check
+
+        Returns:
+            True if text contains any keyword, False otherwise
+        """
+        if not self.keyword_filter_enabled:
+            return True  # No filtering, process all messages
+
+        if not text:
+            return False
+
+        # Prepare text for comparison
+        search_text = text if self.case_sensitive else text.lower()
+
+        # Check each keyword
+        for keyword in self.keywords:
+            search_keyword = keyword if self.case_sensitive else keyword.lower()
+            if search_keyword in search_text:
+                self.logger.debug(f"Message contains keyword: '{keyword}'")
+                return True
+
+        return False
+
     def _extract_message_data(self, message_element: Any, chat_name: str) -> Optional[Dict[str, Any]]:
         """
         Extract message data from message element.
@@ -249,7 +316,7 @@ class WhatsAppWatcher(BaseWatcher):
             chat_name: Name of the chat
 
         Returns:
-            Message dictionary or None
+            Message dictionary or None if already processed or filtered out
         """
         try:
             # Extract message text
@@ -259,6 +326,24 @@ class WhatsAppWatcher(BaseWatcher):
             # Extract timestamp
             time_element = message_element.query_selector(self.SELECTORS["message_time"])
             time_str = time_element.inner_text() if time_element else ""
+
+            # Create unique identifier for this message
+            message_id = (chat_name, message_text, time_str)
+
+            # Skip if already processed
+            if message_id in self.processed_messages:
+                self.logger.debug(f"Skipping already processed message from {chat_name}")
+                return None
+
+            # Check keyword filter
+            if not self._contains_keywords(message_text):
+                self.logger.info(f"Skipping message from {chat_name} - no priority keywords found")
+                # Mark as processed so we don't check it again
+                self.processed_messages.add(message_id)
+                return None
+
+            # Mark as processed
+            self.processed_messages.add(message_id)
 
             # Parse timestamp (format: "10:30 AM")
             timestamp = self._parse_timestamp(time_str)

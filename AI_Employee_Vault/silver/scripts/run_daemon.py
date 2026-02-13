@@ -36,6 +36,10 @@ class ApprovedFolderHandler(FileSystemEventHandler):
         self.poster = LinkedInPoster(vault_path)
         self.processed_files = set()
 
+        # Initialize senders (lazy load to avoid import errors)
+        self.email_sender = None
+        self.whatsapp_sender = None
+
     def on_created(self, event):
         """Handle new files in Approved/ folder."""
         if event.is_directory:
@@ -43,15 +47,15 @@ class ApprovedFolderHandler(FileSystemEventHandler):
 
         file_path = Path(event.src_path)
 
-        # Only process LinkedIn approval files
-        if not file_path.name.startswith("approval_") or not file_path.name.endswith("_post_linkedin.md"):
+        # Only process approval files
+        if not file_path.name.startswith("approval_"):
             return
 
         # Avoid processing the same file twice
-        if file_path in self.processed_files:
+        if str(file_path) in self.processed_files:
             return
 
-        self.processed_files.add(file_path)
+        self.processed_files.add(str(file_path))
 
         self.logger.info(f"🔔 New approval detected: {file_path.name}")
         print(f"\n🔔 NEW APPROVAL DETECTED: {file_path.name}")
@@ -60,8 +64,17 @@ class ApprovedFolderHandler(FileSystemEventHandler):
         # Wait a moment to ensure file is fully written
         time.sleep(1)
 
-        # Process the approval
-        self._execute_linkedin_post(file_path)
+        # Route to appropriate handler based on file type
+        if "_post_linkedin.md" in file_path.name:
+            self._execute_linkedin_post(file_path)
+        elif "_reply_whatsapp.md" in file_path.name:
+            self._execute_whatsapp_reply(file_path)
+        elif "_reply_email.md" in file_path.name:
+            self._execute_email_reply(file_path)
+        else:
+            self.logger.warning(f"Unknown approval type: {file_path.name}")
+            print(f"⚠️  Unknown approval type: {file_path.name}")
+            print("=" * 70)
 
     def _execute_linkedin_post(self, file_path: Path):
         """Execute approved LinkedIn post."""
@@ -121,6 +134,156 @@ class ApprovedFolderHandler(FileSystemEventHandler):
             print(f"❌ Error: {e}")
             print("=" * 70)
 
+    def _execute_whatsapp_reply(self, file_path: Path):
+        """Execute approved WhatsApp reply."""
+        try:
+            print(f"💬 Processing WhatsApp reply: {file_path.name}")
+
+            # Lazy load WhatsApp sender
+            if not self.whatsapp_sender:
+                from src.actions.whatsapp_sender import WhatsAppSender
+                self.whatsapp_sender = WhatsAppSender(str(self.vault_path))
+
+            # Read file and extract frontmatter
+            import yaml
+            content = file_path.read_text()
+
+            # Split frontmatter and body
+            if content.startswith('---'):
+                parts = content.split('---', 2)
+                if len(parts) >= 3:
+                    frontmatter = yaml.safe_load(parts[1])
+                    body = parts[2].strip()
+                else:
+                    print("❌ Invalid file format")
+                    return
+            else:
+                print("❌ No frontmatter found")
+                return
+
+            # Extract recipient and message
+            recipient = frontmatter.get('recipient') or frontmatter.get('sender')
+
+            # Extract reply message from body (look for "## Reply" section)
+            if "## Reply" in body:
+                reply_section = body.split("## Reply")[1]
+                # Get first paragraph after ## Reply
+                reply_message = reply_section.strip().split('\n\n')[0].strip()
+            else:
+                print("❌ No reply message found in file")
+                return
+
+            if not recipient or not reply_message:
+                print("❌ Missing recipient or message")
+                return
+
+            print(f"   To: {recipient}")
+            print(f"   Message: {reply_message[:50]}...")
+            print()
+
+            # Send WhatsApp message
+            result = self.whatsapp_sender.send_message(
+                to=recipient,
+                message=reply_message
+            )
+
+            if result["success"]:
+                print("✅ WhatsApp message sent successfully!")
+
+                # Move to Done
+                done_dir = self.vault_path / "Done"
+                done_dir.mkdir(exist_ok=True)
+                done_path = done_dir / file_path.name
+                file_path.rename(done_path)
+
+                print(f"   Moved to: Done/{file_path.name}")
+            else:
+                print(f"❌ Failed to send: {result.get('error')}")
+
+            print("=" * 70)
+
+        except Exception as e:
+            self.logger.error(f"Failed to execute WhatsApp reply: {e}")
+            print(f"❌ Error: {e}")
+            print("=" * 70)
+
+    def _execute_email_reply(self, file_path: Path):
+        """Execute approved email reply."""
+        try:
+            print(f"📧 Processing email reply: {file_path.name}")
+
+            # Lazy load email sender
+            if not self.email_sender:
+                from src.actions.email_sender import EmailSender
+                self.email_sender = EmailSender(str(self.vault_path))
+
+            # Read file and extract frontmatter
+            import yaml
+            content = file_path.read_text()
+
+            # Split frontmatter and body
+            if content.startswith('---'):
+                parts = content.split('---', 2)
+                if len(parts) >= 3:
+                    frontmatter = yaml.safe_load(parts[1])
+                    body = parts[2].strip()
+                else:
+                    print("❌ Invalid file format")
+                    return
+            else:
+                print("❌ No frontmatter found")
+                return
+
+            # Extract email details
+            recipient = frontmatter.get('recipient') or frontmatter.get('sender')
+            subject = frontmatter.get('reply_subject') or f"Re: {frontmatter.get('subject', 'Your message')}"
+
+            # Extract reply message from body
+            if "## Reply" in body:
+                reply_section = body.split("## Reply")[1]
+                reply_message = reply_section.strip().split('\n\n')[0].strip()
+            else:
+                print("❌ No reply message found in file")
+                return
+
+            if not recipient or not reply_message:
+                print("❌ Missing recipient or message")
+                return
+
+            print(f"   To: {recipient}")
+            print(f"   Subject: {subject}")
+            print(f"   Message: {reply_message[:50]}...")
+            print()
+
+            # Send email
+            result = self.email_sender.send_email(
+                to=recipient,
+                subject=subject,
+                body=reply_message,
+                html=False
+            )
+
+            if result["success"]:
+                print("✅ Email sent successfully!")
+                print(f"   Message ID: {result['message_id']}")
+
+                # Move to Done
+                done_dir = self.vault_path / "Done"
+                done_dir.mkdir(exist_ok=True)
+                done_path = done_dir / file_path.name
+                file_path.rename(done_path)
+
+                print(f"   Moved to: Done/{file_path.name}")
+            else:
+                print(f"❌ Failed to send: {result.get('error')}")
+
+            print("=" * 70)
+
+        except Exception as e:
+            self.logger.error(f"Failed to execute email reply: {e}")
+            print(f"❌ Error: {e}")
+            print("=" * 70)
+
 
 class AIEmployeeDaemon:
     """Main daemon that orchestrates all watchers and handlers."""
@@ -140,9 +303,11 @@ class AIEmployeeDaemon:
         self.approved_handler = ApprovedFolderHandler(str(vault_path))
 
         # Timing
-        self.check_interval = 120  # Check every 2 minutes
+        self.check_interval = 30  # Check every 30 seconds (more responsive)
+        self.orchestrator_interval = 60  # Run orchestrator every 1 minute (faster replies)
         self.last_gmail_check = 0
         self.last_whatsapp_check = 0
+        self.last_orchestrator_run = 0
 
     def initialize_watchers(self):
         """Initialize Gmail and WhatsApp watchers."""
@@ -156,7 +321,7 @@ class AIEmployeeDaemon:
             print(f"⚠️  Gmail watcher failed: {e}")
             self.gmail_watcher = None
 
-        # WhatsApp watcher
+        # WhatsApp watcher (works in headless mode even in WSL)
         try:
             self.whatsapp_watcher = WhatsAppWatcher(str(self.vault_path), self.config_path)
             print("✅ WhatsApp watcher initialized")
@@ -165,6 +330,14 @@ class AIEmployeeDaemon:
             self.whatsapp_watcher = None
 
         print()
+
+    def _is_wsl(self):
+        """Check if running in WSL (Windows Subsystem for Linux)."""
+        try:
+            with open('/proc/version', 'r') as f:
+                return 'microsoft' in f.read().lower()
+        except:
+            return False
 
     def start_approved_folder_watcher(self):
         """Start watching Approved/ folder for new files."""
@@ -220,21 +393,81 @@ class AIEmployeeDaemon:
             self.logger.error(f"WhatsApp check failed: {e}")
             print(f"   ❌ Error: {e}")
 
+    def run_orchestrator(self):
+        """Run AI orchestrator to generate replies for messages in Needs_Action/."""
+        try:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Running AI Orchestrator...")
+
+            # Import orchestrator
+            from pathlib import Path
+            import subprocess
+
+            orchestrator_script = self.vault_path / "silver" / "scripts" / "orchestrator.py"
+
+            if not orchestrator_script.exists():
+                print(f"   ⚠️  Orchestrator script not found")
+                return
+
+            # Run orchestrator
+            result = subprocess.run(
+                [sys.executable, str(orchestrator_script)],
+                cwd=str(self.vault_path),
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if result.returncode == 0:
+                # Parse output to show summary
+                if "Processed" in result.stdout:
+                    # Extract count from output
+                    for line in result.stdout.split('\n'):
+                        if "Processed" in line:
+                            print(f"   {line.strip()}")
+                            break
+                else:
+                    print(f"   ✅ Orchestrator completed")
+            else:
+                print(f"   ⚠️  Orchestrator exited with code {result.returncode}")
+                if result.stderr:
+                    print(f"   Error: {result.stderr[:100]}")
+
+        except subprocess.TimeoutExpired:
+            print(f"   ⚠️  Orchestrator timeout (>60s)")
+        except Exception as e:
+            self.logger.error(f"Orchestrator failed: {e}")
+            print(f"   ❌ Error: {e}")
+
     def run(self):
         """Run the daemon continuously."""
         print()
         print("=" * 70)
-        print("🤖 AI EMPLOYEE DAEMON - AUTONOMOUS OPERATION")
+        print("🤖 AI EMPLOYEE DAEMON - 24/7 AUTONOMOUS OPERATION")
         print("=" * 70)
         print()
         print("This daemon runs continuously and:")
-        print("  1. Monitors Gmail/WhatsApp every 2 minutes")
-        print("  2. Watches Approved/ folder for instant execution")
-        print("  3. Creates files in Obsidian automatically")
+        print("  1. Monitors Gmail/WhatsApp every 30 seconds → Needs_Action/")
+        print("  2. AI Orchestrator generates replies every 1 minute → Pending_Approval/")
+        print("  3. Watches Approved/ folder for instant execution")
+        print("  4. Sends WhatsApp/Email replies automatically")
         print()
-        print("YOU ONLY NEED TO USE OBSIDIAN:")
-        print("  - Review files in Needs_Action/")
-        print("  - Drag approvals to Approved/ folder")
+        print("WORKFLOW:")
+        print("  📧 Client sends message")
+        print("  ↓")
+        print("  📁 Watcher detects → Needs_Action/")
+        print("  ↓")
+        print("  🧠 AI generates reply → Pending_Approval/")
+        print("  ↓")
+        print("  👤 You review in Obsidian")
+        print("  ↓")
+        print("  ✅ You drag to Approved/")
+        print("  ↓")
+        print("  🚀 System sends reply automatically")
+        print()
+        print("YOU ONLY USE OBSIDIAN:")
+        print("  - Review AI-generated replies in Pending_Approval/")
+        print("  - Edit if needed")
+        print("  - Drag to Approved/ to send")
         print("  - System handles everything else!")
         print()
         print("=" * 70)
@@ -260,10 +493,16 @@ class AIEmployeeDaemon:
                     self.last_gmail_check = current_time
                     print()
 
-                # Check WhatsApp every 2 minutes (offset by 1 minute)
+                # Check WhatsApp every 2 minutes
                 if current_time - self.last_whatsapp_check >= self.check_interval:
                     self.check_whatsapp()
                     self.last_whatsapp_check = current_time
+                    print()
+
+                # Run orchestrator every 5 minutes
+                if current_time - self.last_orchestrator_run >= self.orchestrator_interval:
+                    self.run_orchestrator()
+                    self.last_orchestrator_run = current_time
                     print()
 
                 # Sleep for 10 seconds before next check

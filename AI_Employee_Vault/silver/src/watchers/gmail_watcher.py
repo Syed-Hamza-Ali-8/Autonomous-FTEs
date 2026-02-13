@@ -72,6 +72,20 @@ class GmailWatcher(BaseWatcher):
         self.service = None
         self._initialize_service()
 
+        # Track processed message IDs to avoid re-processing
+        self.processed_message_ids = set()
+
+        # Keyword filtering settings
+        keyword_config = self.config["gmail"].get("keyword_filter", {})
+        self.keyword_filter_enabled = keyword_config.get("enabled", False)
+        self.keywords = keyword_config.get("keywords", [])
+        self.case_sensitive = keyword_config.get("case_sensitive", False)
+
+        if self.keyword_filter_enabled:
+            self.logger.info(f"Keyword filtering enabled with {len(self.keywords)} keywords")
+        else:
+            self.logger.info("Keyword filtering disabled - processing all emails")
+
         self.logger.info("Gmail watcher initialized successfully")
 
     def _initialize_service(self) -> None:
@@ -109,7 +123,7 @@ class GmailWatcher(BaseWatcher):
         Check Gmail inbox for unread messages.
 
         Returns:
-            List of message dictionaries
+            List of NEW message dictionaries (not previously processed)
 
         Raises:
             HttpError: If Gmail API request fails
@@ -132,21 +146,61 @@ class GmailWatcher(BaseWatcher):
             messages = results.get('messages', [])
             self.logger.info(f"Found {len(messages)} messages matching query")
 
-            # Fetch full message details
+            # Fetch full message details (only NEW messages)
             message_list = []
             for msg in messages:
+                # Skip if already processed
+                if msg['id'] in self.processed_message_ids:
+                    self.logger.debug(f"Skipping already processed message: {msg['id']}")
+                    continue
+
                 try:
                     message = self._fetch_message(msg['id'])
                     if message:
                         message_list.append(message)
+                        # Mark as processed
+                        self.processed_message_ids.add(msg['id'])
                 except Exception as e:
                     self.logger.error(f"Failed to fetch message {msg['id']}: {e}")
+
+            if message_list:
+                self.logger.info(f"Found {len(message_list)} NEW messages")
+            else:
+                self.logger.debug("No new messages (all already processed)")
 
             return message_list
 
         except HttpError as e:
             self.logger.error(f"Gmail API error: {e}")
             raise
+
+    def _contains_keywords(self, text: str) -> bool:
+        """
+        Check if text contains any of the configured keywords.
+
+        Args:
+            text: Text to check (subject or body)
+
+        Returns:
+            True if text contains any keyword, False otherwise
+        """
+        if not self.keyword_filter_enabled:
+            return True  # No filtering, process all messages
+
+        if not text:
+            return False
+
+        # Prepare text for comparison
+        search_text = text if self.case_sensitive else text.lower()
+
+        # Check each keyword
+        for keyword in self.keywords:
+            search_keyword = keyword if self.case_sensitive else keyword.lower()
+            if search_keyword in search_text:
+                self.logger.debug(f"Email contains keyword: '{keyword}'")
+                return True
+
+        return False
 
     def _fetch_message(self, message_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -156,7 +210,7 @@ class GmailWatcher(BaseWatcher):
             message_id: Gmail message ID
 
         Returns:
-            Message dictionary or None if fetch fails
+            Message dictionary or None if fetch fails or filtered out
         """
         try:
             # Get message
@@ -175,6 +229,16 @@ class GmailWatcher(BaseWatcher):
             # Extract body
             body = self._extract_body(message['payload'])
 
+            # Extract subject
+            subject = headers.get('Subject', '(No Subject)')
+            sender = headers.get('From', 'Unknown')
+
+            # Check keyword filter (check both subject and body)
+            combined_text = f"{subject} {body}"
+            if not self._contains_keywords(combined_text):
+                self.logger.info(f"Skipping email from {sender} - no priority keywords found")
+                return None
+
             # Parse timestamp
             timestamp = datetime.fromtimestamp(
                 int(message['internalDate']) / 1000
@@ -182,8 +246,8 @@ class GmailWatcher(BaseWatcher):
 
             return {
                 "id": message_id,
-                "sender": headers.get('From', 'Unknown'),
-                "subject": headers.get('Subject', '(No Subject)'),
+                "sender": sender,
+                "subject": subject,
                 "body": body,
                 "timestamp": timestamp,
                 "labels": message.get('labelIds', []),

@@ -1,15 +1,19 @@
 # 🚀 Quick Start Guide - AI Employee Vault
 
-**Last Updated**: 2026-02-07
-**Silver Tier Status**: ✅ 100% Complete (with Cron Setup)
+**Last Updated**: 2026-02-14
+**Silver Tier Status**: ✅ 100% Complete (24/7 Autonomous System)
+**Gold Tier Status**: ✅ 100% Complete (Ralph Wiggum - Social Media Automation)
 **Architecture**: Autonomous AI Employee with Human-in-the-Loop Approval
-**Deployment**: Single Daemon Process with Cron Auto-Restart
+**Deployment**: Single Daemon Process with Auto-Restart
 
 ---
 
 ## 📖 What is AI Employee Vault?
 
 An **autonomous AI Employee** that monitors your communications (Gmail, WhatsApp, LinkedIn), creates actionable tasks in Obsidian, requests human approval for sensitive actions, and executes approved actions automatically.
+
+**Silver Tier**: Core autonomous system with Gmail, WhatsApp, and LinkedIn monitoring
+**Gold Tier (Ralph Wiggum)**: Advanced social media automation for Facebook, Twitter, and Instagram using Playwright browser automation
 
 ### Architecture Overview
 
@@ -301,10 +305,12 @@ Run the AI Employee continuously to monitor and act on your behalf 24/7.
 
 ### Architecture: Single Daemon Process
 
-The Silver tier uses a **unified daemon** (`run_daemon.py`) that handles everything:
-- ✅ Gmail monitoring (every 2 minutes)
-- ✅ WhatsApp monitoring (every 2 minutes)
+The system uses a **unified daemon** (`run_daemon.py`) that handles everything:
+- ✅ Gmail monitoring (every 30 seconds)
+- ✅ WhatsApp monitoring (every 30 seconds with 30s sync wait)
+- ✅ AI Orchestrator (generates replies every 1 minute)
 - ✅ Approved folder watching (instant execution)
+- ✅ Keyword filtering (only process priority messages)
 - ✅ Automatic restart on crash (via cron health check)
 
 **No need to manage multiple processes!**
@@ -326,24 +332,41 @@ nohup python silver/scripts/run_daemon.py >> Logs/daemon.log 2>&1 &
 **Expected output**:
 ```
 ======================================================================
-🤖 AI EMPLOYEE DAEMON - AUTONOMOUS OPERATION
+🤖 AI EMPLOYEE DAEMON - 24/7 AUTONOMOUS OPERATION
 ======================================================================
 
 This daemon runs continuously and:
-  1. Monitors Gmail/WhatsApp every 2 minutes
-  2. Watches Approved/ folder for instant execution
-  3. Creates files in Obsidian automatically
+  1. Monitors Gmail/WhatsApp every 30 seconds → Needs_Action/
+  2. AI Orchestrator generates replies every 1 minute → Pending_Approval/
+  3. Watches Approved/ folder for instant execution
+  4. Sends WhatsApp/Email replies automatically
 
-YOU ONLY NEED TO USE OBSIDIAN:
-  - Review files in Needs_Action/
-  - Drag approvals to Approved/ folder
+WORKFLOW:
+  📧 Client sends message
+  ↓
+  📁 Watcher detects → Needs_Action/
+  ↓
+  🧠 AI generates reply → Pending_Approval/
+  ↓
+  👤 You review in Obsidian
+  ↓
+  ✅ You drag to Approved/
+  ↓
+  🚀 System sends reply automatically
+
+YOU ONLY USE OBSIDIAN:
+  - Review AI-generated replies in Pending_Approval/
+  - Edit if needed
+  - Drag to Approved/ to send
   - System handles everything else!
 
 ======================================================================
 
 🔧 Initializing watchers...
 ✅ Gmail watcher initialized
+   Keyword filtering enabled with 12 keywords
 ✅ WhatsApp watcher initialized
+   Keyword filtering enabled with 12 keywords
 
 👀 Watching: /path/to/AI_Employee_Vault/Approved
    When you drag files to Approved/, they'll auto-execute!
@@ -357,7 +380,17 @@ YOU ONLY NEED TO USE OBSIDIAN:
    ✅ Found 1 new email(s)
       Created: msg_gmail_39006bc42a73.md
 
-[03:02:24] 📧 Checking Gmail...
+[03:00:23] 💬 Checking WhatsApp...
+   ⏳ Waiting 30s for chats to sync from server...
+   ✅ Chat sync complete
+   ✅ Found 2 unread chats
+      Created: msg_whatsapp_abc123.md
+      Created: msg_whatsapp_def456.md
+
+[03:01:23] 🧠 Running AI Orchestrator...
+   ✅ Processed 3 message(s)
+
+[03:01:53] 📧 Checking Gmail...
    📭 No new emails
 ```
 
@@ -720,22 +753,23 @@ python silver/scripts/run_daemon.py
 
 ```
 AI_Employee_Vault/
-├── silver/                              # Silver Tier (Complete autonomous system)
+├── silver/                              # Silver Tier (24/7 Autonomous System)
 │   ├── .venv/                           # Virtual environment (Python 3.14, uv)
 │   ├── src/
 │   │   ├── watchers/                    # Perception layer
-│   │   │   ├── gmail_watcher.py         # Monitor Gmail inbox
-│   │   │   ├── whatsapp_watcher.py      # Monitor WhatsApp messages
+│   │   │   ├── gmail_watcher.py         # Monitor Gmail inbox (keyword filtering)
+│   │   │   ├── whatsapp_watcher.py      # Monitor WhatsApp messages (keyword filtering)
 │   │   │   └── linkedin_poster.py       # LinkedIn automation
 │   │   ├── actions/                     # Action executors
 │   │   │   ├── email_sender.py          # Send emails via Gmail API
-│   │   │   └── whatsapp_sender.py       # Send WhatsApp messages
+│   │   │   └── whatsapp_sender.py       # Send WhatsApp messages (with sync wait)
 │   │   ├── approval/                    # HITL workflow
 │   │   │   ├── approval_manager.py      # Create approval requests
 │   │   │   └── approval_checker.py      # Monitor and execute approvals
 │   │   └── utils/                       # Utilities
-│   ├── scripts/                         # Test and setup scripts
-│   │   ├── run_daemon.py                # 🔥 Main daemon (runs everything)
+│   ├── scripts/                         # Scripts
+│   │   ├── run_daemon.py                # 🔥 Main daemon (24/7 autonomous operation)
+│   │   ├── orchestrator.py              # AI reply generator
 │   │   ├── setup_cron.sh                # Cron setup helper
 │   │   ├── test_complete_workflow.py    # Complete workflow test
 │   │   ├── test_whatsapp_timing.py      # WhatsApp timing test
@@ -748,9 +782,30 @@ AI_Employee_Vault/
 │   │   ├── whatsapp_session/            # WhatsApp Web session data
 │   │   ├── linkedin_session/            # LinkedIn session data
 │   │   ├── gmail_credentials.json       # Gmail API credentials
-│   │   └── watcher_config.yaml          # Watcher configuration
+│   │   ├── watcher_config.yaml          # Watcher configuration (keyword filtering)
+│   │   └── .env                         # Environment variables
+│   ├── 24_7_AUTONOMOUS_SYSTEM.md        # Complete 24/7 system guide
+│   ├── KEYWORD_FILTERING.md             # Keyword filtering documentation
 │   └── mcp/                             # MCP servers
 │       └── email-server/                # Email MCP server
+├── gold/                                # Gold Tier (Ralph Wiggum - Social Media)
+│   ├── .venv/                           # Virtual environment
+│   ├── config/
+│   │   ├── facebook_session/            # Facebook session data
+│   │   ├── twitter_session/             # Twitter session data
+│   │   └── instagram_session/           # Instagram session data
+│   ├── scripts/
+│   │   ├── setup_facebook.py            # Facebook authentication
+│   │   ├── setup_twitter.py             # Twitter authentication
+│   │   ├── setup_instagram.py           # Instagram authentication
+│   │   ├── test_facebook.py             # Facebook posting test
+│   │   ├── test_twitter.py              # Twitter posting test
+│   │   └── test_instagram.py            # Instagram posting test
+│   └── src/
+│       └── social_media/                # Social media automation
+│           ├── facebook_poster.py       # Facebook automation
+│           ├── twitter_poster.py        # Twitter automation
+│           └── instagram_poster.py      # Instagram automation
 ├── Needs_Action/                        # Tasks from watchers
 ├── Pending_Approval/                    # Actions awaiting approval
 ├── Approved/                            # Approved actions (auto-executed)
@@ -759,7 +814,9 @@ AI_Employee_Vault/
 │   └── daemon.log                       # Main daemon log
 ├── Dashboard.md                         # Obsidian dashboard
 ├── Company_Handbook.md                  # AI behavior rules
-└── QUICKSTART.md                        # This file
+├── QUICKSTART.md                        # This file
+├── RALPH_WIGGUM_GUIDE.md                # Gold Tier guide
+└── IMPLEMENTATION_COMPLETE.md           # Implementation summary
 ```
 
 ---
@@ -770,12 +827,14 @@ AI_Employee_Vault/
 
 | Task | Command |
 |------|---------|
-| **Activate venv** | `source silver/.venv/bin/activate` |
+| **Activate Silver venv** | `source silver/.venv/bin/activate` |
+| **Activate Gold venv** | `source gold/.venv/bin/activate` |
 | **Deactivate venv** | `deactivate` |
 | **Check Python version** | `python --version` |
-| **Install dependencies** | `pip install -r silver/requirements.txt` |
+| **Install Silver dependencies** | `pip install -r silver/requirements.txt` |
+| **Install Gold dependencies** | `pip install -r gold/requirements.txt` |
 
-### Testing Commands
+### Testing Commands (Silver Tier)
 
 | Task | Command |
 |------|---------|
@@ -784,6 +843,18 @@ AI_Employee_Vault/
 | **WhatsApp test** | `python silver/scripts/test_whatsapp_timing.py` |
 | **LinkedIn test** | `python silver/scripts/test_linkedin.py --dry-run` |
 | **List WhatsApp contacts** | `python silver/scripts/list_whatsapp_contacts_v2.py` |
+| **Test orchestrator** | `python silver/scripts/orchestrator.py` |
+
+### Testing Commands (Gold Tier)
+
+| Task | Command |
+|------|---------|
+| **Facebook test** | `python gold/scripts/test_facebook.py` |
+| **Twitter test** | `python gold/scripts/test_twitter.py` |
+| **Instagram test** | `python gold/scripts/test_instagram.py` |
+| **Setup Facebook** | `python gold/scripts/setup_facebook.py` |
+| **Setup Twitter** | `python gold/scripts/setup_twitter.py` |
+| **Setup Instagram** | `python gold/scripts/setup_instagram.py` |
 
 ### Production Commands (Daemon Mode)
 
@@ -797,7 +868,7 @@ AI_Employee_Vault/
 | **Setup cron** | `crontab -e` (then add cron entries) |
 | **View cron jobs** | `crontab -l` |
 
-### Setup Commands
+### Setup Commands (Silver Tier)
 
 | Task | Command |
 |------|---------|
@@ -805,6 +876,22 @@ AI_Employee_Vault/
 | **Setup LinkedIn** | `python silver/scripts/setup_linkedin.py` |
 | **Setup Gmail** | `python silver/scripts/setup_gmail.py` |
 | **Reset WhatsApp session** | `python silver/scripts/reset_whatsapp_session.py` |
+
+### Setup Commands (Gold Tier)
+
+| Task | Command |
+|------|---------|
+| **Setup Facebook** | `python gold/scripts/setup_facebook.py` |
+| **Setup Twitter** | `python gold/scripts/setup_twitter.py` |
+| **Setup Instagram** | `python gold/scripts/setup_instagram.py` |
+
+### Configuration
+
+| Task | File |
+|------|------|
+| **Keyword filtering** | `silver/config/watcher_config.yaml` |
+| **Timing intervals** | `silver/scripts/run_daemon.py` (lines 306-307) |
+| **Environment variables** | `silver/config/.env` |
 
 ---
 
@@ -867,12 +954,29 @@ Before your demo/presentation, verify:
 
 ### Silver Tier Documentation
 
+- **`silver/24_7_AUTONOMOUS_SYSTEM.md`** - Complete 24/7 autonomous system guide
+- **`silver/KEYWORD_FILTERING.md`** - Keyword filtering documentation
 - **`silver/README.md`** - Silver Tier overview and architecture
 - **`silver/SILVER_TIER_STATUS.md`** - Completion status and features
 - **`silver/WHATSAPP_USAGE_GUIDE.md`** - Complete WhatsApp automation guide
 - **`silver/WHATSAPP_TIMING_FIX.md`** - Technical details of timing fix
 - **`silver/HITL_COMPLETE.md`** - Human-in-the-loop workflow guide
 - **`silver/TESTING_GUIDE.md`** - Comprehensive testing guide
+
+### Gold Tier Documentation
+
+- **`RALPH_WIGGUM_GUIDE.md`** - Complete Gold Tier guide (Ralph Wiggum)
+- **`gold/README.md`** - Gold Tier overview
+- **`gold/FACEBOOK_GUIDE.md`** - Facebook automation guide
+- **`gold/TWITTER_GUIDE.md`** - Twitter automation guide
+- **`gold/INSTAGRAM_GUIDE.md`** - Instagram automation guide
+
+### General Documentation
+
+- **`IMPLEMENTATION_COMPLETE.md`** - Complete implementation summary
+- **`QUICKSTART.md`** - This file (quick start guide)
+- **`Company_Handbook.md`** - AI behavior rules
+- **`Dashboard.md`** - Obsidian dashboard
 
 ### Agent Skills Documentation
 
@@ -902,34 +1006,54 @@ You now have everything you need to run your autonomous AI Employee 24/7!
 
 ### What You Can Do
 
-✅ **Monitor** Gmail, WhatsApp, LinkedIn automatically (every 2 minutes)
-✅ **Review** tasks in Obsidian dashboard
+**Silver Tier (24/7 Autonomous System):**
+✅ **Monitor** Gmail, WhatsApp automatically (every 30 seconds)
+✅ **Keyword filtering** - Only process priority messages (avoid folder chaos)
+✅ **AI Orchestrator** - Generates replies automatically (every 1 minute)
+✅ **Review** AI-generated replies in Obsidian Pending_Approval/
 ✅ **Approve** actions with human oversight (instant execution)
-✅ **Execute** approved actions automatically
+✅ **Execute** approved actions automatically (WhatsApp, Email, LinkedIn)
 ✅ **Track** all activity in logs
 ✅ **Auto-restart** on crash (cron health check every 5 minutes)
-✅ **Daily briefing** at 8:00 AM (automated)
+✅ **WhatsApp sync wait** - 30s wait ensures messages are detected
+
+**Gold Tier (Ralph Wiggum - Social Media):**
+✅ **Facebook** posting automation with Playwright
+✅ **Twitter** posting automation with Playwright
+✅ **Instagram** posting automation with Playwright
+✅ **Browser automation** - No API keys needed
+✅ **Session persistence** - Login once, use forever
 
 ### Next Steps
 
-1. **Run the complete workflow test** to see it in action
+1. **Start the daemon** for continuous operation
    ```bash
-   python silver/scripts/test_complete_workflow.py
-   ```
-
-2. **Start the daemon** for continuous operation
-   ```bash
+   cd /mnt/d/hamza/autonomous-ftes/AI_Employee_Vault
+   source silver/.venv/bin/activate
    python silver/scripts/run_daemon.py
    ```
 
-3. **Set up cron** for automatic startup and health checks
+2. **Open Obsidian** and watch the folders:
+   - `Needs_Action/` - Incoming messages (only priority with keywords)
+   - `Pending_Approval/` - AI-generated replies waiting for review
+   - `Approved/` - Drag files here to send
+   - `Done/` - Completed actions
+
+3. **Set up cron** for automatic startup and health checks (optional)
    ```bash
    crontab -e  # Add the cron entries from Option C
    ```
 
-4. **Customize** `Company_Handbook.md` with your rules
+4. **Customize keyword filtering** in `silver/config/watcher_config.yaml`
+   - Add your own priority keywords
+   - Enable/disable filtering
+   - Adjust case sensitivity
 
-5. **Explore** Gold Tier features (Odoo, social media, CEO briefing)
+5. **Explore Gold Tier** features (Facebook, Twitter, Instagram)
+   ```bash
+   python gold/scripts/setup_facebook.py
+   python gold/scripts/test_facebook.py
+   ```
 
 ### Production Deployment Summary
 
@@ -937,20 +1061,51 @@ Your AI Employee is now configured for **24/7 autonomous operation**:
 
 - 🤖 **Single daemon process** handles all monitoring and execution
 - 🔄 **Cron auto-restart** ensures 99.9% uptime
-- 📧 **Gmail monitoring** every 2 minutes
-- 💬 **WhatsApp monitoring** every 2 minutes
+- 📧 **Gmail monitoring** every 30 seconds (keyword filtering enabled)
+- 💬 **WhatsApp monitoring** every 30 seconds (30s sync wait + keyword filtering)
+- 🧠 **AI Orchestrator** generates replies every 1 minute
 - 🔵 **LinkedIn automation** with instant approval execution
-- 📊 **Daily briefing** generated at 8:00 AM
-- 📝 **Obsidian integration** for human-in-the-loop approval
+- 📊 **Obsidian integration** for human-in-the-loop approval
+- 🎯 **Keyword filtering** prevents folder chaos (133 messages → ~10-15 priority)
+- 🌐 **Gold Tier** social media automation (Facebook, Twitter, Instagram)
 
 **The system runs in the background. You only interact through Obsidian!**
+
+### Key Features Summary
+
+**Message Detection:**
+- Gmail: Checks every 30s, keyword filtering enabled
+- WhatsApp: Checks every 30s, 30s sync wait for large histories, keyword filtering enabled
+- Only messages with keywords like "urgent", "help", "fast" are processed
+
+**AI Reply Generation:**
+- Orchestrator runs every 1 minute
+- Generates contextual replies using Claude API
+- Creates approval files in Pending_Approval/
+
+**Human Approval:**
+- Review AI replies in Obsidian
+- Edit if needed
+- Drag to Approved/ to send
+
+**Automatic Execution:**
+- WhatsApp: Opens browser, waits for chat sync, sends message
+- Email: Sends via Gmail API
+- LinkedIn: Posts to feed
+- Facebook/Twitter/Instagram: Posts via browser automation (Gold Tier)
+
+**Response Time:**
+- Message detection: 0-30 seconds
+- AI reply generation: 0-60 seconds
+- Total: 30-90 seconds + your review time
 
 **Happy Automating!** 🚀
 
 ---
 
-*Last Updated: 2026-02-07*
-*Silver Tier Status: ✅ 100% Complete (with Cron Setup)*
+*Last Updated: 2026-02-14*
+*Silver Tier Status: ✅ 100% Complete (24/7 Autonomous System)*
+*Gold Tier Status: ✅ 100% Complete (Ralph Wiggum - Social Media)*
 *Architecture: Autonomous AI Employee with HITL Approval*
-*Deployment: Single Daemon Process with Cron Auto-Restart*
-*Key Features: Gmail, WhatsApp (with timing fix), LinkedIn, Obsidian integration, 24/7 operation*
+*Deployment: Single Daemon Process with Auto-Restart*
+*Key Features: Gmail, WhatsApp (with 30s sync wait), LinkedIn, Keyword Filtering, AI Orchestrator, Obsidian integration, 24/7 operation, Facebook, Twitter, Instagram*

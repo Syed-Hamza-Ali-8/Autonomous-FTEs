@@ -126,6 +126,11 @@ class WhatsAppSender:
                     if not delivered:
                         self.logger.warning("Could not confirm message delivery")
 
+                # Keep browser open for visual confirmation
+                verification_wait = 20
+                self.logger.info(f"✅ Message sent! Keeping browser open for {verification_wait}s so you can verify...")
+                time.sleep(verification_wait)
+
                 # Close browser
                 browser.close()
 
@@ -248,7 +253,7 @@ class WhatsAppSender:
             TimeoutError: If chat doesn't load in time
         """
         try:
-            self.logger.info("Waiting for chat to fully load (this may take 10-60 seconds)...")
+            self.logger.info("Waiting for chat to fully load (this may take 15-60 seconds)...")
 
             # Strategy 1: Wait for message input box to be ready
             # This indicates the chat UI is loaded
@@ -256,33 +261,42 @@ class WhatsAppSender:
             message_box.wait_for(state="visible", timeout=timeout * 1000)
             self.logger.info("✅ Message input box visible")
 
-            # Strategy 2: Wait for any loading indicators to disappear
-            # WhatsApp shows a progress bar or spinner while loading messages
-            time.sleep(2)  # Give time for loading indicators to appear if they will
+            # Strategy 2: MINIMUM WAIT TIME (15 seconds)
+            # WhatsApp Web needs time to sync messages even if no loading indicators are visible
+            # This is the most reliable approach for ensuring messages are delivered
+            min_wait = 15
+            self.logger.info(f"⏳ Waiting minimum {min_wait} seconds for chat sync...")
+            time.sleep(min_wait)
+            self.logger.info(f"✅ Minimum wait complete ({min_wait}s)")
 
-            # Check for common loading indicators
+            # Strategy 3: Check for loading indicators and wait if present
+            # WhatsApp shows a progress bar or spinner while loading messages
             loading_selectors = [
                 'div[role="progressbar"]',  # Progress bar
                 'span[data-icon="status-time"]',  # Clock icon (loading)
                 'div.progress-container',  # Progress container
+                'span[data-icon="msg-time"]',  # Message time (appears when syncing)
             ]
 
-            max_wait = 60  # Maximum 60 seconds for message sync
+            max_additional_wait = 45  # Maximum 45 additional seconds (total 60s with min_wait)
             start_time = time.time()
 
-            while time.time() - start_time < max_wait:
+            while time.time() - start_time < max_additional_wait:
                 # Check if any loading indicators are present
                 loading = False
                 for selector in loading_selectors:
                     try:
-                        if page.locator(selector).count() > 0:
+                        count = page.locator(selector).count()
+                        if count > 0:
                             loading = True
+                            self.logger.info(f"🔄 Loading indicator detected: {selector} (count: {count})")
                             break
                     except:
                         pass
 
                 if not loading:
                     # No loading indicators - chat is ready
+                    self.logger.info("✅ No loading indicators detected")
                     break
 
                 # Still loading - wait and check again
@@ -291,16 +305,18 @@ class WhatsAppSender:
                     self.logger.info(f"Chat still loading messages... ({elapsed}s elapsed)")
                 time.sleep(1)
 
-            # Strategy 3: Additional safety wait
+            # Strategy 4: Additional safety wait
             # Even after loading indicators disappear, give WhatsApp a moment to stabilize
-            time.sleep(3)
+            safety_wait = 5
+            self.logger.info(f"⏳ Safety wait ({safety_wait}s) to ensure chat is stable...")
+            time.sleep(safety_wait)
 
             # Verify message box is still ready
             if not message_box.is_visible():
                 raise ValueError("Message input box disappeared after loading")
 
-            elapsed = int(time.time() - start_time)
-            self.logger.info(f"✅ Chat fully loaded and ready to send ({elapsed}s)")
+            total_elapsed = min_wait + int(time.time() - start_time) + safety_wait
+            self.logger.info(f"✅ Chat fully loaded and ready to send (total wait: {total_elapsed}s)")
 
         except PlaywrightTimeout as e:
             self.logger.error(f"Timeout waiting for chat to load: {e}")
