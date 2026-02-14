@@ -78,7 +78,7 @@ class WhatsAppWatcher(BaseWatcher):
         self.SELECTORS = {
             "chat_list": 'div[aria-label="Chat list"]',
             "chat_item": 'div[role="listitem"]',
-            "unread_indicator": 'span[data-icon="unread-count"]',
+            "unread_indicator": '[aria-label*="unread"]',  # Lowercase! Matches "unread messages", "1 unread message", etc.
             "chat_name": 'span[title]',
             "message_container": 'div[data-testid="conversation-panel-messages"]',
             "message": 'div[data-testid="msg-container"]',
@@ -145,11 +145,26 @@ class WhatsAppWatcher(BaseWatcher):
                 unread_chats = self._get_unread_chats(page)
                 self.logger.info(f"Found {len(unread_chats)} unread chats")
 
-                # Process each unread chat
+                # Filter chats by keywords BEFORE opening them (efficiency!)
+                chats_to_process = []
+                for chat_info in unread_chats:
+                    chat_name = chat_info['name']
+                    preview_text = chat_info['preview']
+
+                    # Check if preview contains keywords
+                    if self._contains_keywords(preview_text):
+                        self.logger.info(f"✅ Chat '{chat_name}' contains keywords - will process")
+                        chats_to_process.append(chat_info)
+                    else:
+                        self.logger.info(f"⏭️  Chat '{chat_name}' has no keywords - skipping")
+
+                self.logger.info(f"Filtered to {len(chats_to_process)} chats with keywords (from {len(unread_chats)} total)")
+
+                # Process each filtered chat
                 max_results = self.config["whatsapp"]["max_results"]
-                for i, chat in enumerate(unread_chats[:max_results]):
+                for i, chat_info in enumerate(chats_to_process[:max_results]):
                     try:
-                        chat_messages = self._process_chat(page, chat)
+                        chat_messages = self._process_chat_by_name(page, chat_info['name'])
                         messages.extend(chat_messages)
                     except Exception as e:
                         self.logger.error(f"Failed to process chat {i}: {e}")
@@ -207,32 +222,108 @@ class WhatsAppWatcher(BaseWatcher):
             self.logger.error(f"Error checking login status: {e}")
             return False
 
-    def _get_unread_chats(self, page: Page) -> List[Any]:
+    def _get_unread_chats(self, page: Page) -> List[Dict[str, str]]:
         """
-        Get list of unread chats.
+        Get list of unread chats with their names and preview text.
 
         Args:
             page: Playwright page object
 
         Returns:
-            List of unread chat elements
+            List of dictionaries with 'name' and 'preview' keys
         """
         try:
-            # Find all chat items with unread indicator
-            chat_items = page.query_selector_all(self.SELECTORS["chat_item"])
+            # Find unread indicators first
+            unread_indicators = page.query_selector_all(self.SELECTORS["unread_indicator"])
+            self.logger.info(f"Found {len(unread_indicators)} unread indicators")
+
             unread_chats = []
+            seen_names = set()  # Avoid duplicates
 
-            for chat in chat_items:
-                # Check if chat has unread indicator
-                unread_indicator = chat.query_selector(self.SELECTORS["unread_indicator"])
-                if unread_indicator:
-                    unread_chats.append(chat)
+            for indicator in unread_indicators:
+                # Find the parent chat element to extract name and preview
+                chat_element = None
 
+                # Try to find the chat container
+                try:
+                    chat_element = indicator.evaluate_handle(
+                        'element => element.closest(\'div[role="listitem"]\')'
+                    ).as_element()
+                except:
+                    pass
+
+                if not chat_element:
+                    try:
+                        chat_element = indicator.evaluate_handle(
+                            'element => element.closest(\'div[tabindex="-1"]\')'
+                        ).as_element()
+                    except:
+                        pass
+
+                if chat_element:
+                    # Get chat name
+                    name_element = chat_element.query_selector(self.SELECTORS["chat_name"])
+                    chat_name = name_element.get_attribute('title') if name_element else None
+
+                    if chat_name and chat_name not in seen_names:
+                        # Get message preview
+                        preview_text = self._get_chat_preview(chat_element)
+
+                        unread_chats.append({
+                            'name': chat_name,
+                            'preview': preview_text
+                        })
+                        seen_names.add(chat_name)
+
+            self.logger.info(f"Found {len(unread_chats)} unique unread chats")
             return unread_chats
 
         except Exception as e:
             self.logger.error(f"Failed to get unread chats: {e}")
             return []
+
+    def _get_chat_preview(self, chat_element: Any) -> str:
+        """
+        Get message preview text from chat list (without opening the chat).
+
+        Args:
+            chat_element: Chat element from the chat list
+
+        Returns:
+            Preview text from the chat list
+        """
+        try:
+            # WhatsApp shows message preview in the chat list
+            # Try multiple selectors to find the preview text
+            preview_selectors = [
+                'span.selectable-text',  # Common text selector
+                'span[title]',           # Sometimes has full text in title
+                'div[dir="ltr"] span',   # Text direction wrapper
+                'span',                  # Fallback to any span
+            ]
+
+            preview_text = ""
+
+            for selector in preview_selectors:
+                elements = chat_element.query_selector_all(selector)
+                for elem in elements:
+                    text = elem.inner_text() if elem else ""
+                    if text and len(text) > len(preview_text):
+                        preview_text = text
+
+            # Also check title attributes which might have full text
+            title_elements = chat_element.query_selector_all('[title]')
+            for elem in title_elements:
+                title = elem.get_attribute('title') if elem else ""
+                if title and len(title) > len(preview_text):
+                    preview_text = title
+
+            self.logger.debug(f"Chat preview: {preview_text[:50]}...")
+            return preview_text
+
+        except Exception as e:
+            self.logger.error(f"Failed to get chat preview: {e}")
+            return ""
 
     def _process_chat(self, page: Page, chat_element: Any) -> List[Dict[str, Any]]:
         """
@@ -252,17 +343,22 @@ class WhatsAppWatcher(BaseWatcher):
             name_element = chat_element.query_selector(self.SELECTORS["chat_name"])
             chat_name = name_element.get_attribute('title') if name_element else "Unknown"
 
-            self.logger.debug(f"Processing chat: {chat_name}")
+            self.logger.info(f"Opening chat: {chat_name}")
 
             # Click to open chat
             chat_element.click()
-            page.wait_for_timeout(1000)  # Wait for chat to load
 
-            # Wait for message container
-            page.wait_for_selector(self.SELECTORS["message_container"], timeout=5000)
+            # Wait longer for chat to load (especially for large group chats)
+            self.logger.debug(f"Waiting for chat to load...")
+            page.wait_for_timeout(3000)  # Increased from 1s to 3s
+
+            # Wait for message container with longer timeout
+            self.logger.debug(f"Waiting for message container...")
+            page.wait_for_selector(self.SELECTORS["message_container"], timeout=15000)  # Increased from 5s to 15s
 
             # Get all messages in chat
             message_elements = page.query_selector_all(self.SELECTORS["message"])
+            self.logger.debug(f"Found {len(message_elements)} messages in chat")
 
             # Process recent messages (last 5)
             for msg_element in message_elements[-5:]:
@@ -273,10 +369,66 @@ class WhatsAppWatcher(BaseWatcher):
                 except Exception as e:
                     self.logger.error(f"Failed to extract message: {e}")
 
+            self.logger.info(f"✅ Processed {len(messages)} message(s) from {chat_name}")
             return messages
 
         except Exception as e:
             self.logger.error(f"Failed to process chat: {e}")
+            return []
+
+    def _process_chat_by_name(self, page: Page, chat_name: str) -> List[Dict[str, Any]]:
+        """
+        Process a chat by searching for it by name (more reliable than DOM elements).
+
+        Args:
+            page: Playwright page object
+            chat_name: Name of the chat to open
+
+        Returns:
+            List of message dictionaries
+        """
+        messages = []
+
+        try:
+            self.logger.info(f"Opening chat: {chat_name}")
+
+            # Find the chat by its title attribute (more reliable)
+            chat_selector = f'span[title="{chat_name}"]'
+            chat_title_element = page.query_selector(chat_selector)
+
+            if not chat_title_element:
+                self.logger.error(f"Could not find chat: {chat_name}")
+                return []
+
+            # Click on the chat title to open it
+            chat_title_element.click()
+
+            # Wait for chat to load
+            self.logger.debug(f"Waiting for chat to load...")
+            page.wait_for_timeout(3000)
+
+            # Wait for message container
+            self.logger.debug(f"Waiting for message container...")
+            page.wait_for_selector(self.SELECTORS["message_container"], timeout=15000)
+
+            # Get all messages in chat
+            message_elements = page.query_selector_all(self.SELECTORS["message"])
+            self.logger.debug(f"Found {len(message_elements)} messages in chat")
+
+            # Process recent messages (last 5)
+            for msg_element in message_elements[-5:]:
+                try:
+                    message_data = self._extract_message_data(msg_element, chat_name)
+                    if message_data:
+                        messages.append(message_data)
+                except Exception as e:
+                    self.logger.error(f"Failed to extract message: {e}")
+
+            self.logger.info(f"✅ Processed {len(messages)} message(s) from {chat_name}")
+            return messages
+
+        except Exception as e:
+            self.logger.error(f"Failed to process chat '{chat_name}': {e}")
             return []
 
     def _contains_keywords(self, text: str) -> bool:

@@ -13,8 +13,11 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
-# Gmail API scopes
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+# Gmail API scopes - need both read and send permissions
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',  # Read emails
+    'https://www.googleapis.com/auth/gmail.send'       # Send emails
+]
 
 
 def setup_gmail_credentials(vault_path: str) -> None:

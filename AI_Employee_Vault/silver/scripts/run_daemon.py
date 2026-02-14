@@ -46,7 +46,20 @@ class ApprovedFolderHandler(FileSystemEventHandler):
             return
 
         file_path = Path(event.src_path)
+        self._process_approval_file(file_path)
 
+    def on_moved(self, event):
+        """Handle files moved into Approved/ folder (drag & drop from Obsidian)."""
+        if event.is_directory:
+            return
+
+        # Check if file was moved INTO the Approved/ folder
+        dest_path = Path(event.dest_path)
+        if "Approved" in dest_path.parts:
+            self._process_approval_file(dest_path)
+
+    def _process_approval_file(self, file_path: Path):
+        """Process an approval file (common logic for created and moved files)."""
         # Only process approval files
         if not file_path.name.startswith("approval_"):
             return
@@ -164,6 +177,15 @@ class ApprovedFolderHandler(FileSystemEventHandler):
             # Extract recipient and message
             recipient = frontmatter.get('recipient') or frontmatter.get('sender')
 
+            # Parse phone number from "Name <phone>" format (if applicable)
+            if recipient and '<' in recipient and '>' in recipient:
+                import re
+                phone_match = re.search(r'<(.+?)>', recipient)
+                if phone_match:
+                    recipient = phone_match.group(1).strip()
+            elif recipient:
+                recipient = recipient.strip()
+
             # Extract reply message from body (look for "## Reply" section)
             if "## Reply" in body:
                 reply_section = body.split("## Reply")[1]
@@ -236,14 +258,48 @@ class ApprovedFolderHandler(FileSystemEventHandler):
 
             # Extract email details
             recipient = frontmatter.get('recipient') or frontmatter.get('sender')
+
+            # Parse email address from "Name <email>" format
+            if recipient and '<' in recipient and '>' in recipient:
+                import re
+                email_match = re.search(r'<(.+?)>', recipient)
+                if email_match:
+                    recipient = email_match.group(1).strip()
+            elif recipient:
+                # If no angle brackets, assume it's already just an email
+                recipient = recipient.strip()
+
             subject = frontmatter.get('reply_subject') or f"Re: {frontmatter.get('subject', 'Your message')}"
 
-            # Extract reply message from body
-            if "## Reply" in body:
+            # Extract reply message from body (support both formats)
+            reply_message = None
+
+            # Try "## Suggested Reply" first (orchestrator format)
+            if "## Suggested Reply" in body:
+                reply_section = body.split("## Suggested Reply")[1]
+                # Extract text until next ## heading or end
+                lines = reply_section.strip().split('\n')
+                reply_lines = []
+                for line in lines:
+                    if line.strip().startswith('##'):
+                        break
+                    reply_lines.append(line)
+                reply_message = '\n'.join(reply_lines).strip()
+
+            # Fallback to "## Reply" (original format)
+            elif "## Reply" in body:
                 reply_section = body.split("## Reply")[1]
-                reply_message = reply_section.strip().split('\n\n')[0].strip()
-            else:
+                lines = reply_section.strip().split('\n')
+                reply_lines = []
+                for line in lines:
+                    if line.strip().startswith('##'):
+                        break
+                    reply_lines.append(line)
+                reply_message = '\n'.join(reply_lines).strip()
+
+            if not reply_message:
                 print("❌ No reply message found in file")
+                print("   Expected '## Reply' or '## Suggested Reply' section")
                 return
 
             if not recipient or not reply_message:
@@ -350,6 +406,29 @@ class AIEmployeeDaemon:
         print(f"👀 Watching: {approved_dir}")
         print("   When you drag files to Approved/, they'll auto-execute!")
         print()
+
+        # Process any files that are already in Approved/ folder (startup scan)
+        self._process_existing_approvals(approved_dir)
+
+    def _process_existing_approvals(self, approved_dir: Path):
+        """Process any approval files that already exist in Approved/ folder."""
+        try:
+            # Find all approval files
+            approval_files = list(approved_dir.glob("approval_*.md"))
+
+            if approval_files:
+                print(f"🔍 Found {len(approval_files)} existing file(s) in Approved/ folder")
+                print("   Processing them now...")
+                print()
+
+                for file_path in approval_files:
+                    # Process each file using the handler
+                    self.approved_handler._process_approval_file(file_path)
+
+        except Exception as e:
+            self.logger.error(f"Failed to process existing approvals: {e}")
+            print(f"⚠️  Error processing existing files: {e}")
+            print()
 
     def check_gmail(self):
         """Check Gmail for new messages."""
