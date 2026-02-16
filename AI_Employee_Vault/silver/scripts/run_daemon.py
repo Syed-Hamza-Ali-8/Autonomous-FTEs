@@ -186,13 +186,35 @@ class ApprovedFolderHandler(FileSystemEventHandler):
             elif recipient:
                 recipient = recipient.strip()
 
-            # Extract reply message from body (look for "## Reply" section)
-            if "## Reply" in body:
+            # Extract reply message from body (support both formats)
+            reply_message = None
+
+            # Try "## Suggested Reply" first (orchestrator format)
+            if "## Suggested Reply" in body:
+                reply_section = body.split("## Suggested Reply")[1]
+                # Extract text until next ## heading or end
+                lines = reply_section.strip().split('\n')
+                reply_lines = []
+                for line in lines:
+                    if line.strip().startswith('##'):
+                        break
+                    reply_lines.append(line)
+                reply_message = '\n'.join(reply_lines).strip()
+
+            # Fallback to "## Reply" (original format)
+            elif "## Reply" in body:
                 reply_section = body.split("## Reply")[1]
-                # Get first paragraph after ## Reply
-                reply_message = reply_section.strip().split('\n\n')[0].strip()
-            else:
+                lines = reply_section.strip().split('\n')
+                reply_lines = []
+                for line in lines:
+                    if line.strip().startswith('##'):
+                        break
+                    reply_lines.append(line)
+                reply_message = '\n'.join(reply_lines).strip()
+
+            if not reply_message:
                 print("❌ No reply message found in file")
+                print("   Expected '## Reply' or '## Suggested Reply' section")
                 return
 
             if not recipient or not reply_message:
@@ -413,21 +435,31 @@ class AIEmployeeDaemon:
     def _process_existing_approvals(self, approved_dir: Path):
         """Process any approval files that already exist in Approved/ folder."""
         try:
+            # Debug: print the path being searched
+            print(f"🔍 Scanning for existing approvals in: {approved_dir}")
+
             # Find all approval files
             approval_files = list(approved_dir.glob("approval_*.md"))
 
+            print(f"   Found {len(approval_files)} approval file(s)")
+
             if approval_files:
-                print(f"🔍 Found {len(approval_files)} existing file(s) in Approved/ folder")
                 print("   Processing them now...")
                 print()
 
                 for file_path in approval_files:
+                    print(f"   Processing: {file_path.name}")
                     # Process each file using the handler
                     self.approved_handler._process_approval_file(file_path)
+            else:
+                print("   No existing approval files to process")
+            print()
 
         except Exception as e:
             self.logger.error(f"Failed to process existing approvals: {e}")
             print(f"⚠️  Error processing existing files: {e}")
+            import traceback
+            traceback.print_exc()
             print()
 
     def check_gmail(self):

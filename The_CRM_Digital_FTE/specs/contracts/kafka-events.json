@@ -1,0 +1,440 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kafka Event Schemas",
+  "description": "Message schemas for all Kafka topics in the Customer Success FTE system",
+  "definitions": {
+    "TicketIncomingEvent": {
+      "type": "object",
+      "title": "Ticket Incoming Event",
+      "description": "Unified event for incoming tickets from all channels (fte.tickets.incoming)",
+      "required": [
+        "channel",
+        "customer_email",
+        "content",
+        "received_at"
+      ],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "enum": ["email", "whatsapp", "web_form"],
+          "description": "Source channel"
+        },
+        "channel_message_id": {
+          "type": "string",
+          "description": "External message ID (Gmail message ID, Twilio SID, or ticket UUID)"
+        },
+        "customer_email": {
+          "type": "string",
+          "format": "email",
+          "description": "Customer email address (primary identifier)"
+        },
+        "customer_phone": {
+          "type": "string",
+          "description": "Customer phone number (for WhatsApp)",
+          "pattern": "^\\+[1-9]\\d{1,14}$"
+        },
+        "customer_name": {
+          "type": "string",
+          "description": "Customer name (if provided)"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Message subject (email and web form)"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000,
+          "description": "Message content"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["general", "technical", "billing", "feedback", "bug_report"],
+          "description": "Ticket category (web form only)"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "default": "medium",
+          "description": "Ticket priority"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when message was received"
+        },
+        "thread_id": {
+          "type": "string",
+          "description": "Email thread ID (for Gmail threading)"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Channel-specific metadata",
+          "properties": {
+            "headers": {
+              "type": "object",
+              "description": "Email headers (Gmail)"
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Gmail labels"
+            },
+            "num_media": {
+              "type": "string",
+              "description": "Number of media attachments (WhatsApp)"
+            },
+            "profile_name": {
+              "type": "string",
+              "description": "WhatsApp profile name"
+            },
+            "wa_id": {
+              "type": "string",
+              "description": "WhatsApp ID"
+            },
+            "form_version": {
+              "type": "string",
+              "description": "Web form version"
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Attachment URLs or base64 data"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "channel": "email",
+          "channel_message_id": "18d5e2f3a4b6c7d8",
+          "customer_email": "john.doe@example.com",
+          "customer_name": "John Doe",
+          "subject": "Password reset help",
+          "content": "I'm unable to reset my password. The reset link doesn't work.",
+          "priority": "medium",
+          "received_at": "2026-02-15T10:30:00Z",
+          "thread_id": "thread_abc123",
+          "metadata": {
+            "headers": {
+              "From": "John Doe <john.doe@example.com>",
+              "To": "support@techcorp.com"
+            },
+            "labels": ["INBOX", "UNREAD"]
+          }
+        },
+        {
+          "channel": "whatsapp",
+          "channel_message_id": "SM1234567890abcdef",
+          "customer_phone": "+15551234567",
+          "customer_name": "Jane Smith",
+          "content": "How do I export my data?",
+          "priority": "medium",
+          "received_at": "2026-02-15T11:45:00Z",
+          "metadata": {
+            "num_media": "0",
+            "profile_name": "Jane Smith",
+            "wa_id": "15551234567"
+          }
+        },
+        {
+          "channel": "web_form",
+          "channel_message_id": "550e8400-e29b-41d4-a716-446655440000",
+          "customer_email": "alice@example.com",
+          "customer_name": "Alice Johnson",
+          "subject": "Feature request",
+          "content": "It would be great if you could add dark mode to the app.",
+          "category": "feedback",
+          "priority": "low",
+          "received_at": "2026-02-15T14:20:00Z",
+          "metadata": {
+            "form_version": "1.0",
+            "attachments": []
+          }
+        }
+      ]
+    },
+    "EscalationEvent": {
+      "type": "object",
+      "title": "Escalation Event",
+      "description": "Event published when conversation is escalated to human (fte.escalations)",
+      "required": [
+        "event_type",
+        "ticket_id",
+        "customer_id",
+        "conversation_id",
+        "reason",
+        "escalated_at"
+      ],
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "const": "escalation",
+          "description": "Event type identifier"
+        },
+        "ticket_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Ticket UUID"
+        },
+        "customer_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Customer UUID"
+        },
+        "conversation_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Conversation UUID"
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["email", "whatsapp", "web_form"],
+          "description": "Current channel"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "pricing_inquiry",
+            "refund_request",
+            "legal_mention",
+            "negative_sentiment",
+            "profanity_detected",
+            "knowledge_search_failed",
+            "explicit_human_request",
+            "processing_error"
+          ],
+          "description": "Escalation reason"
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "critical"],
+          "default": "normal",
+          "description": "Escalation urgency"
+        },
+        "sentiment_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Customer sentiment score at escalation"
+        },
+        "conversation_summary": {
+          "type": "string",
+          "description": "Brief summary of conversation"
+        },
+        "full_context": {
+          "type": "object",
+          "description": "Complete conversation context",
+          "properties": {
+            "messages": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "customer_history": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "escalated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Escalation timestamp"
+        },
+        "requires_human": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether human intervention is required"
+        }
+      },
+      "examples": [
+        {
+          "event_type": "escalation",
+          "ticket_id": "990e8400-e29b-41d4-a716-446655440006",
+          "customer_id": "550e8400-e29b-41d4-a716-446655440000",
+          "conversation_id": "770e8400-e29b-41d4-a716-446655440003",
+          "channel": "email",
+          "reason": "pricing_inquiry",
+          "urgency": "normal",
+          "sentiment_score": 0.75,
+          "conversation_summary": "Customer asking about enterprise pricing",
+          "escalated_at": "2026-02-15T10:35:00Z",
+          "requires_human": true
+        }
+      ]
+    },
+    "MetricsEvent": {
+      "type": "object",
+      "title": "Metrics Event",
+      "description": "Performance metrics event (fte.metrics)",
+      "required": [
+        "event_type",
+        "metric_name",
+        "metric_value",
+        "timestamp"
+      ],
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "enum": ["message_processed", "escalation_triggered", "knowledge_search", "tool_execution"],
+          "description": "Type of metric event"
+        },
+        "metric_name": {
+          "type": "string",
+          "description": "Metric name"
+        },
+        "metric_value": {
+          "type": "number",
+          "description": "Metric value"
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["email", "whatsapp", "web_form"],
+          "description": "Channel (if channel-specific)"
+        },
+        "customer_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Customer UUID (if applicable)"
+        },
+        "conversation_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Conversation UUID (if applicable)"
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Processing latency in milliseconds"
+        },
+        "escalated": {
+          "type": "boolean",
+          "description": "Whether conversation was escalated"
+        },
+        "tool_calls_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tool calls made"
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "OpenAI tokens used"
+        },
+        "sentiment_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Sentiment score"
+        },
+        "dimensions": {
+          "type": "object",
+          "description": "Additional metric dimensions",
+          "additionalProperties": true
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Event timestamp"
+        }
+      },
+      "examples": [
+        {
+          "event_type": "message_processed",
+          "metric_name": "response_time_ms",
+          "metric_value": 1250,
+          "channel": "email",
+          "customer_id": "550e8400-e29b-41d4-a716-446655440000",
+          "conversation_id": "770e8400-e29b-41d4-a716-446655440003",
+          "latency_ms": 1250,
+          "escalated": false,
+          "tool_calls_count": 3,
+          "tokens_used": 450,
+          "sentiment_score": 0.85,
+          "timestamp": "2026-02-15T10:30:15Z"
+        }
+      ]
+    },
+    "DeadLetterQueueEvent": {
+      "type": "object",
+      "title": "Dead Letter Queue Event",
+      "description": "Failed message event (fte.dlq)",
+      "required": [
+        "original_topic",
+        "original_message",
+        "error",
+        "failed_at",
+        "retry_count"
+      ],
+      "properties": {
+        "original_topic": {
+          "type": "string",
+          "description": "Original Kafka topic"
+        },
+        "original_message": {
+          "type": "object",
+          "description": "Original message that failed"
+        },
+        "error": {
+          "type": "object",
+          "required": ["type", "message"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Error type"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "stack_trace": {
+              "type": "string",
+              "description": "Stack trace"
+            }
+          }
+        },
+        "failed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Failure timestamp"
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of retry attempts"
+        },
+        "requires_manual_intervention": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether manual intervention is needed"
+        }
+      },
+      "examples": [
+        {
+          "original_topic": "fte.tickets.incoming",
+          "original_message": {
+            "channel": "email",
+            "customer_email": "john.doe@example.com",
+            "content": "Help with password reset"
+          },
+          "error": {
+            "type": "DatabaseConnectionError",
+            "message": "Unable to connect to PostgreSQL",
+            "stack_trace": "Traceback (most recent call last)..."
+          },
+          "failed_at": "2026-02-15T10:30:00Z",
+          "retry_count": 3,
+          "requires_manual_intervention": true
+        }
+      ]
+    }
+  }
+}

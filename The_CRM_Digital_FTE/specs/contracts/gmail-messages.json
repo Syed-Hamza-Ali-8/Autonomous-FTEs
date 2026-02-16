@@ -1,0 +1,386 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gmail API Message Formats",
+  "description": "Message schemas for Gmail API integration",
+  "definitions": {
+    "GmailMessage": {
+      "type": "object",
+      "title": "Gmail Message",
+      "description": "Full Gmail message object from Gmail API",
+      "required": ["id", "threadId", "labelIds", "payload"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Gmail message ID",
+          "example": "18d5e2f3a4b6c7d8"
+        },
+        "threadId": {
+          "type": "string",
+          "description": "Gmail thread ID",
+          "example": "18d5e2f3a4b6c7d8"
+        },
+        "labelIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Gmail labels",
+          "example": ["INBOX", "UNREAD", "IMPORTANT"]
+        },
+        "snippet": {
+          "type": "string",
+          "description": "Message snippet (first ~200 chars)",
+          "example": "I'm having trouble resetting my password. The reset link doesn't work..."
+        },
+        "payload": {
+          "$ref": "#/definitions/GmailPayload"
+        },
+        "sizeEstimate": {
+          "type": "integer",
+          "description": "Estimated message size in bytes"
+        },
+        "historyId": {
+          "type": "string",
+          "description": "History ID for change tracking"
+        },
+        "internalDate": {
+          "type": "string",
+          "description": "Internal message date (milliseconds since epoch)",
+          "example": "1708000000000"
+        }
+      }
+    },
+    "GmailPayload": {
+      "type": "object",
+      "title": "Gmail Payload",
+      "description": "Gmail message payload containing headers and body",
+      "required": ["headers"],
+      "properties": {
+        "partId": {
+          "type": "string",
+          "description": "Part ID"
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type",
+          "example": "text/plain"
+        },
+        "filename": {
+          "type": "string",
+          "description": "Filename (for attachments)"
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GmailHeader"
+          },
+          "description": "Email headers"
+        },
+        "body": {
+          "$ref": "#/definitions/GmailBody"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GmailPayload"
+          },
+          "description": "Message parts (for multipart messages)"
+        }
+      }
+    },
+    "GmailHeader": {
+      "type": "object",
+      "title": "Gmail Header",
+      "description": "Email header key-value pair",
+      "required": ["name", "value"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Header name",
+          "example": "From"
+        },
+        "value": {
+          "type": "string",
+          "description": "Header value",
+          "example": "John Doe <john.doe@example.com>"
+        }
+      }
+    },
+    "GmailBody": {
+      "type": "object",
+      "title": "Gmail Body",
+      "description": "Email body content",
+      "properties": {
+        "size": {
+          "type": "integer",
+          "description": "Body size in bytes"
+        },
+        "data": {
+          "type": "string",
+          "description": "Base64url-encoded body content",
+          "example": "SSdtIGhhdmluZyB0cm91YmxlIHJlc2V0dGluZyBteSBwYXNzd29yZC4="
+        },
+        "attachmentId": {
+          "type": "string",
+          "description": "Attachment ID (for attachments)"
+        }
+      }
+    },
+    "GmailSendRequest": {
+      "type": "object",
+      "title": "Gmail Send Request",
+      "description": "Request to send email via Gmail API",
+      "required": ["raw"],
+      "properties": {
+        "raw": {
+          "type": "string",
+          "description": "Base64url-encoded RFC 2822 formatted message",
+          "example": "RnJvbTogc3VwcG9ydEB0ZWNoY29ycC5jb20KVG86IGpvaG4uZG9lQGV4YW1wbGUuY29tCg=="
+        },
+        "threadId": {
+          "type": "string",
+          "description": "Thread ID to reply to (optional)",
+          "example": "18d5e2f3a4b6c7d8"
+        }
+      }
+    },
+    "GmailSendResponse": {
+      "type": "object",
+      "title": "Gmail Send Response",
+      "description": "Response from Gmail API after sending",
+      "required": ["id", "threadId", "labelIds"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Sent message ID",
+          "example": "18d5e2f3a4b6c7d9"
+        },
+        "threadId": {
+          "type": "string",
+          "description": "Thread ID",
+          "example": "18d5e2f3a4b6c7d8"
+        },
+        "labelIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Labels applied to sent message",
+          "example": ["SENT"]
+        }
+      }
+    },
+    "GmailPubSubMessage": {
+      "type": "object",
+      "title": "Gmail Pub/Sub Message",
+      "description": "Pub/Sub notification from Gmail",
+      "required": ["emailAddress", "historyId"],
+      "properties": {
+        "emailAddress": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address that received the message",
+          "example": "support@techcorp.com"
+        },
+        "historyId": {
+          "type": "string",
+          "description": "History ID for fetching changes",
+          "example": "123456"
+        }
+      }
+    },
+    "GmailHistoryResponse": {
+      "type": "object",
+      "title": "Gmail History Response",
+      "description": "Response from Gmail history API",
+      "properties": {
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GmailHistoryRecord"
+          },
+          "description": "History records"
+        },
+        "nextPageToken": {
+          "type": "string",
+          "description": "Token for next page"
+        },
+        "historyId": {
+          "type": "string",
+          "description": "Current history ID"
+        }
+      }
+    },
+    "GmailHistoryRecord": {
+      "type": "object",
+      "title": "Gmail History Record",
+      "description": "Single history record",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "History record ID"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "messagesAdded": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "threadId": {
+                    "type": "string"
+                  },
+                  "labelIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ParsedGmailMessage": {
+      "type": "object",
+      "title": "Parsed Gmail Message",
+      "description": "Normalized Gmail message for internal use",
+      "required": ["channel", "channel_message_id", "customer_email", "content", "received_at"],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "const": "email",
+          "description": "Channel identifier"
+        },
+        "channel_message_id": {
+          "type": "string",
+          "description": "Gmail message ID",
+          "example": "18d5e2f3a4b6c7d8"
+        },
+        "customer_email": {
+          "type": "string",
+          "format": "email",
+          "description": "Sender email address",
+          "example": "john.doe@example.com"
+        },
+        "customer_name": {
+          "type": "string",
+          "description": "Sender name (extracted from From header)",
+          "example": "John Doe"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Email subject",
+          "example": "Help with password reset"
+        },
+        "content": {
+          "type": "string",
+          "description": "Email body (decoded)",
+          "example": "I'm having trouble resetting my password. The reset link doesn't work."
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when message was received",
+          "example": "2026-02-15T10:30:00Z"
+        },
+        "thread_id": {
+          "type": "string",
+          "description": "Gmail thread ID",
+          "example": "18d5e2f3a4b6c7d8"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional Gmail metadata",
+          "properties": {
+            "headers": {
+              "type": "object",
+              "description": "Parsed email headers",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "example": {
+                "From": "John Doe <john.doe@example.com>",
+                "To": "support@techcorp.com",
+                "Subject": "Help with password reset",
+                "Date": "Fri, 15 Feb 2026 10:30:00 +0000",
+                "Message-ID": "<abc123@mail.gmail.com>"
+              }
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Gmail labels",
+              "example": ["INBOX", "UNREAD"]
+            },
+            "has_attachments": {
+              "type": "boolean",
+              "description": "Whether email has attachments"
+            },
+            "attachment_count": {
+              "type": "integer",
+              "description": "Number of attachments"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": {
+    "incoming_email": {
+      "description": "Example of parsed incoming email ready for agent processing",
+      "value": {
+        "channel": "email",
+        "channel_message_id": "18d5e2f3a4b6c7d8",
+        "customer_email": "john.doe@example.com",
+        "customer_name": "John Doe",
+        "subject": "Help with password reset",
+        "content": "Hi,\n\nI'm having trouble resetting my password. When I click the reset link in the email, it says the link has expired. Can you help?\n\nThanks,\nJohn",
+        "received_at": "2026-02-15T10:30:00Z",
+        "thread_id": "18d5e2f3a4b6c7d8",
+        "metadata": {
+          "headers": {
+            "From": "John Doe <john.doe@example.com>",
+            "To": "support@techcorp.com",
+            "Subject": "Help with password reset",
+            "Date": "Fri, 15 Feb 2026 10:30:00 +0000"
+          },
+          "labels": ["INBOX", "UNREAD"],
+          "has_attachments": false,
+          "attachment_count": 0
+        }
+      }
+    },
+    "outgoing_email": {
+      "description": "Example of formatted email response",
+      "value": {
+        "to": "john.doe@example.com",
+        "subject": "Re: Help with password reset",
+        "body": "Dear John,\n\nThank you for reaching out to TechCorp Support.\n\nI understand you're having trouble with the password reset link. Password reset links expire after 1 hour for security reasons. To reset your password:\n\n1. Go to Settings > Security\n2. Click 'Reset Password'\n3. Enter your email address\n4. Check your email for a new reset link\n5. Click the link within 1 hour and create your new password\n\nIf you continue to have issues, please let me know and I'll be happy to help further.\n\nBest regards,\nTechCorp AI Support Team\n---\nTicket Reference: 990e8400-e29b-41d4-a716-446655440006\nThis response was generated by our AI assistant.",
+        "thread_id": "18d5e2f3a4b6c7d8"
+      }
+    }
+  }
+}

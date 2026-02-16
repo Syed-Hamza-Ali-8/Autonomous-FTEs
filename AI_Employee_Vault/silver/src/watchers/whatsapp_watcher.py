@@ -392,31 +392,121 @@ class WhatsAppWatcher(BaseWatcher):
         try:
             self.logger.info(f"Opening chat: {chat_name}")
 
-            # Find the chat by its title attribute (more reliable)
+            # Try multiple approaches to find and click the chat
+            chat_clicked = False
+
+            # Approach 1: Find by title attribute
             chat_selector = f'span[title="{chat_name}"]'
             chat_title_element = page.query_selector(chat_selector)
 
-            if not chat_title_element:
-                self.logger.error(f"Could not find chat: {chat_name}")
+            if chat_title_element:
+                self.logger.info(f"Found chat by title selector")
+                # Get the parent chat item (the clickable div)
+                chat_item = chat_title_element.evaluate_handle(
+                    'element => element.closest(\'div[role="listitem"]\')'
+                ).as_element()
+
+                if chat_item:
+                    self.logger.info(f"Found parent chat item, clicking...")
+                    chat_item.scroll_into_view_if_needed()
+                    page.wait_for_timeout(500)
+                    chat_item.click()
+                    chat_clicked = True
+                else:
+                    # Fallback: click the title element directly
+                    self.logger.info(f"Parent not found, clicking title directly...")
+                    chat_title_element.scroll_into_view_if_needed()
+                    page.wait_for_timeout(500)
+                    chat_title_element.click()
+                    chat_clicked = True
+
+            # Approach 2: Search by text content if title approach failed
+            if not chat_clicked:
+                self.logger.warning(f"Title selector failed, trying text search...")
+                # Use XPath to find by text content
+                xpath_selector = f'//span[@title="{chat_name}"]'
+                chat_element = page.query_selector(f'xpath={xpath_selector}')
+
+                if chat_element:
+                    self.logger.info(f"Found chat by XPath, clicking...")
+                    chat_element.scroll_into_view_if_needed()
+                    page.wait_for_timeout(500)
+                    chat_element.click()
+                    chat_clicked = True
+
+            if not chat_clicked:
+                self.logger.error(f"Could not find or click chat: {chat_name}")
                 return []
 
-            # Click on the chat title to open it
-            chat_title_element.click()
+            # Wait for chat to load (increased from 3s to 5s)
+            self.logger.info(f"Waiting for chat to load...")
+            page.wait_for_timeout(5000)
 
-            # Wait for chat to load
-            self.logger.debug(f"Waiting for chat to load...")
-            page.wait_for_timeout(3000)
+            # Check if we're actually in a chat by looking for the message input
+            message_input = page.query_selector('div[contenteditable="true"][data-tab="10"]')
+            if not message_input:
+                self.logger.error(f"Chat didn't open - message input not found")
+                return []
 
-            # Wait for message container
-            self.logger.debug(f"Waiting for message container...")
-            page.wait_for_selector(self.SELECTORS["message_container"], timeout=15000)
+            self.logger.info(f"Chat opened successfully!")
 
-            # Get all messages in chat
+            # Wait for message container with multiple fallback selectors
+            self.logger.info(f"Waiting for message container...")
+            try:
+                page.wait_for_selector(self.SELECTORS["message_container"], timeout=15000)
+            except Exception as e:
+                # Try alternative selector
+                self.logger.warning(f"Primary selector failed, trying alternative...")
+                try:
+                    page.wait_for_selector('div[role="application"]', timeout=10000)
+                except Exception as e2:
+                    # Last resort: just proceed if we have the message input
+                    self.logger.warning(f"Both selectors failed, but chat is open - proceeding...")
+                    pass
+
+            # Get all messages in chat - try multiple selectors
+            self.logger.info(f"Searching for messages...")
+
+            # Try primary selector
             message_elements = page.query_selector_all(self.SELECTORS["message"])
-            self.logger.debug(f"Found {len(message_elements)} messages in chat")
+            self.logger.info(f"Primary selector found {len(message_elements)} messages")
 
-            # Process recent messages (last 5)
-            for msg_element in message_elements[-5:]:
+            # If no messages found, try alternative selectors
+            if len(message_elements) == 0:
+                self.logger.warning(f"No messages with primary selector, trying alternatives...")
+
+                # Alternative 1: Any div with message-in or message-out class
+                message_elements = page.query_selector_all('div.message-in, div.message-out')
+                self.logger.info(f"Alternative 1 (message-in/out) found {len(message_elements)} messages")
+
+                # Alternative 2: Look for copyable text spans (actual message content)
+                if len(message_elements) == 0:
+                    message_elements = page.query_selector_all('span.selectable-text.copyable-text')
+                    self.logger.info(f"Alternative 2 (copyable-text) found {len(message_elements)} messages")
+
+                # Alternative 3: Look for any div in the conversation panel
+                if len(message_elements) == 0:
+                    # Get the conversation panel first
+                    conv_panel = page.query_selector('div[data-testid="conversation-panel-body"]')
+                    if conv_panel:
+                        message_elements = conv_panel.query_selector_all('div[class*="message"]')
+                        self.logger.info(f"Alternative 3 (conversation panel) found {len(message_elements)} messages")
+
+            if len(message_elements) == 0:
+                self.logger.error(f"Could not find any messages in chat with any selector")
+                # Take a screenshot for debugging
+                try:
+                    screenshot_path = f"/tmp/whatsapp_debug_{chat_name.replace(' ', '_')}.png"
+                    page.screenshot(path=screenshot_path)
+                    self.logger.info(f"Debug screenshot saved to: {screenshot_path}")
+                except:
+                    pass
+                return []
+
+            # Process recent messages (last 10 instead of 5 to catch older messages)
+            num_to_process = min(10, len(message_elements))
+            self.logger.info(f"Processing last {num_to_process} messages out of {len(message_elements)} total...")
+            for msg_element in message_elements[-num_to_process:]:
                 try:
                     message_data = self._extract_message_data(msg_element, chat_name)
                     if message_data:
@@ -471,9 +561,16 @@ class WhatsAppWatcher(BaseWatcher):
             Message dictionary or None if already processed or filtered out
         """
         try:
-            # Extract message text
+            # Extract message text - try multiple selectors
             text_element = message_element.query_selector(self.SELECTORS["message_text"])
-            message_text = text_element.inner_text() if text_element else ""
+            if not text_element:
+                # Try alternative: get all text from the message element
+                message_text = message_element.inner_text()
+            else:
+                message_text = text_element.inner_text()
+
+            # Log the extracted text for debugging
+            self.logger.info(f"Extracted text: '{message_text[:100]}...' (length: {len(message_text)})")
 
             # Extract timestamp
             time_element = message_element.query_selector(self.SELECTORS["message_time"])

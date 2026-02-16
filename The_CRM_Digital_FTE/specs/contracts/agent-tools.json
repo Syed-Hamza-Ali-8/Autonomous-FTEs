@@ -1,0 +1,435 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Function Tools Contracts",
+  "description": "Input/output schemas for all OpenAI Agent function tools",
+  "definitions": {
+    "SearchKnowledgeBaseInput": {
+      "type": "object",
+      "title": "Search Knowledge Base Input",
+      "description": "Input schema for search_knowledge_base tool",
+      "required": ["query"],
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Search query text"
+        },
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5,
+          "description": "Maximum number of results to return"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["authentication", "billing", "features", "integrations", "mobile", "api", "general"],
+          "description": "Optional category filter"
+        }
+      },
+      "examples": [
+        {
+          "query": "how to reset password",
+          "max_results": 5
+        },
+        {
+          "query": "API rate limits",
+          "max_results": 3,
+          "category": "api"
+        }
+      ]
+    },
+    "SearchKnowledgeBaseOutput": {
+      "type": "string",
+      "description": "Formatted search results with relevance scores",
+      "examples": [
+        "**Password Reset Guide** (relevance: 0.92)\nTo reset your password: 1. Go to Settings > Security. 2. Click 'Reset Password'...\n\n---\n\n**Account Security Best Practices** (relevance: 0.78)\nKeep your account secure by using a strong password..."
+      ]
+    },
+    "CreateTicketInput": {
+      "type": "object",
+      "title": "Create Ticket Input",
+      "description": "Input schema for create_ticket tool",
+      "required": ["customer_id", "issue", "priority", "channel"],
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Customer UUID"
+        },
+        "issue": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Brief description of the issue"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Ticket priority"
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["email", "whatsapp", "web_form"],
+          "description": "Source channel"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["general", "technical", "billing", "feedback", "bug_report"],
+          "description": "Optional ticket category"
+        }
+      },
+      "examples": [
+        {
+          "customer_id": "550e8400-e29b-41d4-a716-446655440000",
+          "issue": "Customer unable to reset password",
+          "priority": "medium",
+          "channel": "email",
+          "category": "technical"
+        }
+      ]
+    },
+    "CreateTicketOutput": {
+      "type": "string",
+      "description": "Confirmation message with ticket ID",
+      "pattern": "^Ticket created: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "examples": [
+        "Ticket created: 990e8400-e29b-41d4-a716-446655440006"
+      ]
+    },
+    "GetCustomerHistoryInput": {
+      "type": "object",
+      "title": "Get Customer History Input",
+      "description": "Input schema for get_customer_history tool",
+      "required": ["customer_id"],
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Customer UUID"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 20,
+          "description": "Maximum number of messages to retrieve"
+        },
+        "include_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["email", "whatsapp", "web_form"]
+          },
+          "description": "Filter by specific channels (default: all)"
+        }
+      },
+      "examples": [
+        {
+          "customer_id": "550e8400-e29b-41d4-a716-446655440000",
+          "limit": 20
+        },
+        {
+          "customer_id": "550e8400-e29b-41d4-a716-446655440000",
+          "limit": 10,
+          "include_channels": ["email", "whatsapp"]
+        }
+      ]
+    },
+    "GetCustomerHistoryOutput": {
+      "type": "string",
+      "description": "Formatted customer history across all channels",
+      "examples": [
+        "Customer History for john.doe@example.com:\n\n**Previous Conversation (Email) - 2026-02-14**\nCustomer: How do I export my data?\nAgent: To export your data, go to Settings > Data Export...\nStatus: Resolved\n\n**Previous Conversation (WhatsApp) - 2026-02-13**\nCustomer: Is there a mobile app?\nAgent: Yes, we have iOS and Android apps...\nStatus: Resolved"
+      ]
+    },
+    "EscalateToHumanInput": {
+      "type": "object",
+      "title": "Escalate to Human Input",
+      "description": "Input schema for escalate_to_human tool",
+      "required": ["ticket_id", "reason"],
+      "properties": {
+        "ticket_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Ticket UUID"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "pricing_inquiry",
+            "refund_request",
+            "legal_mention",
+            "negative_sentiment",
+            "profanity_detected",
+            "knowledge_search_failed",
+            "explicit_human_request"
+          ],
+          "description": "Escalation reason"
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "critical"],
+          "default": "normal",
+          "description": "Escalation urgency"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Additional notes for human agent"
+        }
+      },
+      "examples": [
+        {
+          "ticket_id": "990e8400-e29b-41d4-a716-446655440006",
+          "reason": "pricing_inquiry",
+          "urgency": "normal",
+          "notes": "Customer asking about enterprise plan pricing"
+        },
+        {
+          "ticket_id": "990e8400-e29b-41d4-a716-446655440007",
+          "reason": "negative_sentiment",
+          "urgency": "high",
+          "notes": "Customer very frustrated, sentiment score 0.15"
+        }
+      ]
+    },
+    "EscalateToHumanOutput": {
+      "type": "string",
+      "description": "Confirmation message with escalation reference",
+      "examples": [
+        "Escalated to human support. Reference: 990e8400-e29b-41d4-a716-446655440006"
+      ]
+    },
+    "SendResponseInput": {
+      "type": "object",
+      "title": "Send Response Input",
+      "description": "Input schema for send_response tool",
+      "required": ["ticket_id", "message", "channel"],
+      "properties": {
+        "ticket_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Ticket UUID"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000,
+          "description": "Response message (will be formatted for channel)"
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["email", "whatsapp", "web_form"],
+          "description": "Target channel"
+        },
+        "include_ticket_reference": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to include ticket reference in response"
+        }
+      },
+      "examples": [
+        {
+          "ticket_id": "990e8400-e29b-41d4-a716-446655440006",
+          "message": "To reset your password, go to Settings > Security > Reset Password. You'll receive an email with a reset link.",
+          "channel": "email"
+        },
+        {
+          "ticket_id": "990e8400-e29b-41d4-a716-446655440007",
+          "message": "Yes, we have mobile apps for iOS and Android. Download from App Store or Google Play.",
+          "channel": "whatsapp"
+        }
+      ]
+    },
+    "SendResponseOutput": {
+      "type": "string",
+      "description": "Confirmation message with delivery status",
+      "examples": [
+        "Response sent via email: sent",
+        "Response sent via whatsapp: delivered",
+        "Response sent via web_form: pending"
+      ]
+    },
+    "ToolExecutionContext": {
+      "type": "object",
+      "title": "Tool Execution Context",
+      "description": "Context available to all tools during execution",
+      "required": ["customer_id", "conversation_id", "channel"],
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Customer UUID"
+        },
+        "conversation_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Conversation UUID"
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["email", "whatsapp", "web_form"],
+          "description": "Current channel"
+        },
+        "ticket_subject": {
+          "type": "string",
+          "description": "Ticket subject/topic"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional context metadata",
+          "properties": {
+            "customer_email": {
+              "type": "string",
+              "format": "email"
+            },
+            "customer_phone": {
+              "type": "string"
+            },
+            "customer_name": {
+              "type": "string"
+            },
+            "thread_id": {
+              "type": "string",
+              "description": "Email thread ID (if applicable)"
+            },
+            "channel_message_id": {
+              "type": "string",
+              "description": "External message ID"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "customer_id": "550e8400-e29b-41d4-a716-446655440000",
+          "conversation_id": "770e8400-e29b-41d4-a716-446655440003",
+          "channel": "email",
+          "ticket_subject": "Password reset help",
+          "metadata": {
+            "customer_email": "john.doe@example.com",
+            "customer_name": "John Doe",
+            "thread_id": "thread_abc123"
+          }
+        }
+      ]
+    },
+    "ToolCallResult": {
+      "type": "object",
+      "title": "Tool Call Result",
+      "description": "Result of a tool execution (stored in messages table)",
+      "required": ["tool_name", "input", "output", "success"],
+      "properties": {
+        "tool_name": {
+          "type": "string",
+          "enum": [
+            "search_knowledge_base",
+            "create_ticket",
+            "get_customer_history",
+            "escalate_to_human",
+            "send_response"
+          ],
+          "description": "Name of the tool that was called"
+        },
+        "input": {
+          "type": "object",
+          "description": "Tool input parameters"
+        },
+        "output": {
+          "type": "string",
+          "description": "Tool output/result"
+        },
+        "success": {
+          "type": "boolean",
+          "description": "Whether tool execution succeeded"
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if tool failed"
+        },
+        "execution_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tool execution time in milliseconds"
+        }
+      },
+      "examples": [
+        {
+          "tool_name": "search_knowledge_base",
+          "input": {
+            "query": "password reset",
+            "max_results": 5
+          },
+          "output": "**Password Reset Guide** (relevance: 0.92)...",
+          "success": true,
+          "execution_time_ms": 150
+        },
+        {
+          "tool_name": "send_response",
+          "input": {
+            "ticket_id": "990e8400-e29b-41d4-a716-446655440006",
+            "message": "To reset your password...",
+            "channel": "email"
+          },
+          "output": "Response sent via email: sent",
+          "success": true,
+          "execution_time_ms": 450
+        }
+      ]
+    }
+  },
+  "tools": {
+    "search_knowledge_base": {
+      "name": "search_knowledge_base",
+      "description": "Search product documentation for relevant information. Use this when the customer asks questions about product features, how to use something, or needs technical information.",
+      "input_schema": {
+        "$ref": "#/definitions/SearchKnowledgeBaseInput"
+      },
+      "output_schema": {
+        "$ref": "#/definitions/SearchKnowledgeBaseOutput"
+      }
+    },
+    "create_ticket": {
+      "name": "create_ticket",
+      "description": "Create a support ticket for tracking. ALWAYS create a ticket at the start of every conversation. Include the source channel for proper tracking.",
+      "input_schema": {
+        "$ref": "#/definitions/CreateTicketInput"
+      },
+      "output_schema": {
+        "$ref": "#/definitions/CreateTicketOutput"
+      }
+    },
+    "get_customer_history": {
+      "name": "get_customer_history",
+      "description": "Get customer's complete interaction history across ALL channels. Use this to understand context from previous conversations, even if they happened on a different channel.",
+      "input_schema": {
+        "$ref": "#/definitions/GetCustomerHistoryInput"
+      },
+      "output_schema": {
+        "$ref": "#/definitions/GetCustomerHistoryOutput"
+      }
+    },
+    "escalate_to_human": {
+      "name": "escalate_to_human",
+      "description": "Escalate conversation to human support. Use this when: customer asks about pricing or refunds, customer sentiment is negative, you cannot find relevant information, or customer explicitly requests human help.",
+      "input_schema": {
+        "$ref": "#/definitions/EscalateToHumanInput"
+      },
+      "output_schema": {
+        "$ref": "#/definitions/EscalateToHumanOutput"
+      }
+    },
+    "send_response": {
+      "name": "send_response",
+      "description": "Send response to customer via their preferred channel. The response will be automatically formatted for the channel (Email: formal with greeting/signature, WhatsApp: concise and conversational, Web: semi-formal).",
+      "input_schema": {
+        "$ref": "#/definitions/SendResponseInput"
+      },
+      "output_schema": {
+        "$ref": "#/definitions/SendResponseOutput"
+      }
+    }
+  }
+}

@@ -1,0 +1,519 @@
+{
+  "sample_tickets": [
+    {
+      "id": "email_001",
+      "channel": "email",
+      "from": "john.doe@example.com",
+      "subject": "Password reset link not working",
+      "body": "Hi,\n\nI've been trying to reset my password for the past hour, but the reset link I received doesn't work. When I click it, I get an error saying the link has expired. I've tried requesting a new link three times now, but the same thing keeps happening.\n\nThis is really frustrating because I need to access my account urgently to check on a project deadline.\n\nCan you please help?\n\nThanks,\nJohn Doe",
+      "timestamp": "2026-02-15T09:30:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "email_002",
+      "channel": "email",
+      "from": "sarah.chen@startup.io",
+      "subject": "How to export project data?",
+      "body": "Hello,\n\nI need to export all data from one of my projects including tasks, time entries, and comments. I looked through the documentation but couldn't find clear instructions on how to do this.\n\nCould you please guide me through the process?\n\nBest regards,\nSarah Chen",
+      "timestamp": "2026-02-15T10:15:00Z",
+      "priority": "medium",
+      "category": "feature_question"
+    },
+    {
+      "id": "email_003",
+      "channel": "email",
+      "from": "mike.johnson@techstartup.com",
+      "subject": "Billing question - charged twice",
+      "body": "Hi Support Team,\n\nI just noticed that I was charged twice for my Professional plan subscription this month. I see two charges of $240 on my credit card statement, both dated February 1st.\n\nThis appears to be an error. Can you please investigate and refund the duplicate charge?\n\nAccount email: mike.johnson@techstartup.com\n\nThank you,\nMike Johnson",
+      "timestamp": "2026-02-15T11:00:00Z",
+      "priority": "high",
+      "category": "billing"
+    },
+    {
+      "id": "email_004",
+      "channel": "email",
+      "from": "lisa.martinez@agency.com",
+      "subject": "Slack integration not sending notifications",
+      "body": "Hi,\n\nI set up the Slack integration yesterday following the instructions in your help center, but I'm not receiving any notifications in our Slack channel. I've double-checked the settings and everything looks correct.\n\nCan you help me troubleshoot this?\n\nThanks,\nLisa Martinez",
+      "timestamp": "2026-02-15T11:45:00Z",
+      "priority": "medium",
+      "category": "integration"
+    },
+    {
+      "id": "email_005",
+      "channel": "email",
+      "from": "david.kim@enterprise.com",
+      "subject": "Enterprise plan pricing inquiry",
+      "body": "Hello,\n\nWe're currently on the Professional plan with 50 users, but we're growing rapidly and expect to have 200+ users by the end of the quarter.\n\nCould you please provide information about Enterprise plan pricing and features? We're particularly interested in:\n- SSO integration\n- Dedicated support\n- Custom SLA\n- Advanced security features\n\nWould it be possible to schedule a call to discuss our needs?\n\nBest regards,\nDavid Kim\nCTO, Enterprise Solutions Inc.",
+      "timestamp": "2026-02-15T12:30:00Z",
+      "priority": "high",
+      "category": "sales"
+    },
+    {
+      "id": "email_006",
+      "channel": "email",
+      "from": "emma.wilson@design.studio",
+      "subject": "Mobile app keeps crashing on iOS",
+      "body": "Hi,\n\nThe TaskFlow Pro iOS app has been crashing constantly on my iPhone 14 Pro. It happens whenever I try to open a task with attachments. I've tried:\n- Restarting my phone\n- Reinstalling the app\n- Clearing the cache\n\nNothing works. I'm running iOS 17.3. This is making it impossible to work on the go.\n\nPlease help!\n\nEmma Wilson",
+      "timestamp": "2026-02-15T13:15:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "email_007",
+      "channel": "email",
+      "from": "robert.brown@consulting.com",
+      "subject": "How to set up recurring tasks?",
+      "body": "Hello,\n\nI need to create tasks that repeat every week (weekly team meetings, status reports, etc.). I see there's a recurring task feature, but I'm not sure how to set it up.\n\nCould you provide step-by-step instructions?\n\nThank you,\nRobert Brown",
+      "timestamp": "2026-02-15T14:00:00Z",
+      "priority": "low",
+      "category": "feature_question"
+    },
+    {
+      "id": "email_008",
+      "channel": "email",
+      "from": "jennifer.lee@marketing.agency",
+      "subject": "Cannot invite team members",
+      "body": "Hi,\n\nI'm trying to invite new team members to our workspace, but when I enter their email addresses and click 'Send Invite', nothing happens. No error message, no confirmation - just nothing.\n\nI'm using Chrome on Windows 11. Is this a known issue?\n\nJennifer Lee",
+      "timestamp": "2026-02-15T14:45:00Z",
+      "priority": "medium",
+      "category": "technical"
+    },
+    {
+      "id": "email_009",
+      "channel": "email",
+      "from": "alex.thompson@startup.io",
+      "subject": "Feature request: Dark mode",
+      "body": "Hey TaskFlow team,\n\nI love your product, but I really wish there was a dark mode option. I work late hours and the bright white interface is hard on my eyes.\n\nAre there any plans to add dark mode in the near future?\n\nThanks,\nAlex Thompson",
+      "timestamp": "2026-02-15T15:30:00Z",
+      "priority": "low",
+      "category": "feature_request"
+    },
+    {
+      "id": "email_010",
+      "channel": "email",
+      "from": "maria.garcia@nonprofit.org",
+      "subject": "Downgrade to Free plan",
+      "body": "Hello,\n\nDue to budget constraints, we need to downgrade from our Starter plan to the Free plan. How do I do this? Will we lose any data?\n\nAlso, when will the downgrade take effect?\n\nThank you,\nMaria Garcia",
+      "timestamp": "2026-02-15T16:00:00Z",
+      "priority": "medium",
+      "category": "billing"
+    },
+    {
+      "id": "email_011",
+      "channel": "email",
+      "from": "chris.anderson@tech.com",
+      "subject": "Time tracking not syncing",
+      "body": "Hi Support,\n\nI've been tracking time on tasks using the mobile app, but when I check on the web version, the time entries aren't showing up. This has been happening for the past 3 days.\n\nI need accurate time tracking for client billing. Please help resolve this ASAP.\n\nChris Anderson",
+      "timestamp": "2026-02-15T16:45:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "email_012",
+      "channel": "email",
+      "from": "nicole.white@agency.com",
+      "subject": "How to use Gantt chart view?",
+      "body": "Hello,\n\nI just upgraded to the Professional plan to get access to the Gantt chart feature. However, I'm not sure how to use it effectively. Could you provide some guidance or point me to a tutorial?\n\nThanks,\nNicole White",
+      "timestamp": "2026-02-15T17:30:00Z",
+      "priority": "low",
+      "category": "feature_question"
+    },
+    {
+      "id": "email_013",
+      "channel": "email",
+      "from": "kevin.davis@startup.com",
+      "subject": "API rate limit exceeded",
+      "body": "Hi,\n\nWe're getting 'rate limit exceeded' errors when calling your API. We're on the Professional plan which should allow 10,000 requests/hour, but we're only making about 5,000 requests/hour.\n\nCan you check if there's an issue with our account?\n\nKevin Davis\nLead Developer",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "email_014",
+      "channel": "email",
+      "from": "amanda.rodriguez@design.co",
+      "subject": "Cannot upload files larger than 50MB",
+      "body": "Hello,\n\nI'm trying to upload design files to a task, but I keep getting an error saying the file is too large. The file is 75MB, and according to your documentation, the limit should be 100MB.\n\nWhat's going on?\n\nAmanda Rodriguez",
+      "timestamp": "2026-02-15T18:45:00Z",
+      "priority": "medium",
+      "category": "technical"
+    },
+    {
+      "id": "email_015",
+      "channel": "email",
+      "from": "brian.taylor@consulting.com",
+      "subject": "Request for refund",
+      "body": "Hi,\n\nI signed up for the Professional plan 3 days ago, but after trying it out, I've decided it's not the right fit for our team. Can I get a refund?\n\nI understand you have a 14-day trial, but I was charged immediately upon signup.\n\nBrian Taylor",
+      "timestamp": "2026-02-15T19:30:00Z",
+      "priority": "high",
+      "category": "billing"
+    },
+    {
+      "id": "email_016",
+      "channel": "email",
+      "from": "stephanie.moore@agency.com",
+      "subject": "GitHub integration setup help",
+      "body": "Hi,\n\nI'm trying to set up the GitHub integration, but I'm stuck at the authorization step. When I click 'Authorize', I get redirected to GitHub, but then nothing happens.\n\nCan you help me troubleshoot?\n\nStephanie Moore",
+      "timestamp": "2026-02-15T20:00:00Z",
+      "priority": "medium",
+      "category": "integration"
+    },
+    {
+      "id": "email_017",
+      "channel": "email",
+      "from": "daniel.jackson@startup.io",
+      "subject": "How to archive completed projects?",
+      "body": "Hello,\n\nWe have several completed projects that are cluttering our workspace. How can we archive them so they don't show up in the main project list but are still accessible if needed?\n\nThanks,\nDaniel Jackson",
+      "timestamp": "2026-02-15T20:45:00Z",
+      "priority": "low",
+      "category": "feature_question"
+    },
+    {
+      "id": "email_018",
+      "channel": "email",
+      "from": "rachel.green@marketing.com",
+      "subject": "Email notifications too frequent",
+      "body": "Hi,\n\nI'm getting way too many email notifications from TaskFlow Pro - every comment, every task update, every mention. It's overwhelming my inbox.\n\nHow can I reduce the frequency or customize which notifications I receive?\n\nRachel Green",
+      "timestamp": "2026-02-15T21:30:00Z",
+      "priority": "low",
+      "category": "feature_question"
+    },
+    {
+      "id": "email_019",
+      "channel": "email",
+      "from": "thomas.harris@enterprise.com",
+      "subject": "SSO integration for Enterprise plan",
+      "body": "Hello,\n\nWe're interested in upgrading to the Enterprise plan primarily for SSO integration. We use Okta for identity management.\n\nCan you provide details on:\n1. SSO setup process\n2. Supported identity providers\n3. Implementation timeline\n4. Any additional costs\n\nThomas Harris\nIT Director",
+      "timestamp": "2026-02-15T22:00:00Z",
+      "priority": "medium",
+      "category": "sales"
+    },
+    {
+      "id": "email_020",
+      "channel": "email",
+      "from": "laura.martinez@design.studio",
+      "subject": "Account locked after failed login attempts",
+      "body": "Hi,\n\nMy account has been locked after I entered the wrong password a few times (I recently changed it and forgot the new one). How long until it unlocks? I need to access my account urgently.\n\nLaura Martinez",
+      "timestamp": "2026-02-15T22:45:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "whatsapp_001",
+      "channel": "whatsapp",
+      "from": "+14155551001",
+      "customer_name": "John Smith",
+      "body": "Hi! Quick question - how do I change my email address in my account settings?",
+      "timestamp": "2026-02-15T09:00:00Z",
+      "priority": "medium",
+      "category": "feature_question"
+    },
+    {
+      "id": "whatsapp_002",
+      "channel": "whatsapp",
+      "from": "+14155551002",
+      "customer_name": "Sarah Johnson",
+      "body": "The app isn't loading on my phone. Just shows a blank screen. Help!",
+      "timestamp": "2026-02-15T10:30:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "whatsapp_003",
+      "channel": "whatsapp",
+      "from": "+14155551003",
+      "customer_name": "Mike Chen",
+      "body": "Can I upgrade to Professional plan? What's the price for 10 users?",
+      "timestamp": "2026-02-15T11:15:00Z",
+      "priority": "medium",
+      "category": "billing"
+    },
+    {
+      "id": "whatsapp_004",
+      "channel": "whatsapp",
+      "from": "+14155551004",
+      "customer_name": "Emily Davis",
+      "body": "How do I create a recurring task? Need it to repeat every Monday.",
+      "timestamp": "2026-02-15T12:00:00Z",
+      "priority": "low",
+      "category": "feature_question"
+    },
+    {
+      "id": "whatsapp_005",
+      "channel": "whatsapp",
+      "from": "+14155551005",
+      "customer_name": "David Wilson",
+      "body": "I forgot my password and the reset link expired. Can you send a new one?",
+      "timestamp": "2026-02-15T13:30:00Z",
+      "priority": "medium",
+      "category": "technical"
+    },
+    {
+      "id": "whatsapp_006",
+      "channel": "whatsapp",
+      "from": "+14155551006",
+      "customer_name": "Lisa Brown",
+      "body": "Is there a dark mode? The white background hurts my eyes at night 😅",
+      "timestamp": "2026-02-15T14:15:00Z",
+      "priority": "low",
+      "category": "feature_request"
+    },
+    {
+      "id": "whatsapp_007",
+      "channel": "whatsapp",
+      "from": "+14155551007",
+      "customer_name": "Robert Taylor",
+      "body": "Time tracking isn't working. Timer starts but doesn't save. Bug?",
+      "timestamp": "2026-02-15T15:00:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "whatsapp_008",
+      "channel": "whatsapp",
+      "from": "+14155551008",
+      "customer_name": "Jennifer Lee",
+      "body": "How do I export my project data to Excel?",
+      "timestamp": "2026-02-15T16:00:00Z",
+      "priority": "medium",
+      "category": "feature_question"
+    },
+    {
+      "id": "whatsapp_009",
+      "channel": "whatsapp",
+      "from": "+14155551009",
+      "customer_name": "Chris Anderson",
+      "body": "Can I cancel my subscription? Not using it much anymore.",
+      "timestamp": "2026-02-15T17:00:00Z",
+      "priority": "medium",
+      "category": "billing"
+    },
+    {
+      "id": "whatsapp_010",
+      "channel": "whatsapp",
+      "from": "+14155551010",
+      "customer_name": "Amanda White",
+      "body": "Slack integration not working. No notifications coming through.",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "priority": "medium",
+      "category": "integration"
+    },
+    {
+      "id": "whatsapp_011",
+      "channel": "whatsapp",
+      "from": "+14155551011",
+      "customer_name": "Kevin Martinez",
+      "body": "What's the file size limit for uploads?",
+      "timestamp": "2026-02-15T19:00:00Z",
+      "priority": "low",
+      "category": "feature_question"
+    },
+    {
+      "id": "whatsapp_012",
+      "channel": "whatsapp",
+      "from": "+14155551012",
+      "customer_name": "Nicole Garcia",
+      "body": "How do I invite team members to my workspace?",
+      "timestamp": "2026-02-15T20:00:00Z",
+      "priority": "low",
+      "category": "feature_question"
+    },
+    {
+      "id": "whatsapp_013",
+      "channel": "whatsapp",
+      "from": "+14155551013",
+      "customer_name": "Brian Rodriguez",
+      "body": "App keeps crashing when I open tasks with images. iPhone 14.",
+      "timestamp": "2026-02-15T21:00:00Z",
+      "priority": "high",
+      "category": "technical"
+    },
+    {
+      "id": "whatsapp_014",
+      "channel": "whatsapp",
+      "from": "+14155551014",
+      "customer_name": "Stephanie Moore",
+      "body": "Do you have an API? Need to integrate with our internal tools.",
+      "timestamp": "2026-02-15T22:00:00Z",
+      "priority": "medium",
+      "category": "feature_question"
+    },
+    {
+      "id": "whatsapp_015",
+      "channel": "whatsapp",
+      "from": "+14155551015",
+      "customer_name": "Daniel Jackson",
+      "body": "Thanks for the help yesterday! Everything working now 👍",
+      "timestamp": "2026-02-15T23:00:00Z",
+      "priority": "low",
+      "category": "feedback"
+    },
+    {
+      "id": "web_001",
+      "channel": "web_form",
+      "from": "alex.thompson@startup.com",
+      "customer_name": "Alex Thompson",
+      "subject": "Cannot access my account",
+      "body": "I've been trying to log in for the past hour but keep getting an 'invalid credentials' error. I'm sure my password is correct. Can you help me regain access?",
+      "category": "technical",
+      "timestamp": "2026-02-15T09:30:00Z",
+      "priority": "high"
+    },
+    {
+      "id": "web_002",
+      "channel": "web_form",
+      "from": "maria.gonzalez@agency.com",
+      "customer_name": "Maria Gonzalez",
+      "subject": "Question about Professional plan features",
+      "body": "I'm currently on the Starter plan and considering upgrading to Professional. Can you explain the differences in features, particularly around integrations and storage limits?",
+      "category": "general",
+      "timestamp": "2026-02-15T10:45:00Z",
+      "priority": "medium"
+    },
+    {
+      "id": "web_003",
+      "channel": "web_form",
+      "from": "james.wilson@tech.io",
+      "customer_name": "James Wilson",
+      "subject": "Bug report: Tasks disappearing",
+      "body": "I created several tasks yesterday, but when I logged in today, they're all gone. This is the second time this has happened. Is there a bug in the system?",
+      "category": "bug_report",
+      "timestamp": "2026-02-15T11:30:00Z",
+      "priority": "high"
+    },
+    {
+      "id": "web_004",
+      "channel": "web_form",
+      "from": "sophia.martinez@design.co",
+      "customer_name": "Sophia Martinez",
+      "subject": "How to set up custom workflows?",
+      "body": "I need to create custom task statuses for our design workflow (e.g., 'Design Review', 'Client Feedback', 'Revisions'). How do I set this up?",
+      "category": "general",
+      "timestamp": "2026-02-15T12:15:00Z",
+      "priority": "medium"
+    },
+    {
+      "id": "web_005",
+      "channel": "web_form",
+      "from": "william.brown@consulting.com",
+      "customer_name": "William Brown",
+      "subject": "Request for invoice",
+      "body": "I need an invoice for last month's payment for accounting purposes. Can you send me a copy?",
+      "category": "billing",
+      "timestamp": "2026-02-15T13:00:00Z",
+      "priority": "medium"
+    },
+    {
+      "id": "web_006",
+      "channel": "web_form",
+      "from": "olivia.davis@startup.io",
+      "customer_name": "Olivia Davis",
+      "subject": "Feature request: Gantt chart export",
+      "body": "It would be really helpful if we could export Gantt charts as images or PDFs to share with clients. Is this feature planned?",
+      "category": "feedback",
+      "timestamp": "2026-02-15T14:00:00Z",
+      "priority": "low"
+    },
+    {
+      "id": "web_007",
+      "channel": "web_form",
+      "from": "ethan.anderson@agency.com",
+      "customer_name": "Ethan Anderson",
+      "subject": "Google Calendar sync not working",
+      "body": "I connected my Google Calendar but tasks aren't syncing. I've tried disconnecting and reconnecting but the issue persists.",
+      "category": "technical",
+      "timestamp": "2026-02-15T15:00:00Z",
+      "priority": "medium"
+    },
+    {
+      "id": "web_008",
+      "channel": "web_form",
+      "from": "isabella.taylor@marketing.com",
+      "customer_name": "Isabella Taylor",
+      "subject": "How to use time tracking for billing?",
+      "body": "We need to track billable hours for client projects. Can you explain how to set up time tracking and generate billing reports?",
+      "category": "general",
+      "timestamp": "2026-02-15T16:00:00Z",
+      "priority": "medium"
+    },
+    {
+      "id": "web_009",
+      "channel": "web_form",
+      "from": "mason.lee@tech.com",
+      "customer_name": "Mason Lee",
+      "subject": "Account security concern",
+      "body": "I received a suspicious email claiming to be from TaskFlow Pro asking me to verify my account. Is this legitimate? I'm concerned about phishing.",
+      "category": "general",
+      "timestamp": "2026-02-15T17:00:00Z",
+      "priority": "high"
+    },
+    {
+      "id": "web_010",
+      "channel": "web_form",
+      "from": "ava.rodriguez@design.studio",
+      "customer_name": "Ava Rodriguez",
+      "subject": "Cannot delete project",
+      "body": "I'm trying to delete an old project but the delete button is grayed out. How can I remove it from my workspace?",
+      "category": "technical",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "priority": "low"
+    },
+    {
+      "id": "web_011",
+      "channel": "web_form",
+      "from": "noah.garcia@startup.com",
+      "customer_name": "Noah Garcia",
+      "subject": "API documentation request",
+      "body": "I'm a developer looking to integrate TaskFlow Pro with our internal systems. Where can I find comprehensive API documentation?",
+      "category": "general",
+      "timestamp": "2026-02-15T19:00:00Z",
+      "priority": "medium"
+    },
+    {
+      "id": "web_012",
+      "channel": "web_form",
+      "from": "emma.martinez@agency.com",
+      "customer_name": "Emma Martinez",
+      "subject": "Team member permissions",
+      "body": "How do I set different permission levels for team members? I want some people to only view tasks, not edit them.",
+      "category": "general",
+      "timestamp": "2026-02-15T20:00:00Z",
+      "priority": "low"
+    },
+    {
+      "id": "web_013",
+      "channel": "web_form",
+      "from": "liam.white@consulting.com",
+      "customer_name": "Liam White",
+      "subject": "Data export before cancellation",
+      "body": "I'm planning to cancel my subscription next month. How do I export all my data before the account closes?",
+      "category": "billing",
+      "timestamp": "2026-02-15T21:00:00Z",
+      "priority": "medium"
+    },
+    {
+      "id": "web_014",
+      "channel": "web_form",
+      "from": "charlotte.harris@tech.io",
+      "customer_name": "Charlotte Harris",
+      "subject": "Mobile app offline mode",
+      "body": "Does the mobile app work offline? I travel frequently and need to access tasks without internet connection.",
+      "category": "general",
+      "timestamp": "2026-02-15T22:00:00Z",
+      "priority": "low"
+    },
+    {
+      "id": "web_015",
+      "channel": "web_form",
+      "from": "benjamin.clark@startup.io",
+      "customer_name": "Benjamin Clark",
+      "subject": "Excellent customer service!",
+      "body": "I just wanted to say thank you for the quick and helpful response to my issue yesterday. Your support team is fantastic!",
+      "category": "feedback",
+      "timestamp": "2026-02-15T23:00:00Z",
+      "priority": "low"
+    }
+  ]
+}

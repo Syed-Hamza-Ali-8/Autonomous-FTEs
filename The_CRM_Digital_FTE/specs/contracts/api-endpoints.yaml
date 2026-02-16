@@ -1,0 +1,629 @@
+openapi: 3.0.3
+info:
+  title: Customer Success FTE API
+  description: 24/7 AI-powered customer support across Email, WhatsApp, and Web
+  version: 1.0.0
+  contact:
+    name: Development Team
+    email: dev@techcorp.com
+
+servers:
+  - url: https://support-api.techcorp.com
+    description: Production
+  - url: http://localhost:8000
+    description: Local development
+
+tags:
+  - name: webhooks
+    description: Webhook endpoints for channel integrations
+  - name: support
+    description: Web support form endpoints
+  - name: customers
+    description: Customer lookup and management
+  - name: metrics
+    description: Performance metrics and monitoring
+  - name: health
+    description: Health check endpoints
+
+paths:
+  /webhooks/gmail:
+    post:
+      tags:
+        - webhooks
+      summary: Gmail Pub/Sub webhook
+      description: Receives Gmail push notifications via Google Cloud Pub/Sub
+      operationId: gmailWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GmailPubSubNotification'
+            example:
+              message:
+                data: "eyJlbWFpbEFkZHJlc3MiOiAidXNlckBleGFtcGxlLmNvbSIsICJoaXN0b3J5SWQiOiAiMTIzNDU2In0="
+                messageId: "136969346"
+                publishTime: "2026-02-15T10:30:00.000Z"
+              subscription: "projects/myproject/subscriptions/gmail-push"
+      responses:
+        '200':
+          description: Notification processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "processed"
+                  count:
+                    type: integer
+                    example: 1
+        '500':
+          description: Processing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks/whatsapp:
+    post:
+      tags:
+        - webhooks
+      summary: Twilio WhatsApp webhook
+      description: Receives incoming WhatsApp messages via Twilio
+      operationId: whatsappWebhook
+      parameters:
+        - name: X-Twilio-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Twilio signature for webhook validation
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwilioWhatsAppMessage'
+      responses:
+        '200':
+          description: Message received
+          content:
+            application/xml:
+              schema:
+                type: string
+                example: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+        '403':
+          description: Invalid signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks/whatsapp/status:
+    post:
+      tags:
+        - webhooks
+      summary: Twilio WhatsApp status callback
+      description: Receives message delivery status updates from Twilio
+      operationId: whatsappStatusWebhook
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwilioStatusCallback'
+      responses:
+        '200':
+          description: Status update received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "received"
+
+  /support/submit:
+    post:
+      tags:
+        - support
+      summary: Submit support form
+      description: Submit a support request via web form
+      operationId: submitSupportForm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportFormSubmission'
+            example:
+              name: "John Doe"
+              email: "john.doe@example.com"
+              subject: "Help with password reset"
+              category: "technical"
+              priority: "medium"
+              message: "I'm unable to reset my password. The reset link doesn't work."
+      responses:
+        '200':
+          description: Form submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportFormResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /support/ticket/{ticket_id}:
+    get:
+      tags:
+        - support
+      summary: Get ticket status
+      description: Retrieve ticket status and conversation history
+      operationId: getTicketStatus
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Ticket UUID
+      responses:
+        '200':
+          description: Ticket found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketStatus'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /customers/lookup:
+    get:
+      tags:
+        - customers
+      summary: Look up customer
+      description: Find customer by email or phone across all channels
+      operationId: lookupCustomer
+      parameters:
+        - name: email
+          in: query
+          schema:
+            type: string
+            format: email
+          description: Customer email address
+        - name: phone
+          in: query
+          schema:
+            type: string
+          description: Customer phone number
+      responses:
+        '200':
+          description: Customer found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          description: Missing email or phone parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Customer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /conversations/{conversation_id}:
+    get:
+      tags:
+        - customers
+      summary: Get conversation history
+      description: Retrieve full conversation history with cross-channel context
+      operationId: getConversation
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation UUID
+      responses:
+        '200':
+          description: Conversation found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /metrics/channels:
+    get:
+      tags:
+        - metrics
+      summary: Get channel metrics
+      description: Retrieve performance metrics broken down by channel
+      operationId: getChannelMetrics
+      responses:
+        '200':
+          description: Metrics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelMetrics'
+
+  /health:
+    get:
+      tags:
+        - health
+      summary: Health check
+      description: Check API health and channel status
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+components:
+  schemas:
+    GmailPubSubNotification:
+      type: object
+      required:
+        - message
+        - subscription
+      properties:
+        message:
+          type: object
+          required:
+            - data
+            - messageId
+          properties:
+            data:
+              type: string
+              description: Base64-encoded notification data
+            messageId:
+              type: string
+              description: Pub/Sub message ID
+            publishTime:
+              type: string
+              format: date-time
+        subscription:
+          type: string
+          description: Pub/Sub subscription name
+
+    TwilioWhatsAppMessage:
+      type: object
+      required:
+        - MessageSid
+        - From
+        - Body
+      properties:
+        MessageSid:
+          type: string
+          description: Twilio message SID
+        From:
+          type: string
+          description: Sender phone number (whatsapp:+1234567890)
+        To:
+          type: string
+          description: Recipient phone number
+        Body:
+          type: string
+          description: Message content
+        NumMedia:
+          type: string
+          description: Number of media attachments
+        ProfileName:
+          type: string
+          description: WhatsApp profile name
+        WaId:
+          type: string
+          description: WhatsApp ID
+        SmsStatus:
+          type: string
+          description: Message status
+
+    TwilioStatusCallback:
+      type: object
+      required:
+        - MessageSid
+        - MessageStatus
+      properties:
+        MessageSid:
+          type: string
+          description: Twilio message SID
+        MessageStatus:
+          type: string
+          enum: [queued, sent, delivered, failed]
+          description: Delivery status
+        ErrorCode:
+          type: string
+          description: Error code if failed
+
+    SupportFormSubmission:
+      type: object
+      required:
+        - name
+        - email
+        - subject
+        - category
+        - message
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 255
+          description: Customer name
+        email:
+          type: string
+          format: email
+          description: Customer email address
+        subject:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: Support request subject
+        category:
+          type: string
+          enum: [general, technical, billing, feedback, bug_report]
+          description: Request category
+        priority:
+          type: string
+          enum: [low, medium, high]
+          default: medium
+          description: Request priority
+        message:
+          type: string
+          minLength: 10
+          maxLength: 10000
+          description: Detailed message
+        attachments:
+          type: array
+          items:
+            type: string
+          description: Base64-encoded attachments or URLs
+
+    SupportFormResponse:
+      type: object
+      required:
+        - ticket_id
+        - message
+        - estimated_response_time
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+          description: Generated ticket ID
+        message:
+          type: string
+          description: Confirmation message
+        estimated_response_time:
+          type: string
+          description: Estimated response time
+
+    TicketStatus:
+      type: object
+      required:
+        - ticket_id
+        - status
+        - created_at
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [open, processing, resolved, escalated]
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        created_at:
+          type: string
+          format: date-time
+        last_updated:
+          type: string
+          format: date-time
+
+    Customer:
+      type: object
+      required:
+        - id
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationSummary'
+
+    Conversation:
+      type: object
+      required:
+        - id
+        - customer_id
+        - initial_channel
+        - started_at
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        initial_channel:
+          type: string
+          enum: [email, whatsapp, web_form]
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, resolved, escalated]
+        sentiment_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    ConversationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        initial_channel:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+
+    Message:
+      type: object
+      required:
+        - id
+        - channel
+        - direction
+        - role
+        - content
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [email, whatsapp, web_form]
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        role:
+          type: string
+          enum: [customer, agent, system]
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        delivery_status:
+          type: string
+          enum: [pending, sent, delivered, failed]
+
+    ChannelMetrics:
+      type: object
+      properties:
+        email:
+          $ref: '#/components/schemas/ChannelMetric'
+        whatsapp:
+          $ref: '#/components/schemas/ChannelMetric'
+        web_form:
+          $ref: '#/components/schemas/ChannelMetric'
+
+    ChannelMetric:
+      type: object
+      properties:
+        total_conversations:
+          type: integer
+        avg_sentiment:
+          type: number
+          format: float
+        escalations:
+          type: integer
+
+    HealthStatus:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        channels:
+          type: object
+          properties:
+            email:
+              type: string
+              enum: [active, inactive]
+            whatsapp:
+              type: string
+              enum: [active, inactive]
+            web_form:
+              type: string
+              enum: [active, inactive]
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+
+    ValidationError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string

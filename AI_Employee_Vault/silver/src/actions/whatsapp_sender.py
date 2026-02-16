@@ -213,17 +213,39 @@ class WhatsAppSender:
             # Click search box
             search_box = page.locator('div[contenteditable="true"][data-tab="3"]')
             search_box.click()
-            time.sleep(0.5)
+            time.sleep(1)  # Increased from 0.5s
 
             # Type contact name/number
             search_box.fill(contact)
-            time.sleep(1)
+            self.logger.info(f"Typed contact name: {contact}")
 
-            # Click on first result
+            # Wait longer for search results to appear (increased from 1s to 3s)
+            time.sleep(3)
+
+            # Try to find the contact in search results
+            # Use a more flexible selector that waits for any search result
+            self.logger.info(f"Waiting for search results...")
+
+            # Wait for search results to appear
+            page.wait_for_selector('div[aria-label="Search results."]', timeout=10000)
+            self.logger.info(f"Search results appeared")
+
+            # Click on first result with the contact name
             first_result = page.locator(f'span[title="{contact}"]').first
-            if not first_result.is_visible(timeout=5000):
+
+            # Wait for the result to be visible
+            if not first_result.is_visible(timeout=10000):
+                self.logger.error(f"Contact '{contact}' not found in search results")
+                # Take a screenshot for debugging
+                try:
+                    screenshot_path = f"/tmp/whatsapp_search_failed_{contact.replace(' ', '_')}.png"
+                    page.screenshot(path=screenshot_path)
+                    self.logger.info(f"Debug screenshot saved: {screenshot_path}")
+                except:
+                    pass
                 raise ValueError(f"Contact not found: {contact}")
 
+            self.logger.info(f"Found contact in search results, clicking...")
             first_result.click()
 
             # CRITICAL: Wait for chat to fully load before sending

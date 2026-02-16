@@ -1,0 +1,465 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Twilio WhatsApp Message Formats",
+  "description": "Message schemas for Twilio WhatsApp API integration",
+  "definitions": {
+    "TwilioIncomingMessage": {
+      "type": "object",
+      "title": "Twilio Incoming WhatsApp Message",
+      "description": "Incoming WhatsApp message from Twilio webhook",
+      "required": ["MessageSid", "From", "Body"],
+      "properties": {
+        "MessageSid": {
+          "type": "string",
+          "description": "Twilio message SID (unique identifier)",
+          "pattern": "^SM[a-f0-9]{32}$",
+          "example": "SM1234567890abcdef1234567890abcdef"
+        },
+        "AccountSid": {
+          "type": "string",
+          "description": "Twilio account SID",
+          "pattern": "^AC[a-f0-9]{32}$",
+          "example": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        },
+        "MessagingServiceSid": {
+          "type": "string",
+          "description": "Messaging service SID",
+          "example": "MG1234567890abcdef1234567890abcdef"
+        },
+        "From": {
+          "type": "string",
+          "description": "Sender phone number in WhatsApp format",
+          "pattern": "^whatsapp:\\+[1-9]\\d{1,14}$",
+          "example": "whatsapp:+15551234567"
+        },
+        "To": {
+          "type": "string",
+          "description": "Recipient phone number (your WhatsApp number)",
+          "pattern": "^whatsapp:\\+[1-9]\\d{1,14}$",
+          "example": "whatsapp:+14155238886"
+        },
+        "Body": {
+          "type": "string",
+          "description": "Message text content",
+          "maxLength": 1600,
+          "example": "How do I reset my password?"
+        },
+        "NumMedia": {
+          "type": "string",
+          "description": "Number of media attachments",
+          "pattern": "^\\d+$",
+          "example": "0"
+        },
+        "MediaUrl0": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of first media attachment (if NumMedia > 0)"
+        },
+        "MediaContentType0": {
+          "type": "string",
+          "description": "Content type of first media attachment",
+          "example": "image/jpeg"
+        },
+        "ProfileName": {
+          "type": "string",
+          "description": "WhatsApp profile name of sender",
+          "example": "John Doe"
+        },
+        "WaId": {
+          "type": "string",
+          "description": "WhatsApp ID (phone number without + or whatsapp: prefix)",
+          "pattern": "^[1-9]\\d{1,14}$",
+          "example": "15551234567"
+        },
+        "SmsStatus": {
+          "type": "string",
+          "enum": ["received", "sent", "delivered", "undelivered", "failed"],
+          "description": "Message status",
+          "example": "received"
+        },
+        "ApiVersion": {
+          "type": "string",
+          "description": "Twilio API version",
+          "example": "2010-04-01"
+        }
+      }
+    },
+    "TwilioOutgoingMessage": {
+      "type": "object",
+      "title": "Twilio Outgoing WhatsApp Message",
+      "description": "Request to send WhatsApp message via Twilio API",
+      "required": ["To", "From", "Body"],
+      "properties": {
+        "To": {
+          "type": "string",
+          "description": "Recipient phone number in WhatsApp format",
+          "pattern": "^whatsapp:\\+[1-9]\\d{1,14}$",
+          "example": "whatsapp:+15551234567"
+        },
+        "From": {
+          "type": "string",
+          "description": "Your WhatsApp number",
+          "pattern": "^whatsapp:\\+[1-9]\\d{1,14}$",
+          "example": "whatsapp:+14155238886"
+        },
+        "Body": {
+          "type": "string",
+          "description": "Message text content",
+          "minLength": 1,
+          "maxLength": 1600,
+          "example": "To reset your password, go to Settings > Security > Reset Password."
+        },
+        "MediaUrl": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "maxItems": 10,
+          "description": "URLs of media to send (optional)"
+        },
+        "StatusCallback": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL for delivery status callbacks",
+          "example": "https://support-api.techcorp.com/webhooks/whatsapp/status"
+        }
+      }
+    },
+    "TwilioMessageResponse": {
+      "type": "object",
+      "title": "Twilio Message Response",
+      "description": "Response from Twilio after sending message",
+      "required": ["sid", "status"],
+      "properties": {
+        "sid": {
+          "type": "string",
+          "description": "Message SID",
+          "pattern": "^SM[a-f0-9]{32}$",
+          "example": "SM1234567890abcdef1234567890abcdef"
+        },
+        "account_sid": {
+          "type": "string",
+          "description": "Account SID",
+          "example": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        },
+        "messaging_service_sid": {
+          "type": "string",
+          "description": "Messaging service SID"
+        },
+        "from": {
+          "type": "string",
+          "description": "Sender phone number",
+          "example": "whatsapp:+14155238886"
+        },
+        "to": {
+          "type": "string",
+          "description": "Recipient phone number",
+          "example": "whatsapp:+15551234567"
+        },
+        "body": {
+          "type": "string",
+          "description": "Message body"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["queued", "sending", "sent", "delivered", "undelivered", "failed"],
+          "description": "Message status",
+          "example": "queued"
+        },
+        "num_segments": {
+          "type": "string",
+          "description": "Number of message segments",
+          "example": "1"
+        },
+        "num_media": {
+          "type": "string",
+          "description": "Number of media attachments",
+          "example": "0"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["inbound", "outbound-api", "outbound-call", "outbound-reply"],
+          "description": "Message direction",
+          "example": "outbound-api"
+        },
+        "price": {
+          "type": "string",
+          "description": "Message price",
+          "example": "-0.0050"
+        },
+        "price_unit": {
+          "type": "string",
+          "description": "Price currency",
+          "example": "USD"
+        },
+        "error_code": {
+          "type": "integer",
+          "description": "Error code (if failed)"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Error message (if failed)"
+        },
+        "uri": {
+          "type": "string",
+          "description": "Resource URI"
+        },
+        "date_created": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "date_updated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        },
+        "date_sent": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Sent timestamp"
+        }
+      }
+    },
+    "TwilioStatusCallback": {
+      "type": "object",
+      "title": "Twilio Status Callback",
+      "description": "Delivery status update from Twilio",
+      "required": ["MessageSid", "MessageStatus"],
+      "properties": {
+        "MessageSid": {
+          "type": "string",
+          "description": "Message SID",
+          "pattern": "^SM[a-f0-9]{32}$",
+          "example": "SM1234567890abcdef1234567890abcdef"
+        },
+        "MessageStatus": {
+          "type": "string",
+          "enum": ["queued", "sending", "sent", "delivered", "undelivered", "failed", "read"],
+          "description": "Current message status",
+          "example": "delivered"
+        },
+        "ErrorCode": {
+          "type": "string",
+          "description": "Error code (if failed)",
+          "example": "30008"
+        },
+        "ErrorMessage": {
+          "type": "string",
+          "description": "Error message (if failed)",
+          "example": "Unknown error"
+        },
+        "SmsSid": {
+          "type": "string",
+          "description": "SMS SID (same as MessageSid)",
+          "example": "SM1234567890abcdef1234567890abcdef"
+        },
+        "SmsStatus": {
+          "type": "string",
+          "description": "SMS status (same as MessageStatus)",
+          "example": "delivered"
+        },
+        "AccountSid": {
+          "type": "string",
+          "description": "Account SID",
+          "example": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        },
+        "From": {
+          "type": "string",
+          "description": "Sender phone number",
+          "example": "whatsapp:+14155238886"
+        },
+        "To": {
+          "type": "string",
+          "description": "Recipient phone number",
+          "example": "whatsapp:+15551234567"
+        },
+        "ApiVersion": {
+          "type": "string",
+          "description": "API version",
+          "example": "2010-04-01"
+        },
+        "EventType": {
+          "type": "string",
+          "description": "Event type",
+          "example": "DELIVERED"
+        }
+      }
+    },
+    "ParsedWhatsAppMessage": {
+      "type": "object",
+      "title": "Parsed WhatsApp Message",
+      "description": "Normalized WhatsApp message for internal use",
+      "required": ["channel", "channel_message_id", "customer_phone", "content", "received_at"],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "const": "whatsapp",
+          "description": "Channel identifier"
+        },
+        "channel_message_id": {
+          "type": "string",
+          "description": "Twilio message SID",
+          "example": "SM1234567890abcdef1234567890abcdef"
+        },
+        "customer_phone": {
+          "type": "string",
+          "description": "Customer phone number (normalized, without whatsapp: prefix)",
+          "pattern": "^\\+[1-9]\\d{1,14}$",
+          "example": "+15551234567"
+        },
+        "customer_name": {
+          "type": "string",
+          "description": "WhatsApp profile name",
+          "example": "John Doe"
+        },
+        "content": {
+          "type": "string",
+          "description": "Message content",
+          "example": "How do I reset my password?"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when message was received",
+          "example": "2026-02-15T11:45:00Z"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional WhatsApp metadata",
+          "properties": {
+            "num_media": {
+              "type": "string",
+              "description": "Number of media attachments",
+              "example": "0"
+            },
+            "media_urls": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              },
+              "description": "URLs of media attachments"
+            },
+            "media_content_types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Content types of media attachments"
+            },
+            "profile_name": {
+              "type": "string",
+              "description": "WhatsApp profile name",
+              "example": "John Doe"
+            },
+            "wa_id": {
+              "type": "string",
+              "description": "WhatsApp ID",
+              "example": "15551234567"
+            },
+            "status": {
+              "type": "string",
+              "description": "Message status",
+              "example": "received"
+            }
+          }
+        }
+      }
+    },
+    "FormattedWhatsAppResponse": {
+      "type": "object",
+      "title": "Formatted WhatsApp Response",
+      "description": "WhatsApp response formatted for sending",
+      "required": ["to_phone", "body"],
+      "properties": {
+        "to_phone": {
+          "type": "string",
+          "description": "Recipient phone number (will be prefixed with whatsapp:)",
+          "pattern": "^\\+[1-9]\\d{1,14}$",
+          "example": "+15551234567"
+        },
+        "body": {
+          "type": "string",
+          "description": "Message body (formatted for WhatsApp, max 1600 chars)",
+          "minLength": 1,
+          "maxLength": 1600,
+          "example": "To reset your password, go to Settings > Security > Reset Password.\n\n📱 Reply for more help or type 'human' for live support."
+        },
+        "split_messages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1600
+          },
+          "description": "If body exceeds 1600 chars, split into multiple messages"
+        }
+      }
+    }
+  },
+  "examples": {
+    "incoming_whatsapp": {
+      "description": "Example of parsed incoming WhatsApp message ready for agent processing",
+      "value": {
+        "channel": "whatsapp",
+        "channel_message_id": "SM1234567890abcdef1234567890abcdef",
+        "customer_phone": "+15551234567",
+        "customer_name": "Jane Smith",
+        "content": "How do I export my data?",
+        "received_at": "2026-02-15T11:45:00Z",
+        "metadata": {
+          "num_media": "0",
+          "profile_name": "Jane Smith",
+          "wa_id": "15551234567",
+          "status": "received"
+        }
+      }
+    },
+    "outgoing_whatsapp": {
+      "description": "Example of formatted WhatsApp response",
+      "value": {
+        "to_phone": "+15551234567",
+        "body": "To export your data, go to Settings > Data Export. Select the data you want and click 'Export'. You'll receive a download link via email.\n\n📱 Reply for more help or type 'human' for live support."
+      }
+    },
+    "incoming_with_media": {
+      "description": "Example of WhatsApp message with media attachment",
+      "value": {
+        "channel": "whatsapp",
+        "channel_message_id": "SM1234567890abcdef1234567890abcdef",
+        "customer_phone": "+15551234567",
+        "customer_name": "Jane Smith",
+        "content": "Here's a screenshot of the error",
+        "received_at": "2026-02-15T11:50:00Z",
+        "metadata": {
+          "num_media": "1",
+          "media_urls": ["https://api.twilio.com/2010-04-01/Accounts/AC.../Messages/SM.../Media/ME..."],
+          "media_content_types": ["image/jpeg"],
+          "profile_name": "Jane Smith",
+          "wa_id": "15551234567",
+          "status": "received"
+        }
+      }
+    },
+    "status_callback": {
+      "description": "Example of delivery status callback",
+      "value": {
+        "MessageSid": "SM1234567890abcdef1234567890abcdef",
+        "MessageStatus": "delivered",
+        "AccountSid": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "From": "whatsapp:+14155238886",
+        "To": "whatsapp:+15551234567",
+        "EventType": "DELIVERED"
+      }
+    }
+  },
+  "notes": {
+    "phone_number_format": "Phone numbers must be in E.164 format (+[country code][number]) and prefixed with 'whatsapp:' for Twilio API calls",
+    "message_length": "WhatsApp messages have a maximum length of 1600 characters. Longer messages should be split.",
+    "media_support": "WhatsApp supports up to 10 media attachments per message. Supported types: image/jpeg, image/png, video/mp4, audio/ogg, application/pdf",
+    "rate_limits": "Twilio WhatsApp API has rate limits of 80 messages per second per phone number",
+    "webhook_validation": "All incoming webhooks must be validated using X-Twilio-Signature header",
+    "sandbox_vs_production": "Twilio WhatsApp Sandbox is sufficient for development. Production requires WhatsApp Business API approval."
+  }
+}
