@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 import os
+import glob
 from dotenv import load_dotenv
 
 # Playwright imports
@@ -59,6 +60,27 @@ class TwitterPosterPlaywright:
 
         print(f"✅ Twitter poster initialized (session: {self.session_path})")
 
+    def _cleanup_stale_locks(self):
+        """Clean up stale browser lock files to prevent session conflicts."""
+        session_path = Path(self.session_path)
+        if not session_path.exists():
+            return
+
+        # Remove Chromium lock files that can prevent browser from starting
+        lock_patterns = [
+            "SingletonLock",
+            "SingletonSocket",
+            "SingletonCookie"
+        ]
+
+        for pattern in lock_patterns:
+            for lock_file in session_path.glob(f"**/{pattern}"):
+                try:
+                    lock_file.unlink()
+                    print(f"   🧹 Cleaned up stale lock: {lock_file.name}")
+                except Exception as e:
+                    print(f"   ⚠️  Could not remove {lock_file.name}: {e}")
+
     def post_update(self, content: str, image_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Post a tweet to Twitter/X.
@@ -71,6 +93,9 @@ class TwitterPosterPlaywright:
             Dict with success status and post details
         """
         print("🚀 Posting to Twitter/X...")
+
+        # Clean up any stale lock files before opening browser
+        self._cleanup_stale_locks()
 
         try:
             with sync_playwright() as p:

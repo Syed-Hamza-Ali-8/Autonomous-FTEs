@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 import os
+import glob
 from dotenv import load_dotenv
 
 # Playwright imports
@@ -59,6 +60,47 @@ class FacebookPosterPlaywright:
 
         print(f"✅ Facebook poster initialized (session: {self.session_path})")
 
+    def _cleanup_stale_locks(self):
+        """Clean up stale browser lock files to prevent session conflicts."""
+        session_path = Path(self.session_path)
+        if not session_path.exists():
+            return
+
+        print("   🧹 Cleaning up stale browser lock files...")
+
+        # Remove Chromium lock files that can prevent browser from starting
+        lock_patterns = [
+            "SingletonLock",
+            "SingletonSocket",
+            "SingletonCookie"
+        ]
+
+        cleaned_count = 0
+        for pattern in lock_patterns:
+            # Check root directory
+            lock_file = session_path / pattern
+            if lock_file.exists():
+                try:
+                    lock_file.unlink()
+                    print(f"      ✓ Removed: {pattern}")
+                    cleaned_count += 1
+                except Exception as e:
+                    print(f"      ✗ Could not remove {pattern}: {e}")
+
+            # Check subdirectories
+            for lock_file in session_path.glob(f"**/{pattern}"):
+                try:
+                    lock_file.unlink()
+                    print(f"      ✓ Removed: {lock_file.relative_to(session_path)}")
+                    cleaned_count += 1
+                except Exception as e:
+                    print(f"      ✗ Could not remove {lock_file.name}: {e}")
+
+        if cleaned_count == 0:
+            print("      ✓ No stale locks found")
+        else:
+            print(f"      ✓ Cleaned up {cleaned_count} lock file(s)")
+
     def post_update(self, content: str, image_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Post an update to Facebook.
@@ -71,6 +113,9 @@ class FacebookPosterPlaywright:
             Dict with success status and post details
         """
         print("🚀 Posting to Facebook...")
+
+        # Clean up any stale lock files before opening browser
+        self._cleanup_stale_locks()
 
         try:
             with sync_playwright() as p:
@@ -197,28 +242,124 @@ class FacebookPosterPlaywright:
                 # Click "Post" button
                 print("🔍 Looking for Post button...")
 
-                post_button_selectors = [
-                    '[role="button"][aria-label="Post"]:not([aria-disabled="true"])',
-                    'div[role="button"]:has-text("Post"):not([aria-disabled="true"])',
-                    '[aria-label="Post"]:not([aria-disabled="true"])',
-                    'div[role="button"]:has-text("Post")',
-                ]
+                # Wait a bit for the Post button to become enabled
+                page.wait_for_timeout(2000)
 
-                post_clicked = False
-                for selector in post_button_selectors:
-                    try:
-                        count = page.locator(selector).count()
-                        if count > 0:
-                            button = page.locator(selector).first
-                            if button.is_visible():
-                                button.wait_for(state="visible", timeout=5000)
-                                button.click(timeout=5000)
-                                print(f"✅ Clicked Post button using: {selector}")
-                                post_clicked = True
-                                break
-                    except Exception as e:
-                        print(f"   Selector {selector} failed: {e}")
-                        continue
+                # Try Ctrl+Enter first (Facebook's universal submit shortcut)
+                print("   Trying Ctrl+Enter keyboard shortcut...")
+                try:
+                    page.keyboard.press("Control+Enter")
+                    page.wait_for_timeout(3000)
+
+                    # Check if modal closed (success)
+                    modal_count = page.locator('[role="dialog"]').count()
+                    if modal_count == 0:
+                        print("✅ Ctrl+Enter worked! Post submitted.")
+                        post_clicked = True
+                    else:
+                        print(f"   Ctrl+Enter didn't work (modal count: {modal_count}), trying button click...")
+                        post_clicked = False
+                except Exception as e:
+                    print(f"   Ctrl+Enter failed: {e}")
+                    post_clicked = False
+
+                # If Ctrl+Enter didn't work, try clicking the button
+                if not post_clicked:
+                    # Find the Post button by checking if it's enabled
+                    post_button_selectors = [
+                        # Most specific: Enabled Post button within dialog
+                        '[role="dialog"] [role="button"][aria-label="Post"]:not([aria-disabled="true"])',
+                        # Backup: Any enabled Post button
+                        '[role="button"][aria-label="Post"]:not([aria-disabled="true"])',
+                        # Fallback: Any Post button
+                        '[role="button"][aria-label="Post"]',
+                    ]
+
+                    for selector in post_button_selectors:
+                        try:
+                            buttons = page.locator(selector)
+                            count = buttons.count()
+                            if count > 0:
+                                print(f"   Found {count} button(s) matching: {selector}")
+
+                                # Collect all buttons with their positions
+                                button_info = []
+                                for i in range(count):
+                                    button = buttons.nth(i)
+                                    if not button.is_visible():
+                                        continue
+
+                                    try:
+                                        aria_label = button.get_attribute('aria-label')
+                                        aria_disabled = button.get_attribute('aria-disabled')
+
+                                        # Skip if disabled
+                                        if aria_disabled == "true":
+                                            print(f"   Skipping button #{i+1}: disabled")
+                                            continue
+
+                                        # Skip if it's "Add to your post" button
+                                        if aria_label and "Add to your post" in aria_label:
+                                            print(f"   Skipping button #{i+1}: 'Add to your post'")
+                                            continue
+
+                                        # Get button position
+                                        bbox = button.bounding_box()
+                                        if bbox:
+                                            button_info.append({
+                                                'index': i,
+                                                'y': bbox['y'],
+                                                'x': bbox['x'],
+                                                'aria_label': aria_label,
+                                                'aria_disabled': aria_disabled,
+                                                'button': button
+                                            })
+                                            print(f"   Button #{i+1}: aria-label='{aria_label}', disabled={aria_disabled}, y={int(bbox['y'])}, x={int(bbox['x'])}")
+                                    except Exception as e:
+                                        print(f"   Could not get info for button #{i+1}: {e}")
+                                        continue
+
+                                if not button_info:
+                                    print(f"   No valid buttons found for selector: {selector}")
+                                    continue
+
+                                # Sort by y position (descending) - highest y is at the bottom
+                                button_info.sort(key=lambda b: b['y'], reverse=True)
+
+                                # Click the button with the highest y (at the bottom)
+                                bottom_button = button_info[0]
+                                print(f"   🎯 Selecting button at BOTTOM: y={int(bottom_button['y'])}, x={int(bottom_button['x'])}")
+
+                                # Try JavaScript click first
+                                try:
+                                    print(f"   Trying JavaScript click...")
+                                    page.evaluate("""(selector, index) => {
+                                        const buttons = document.querySelectorAll(selector);
+                                        if (buttons[index]) {
+                                            buttons[index].click();
+                                            return true;
+                                        }
+                                        return false;
+                                    }""", selector, bottom_button['index'])
+                                    print(f"✅ JavaScript clicked Post button at bottom")
+                                    post_clicked = True
+                                    break
+                                except Exception as e1:
+                                    print(f"   JavaScript click failed, trying force click...")
+
+                                    # Try force click as backup
+                                    try:
+                                        bottom_button['button'].click(timeout=3000, force=True)
+                                        print(f"✅ Force clicked Post button at bottom")
+                                        post_clicked = True
+                                        break
+                                    except Exception as e2:
+                                        print(f"   Force click failed: {str(e2)[:80]}")
+                                        continue
+
+                        except Exception as e:
+                            print(f"   Selector {selector} failed: {str(e)[:80]}")
+                            continue
 
                 if not post_clicked:
                     print("❌ Could not find or click Post button")
@@ -229,24 +370,56 @@ class FacebookPosterPlaywright:
                         "message": "Could not find or click the Post button"
                     }
 
-                # Wait for post to be submitted
+                # Wait briefly for post to be submitted
                 print("⏳ Waiting for post to be submitted...")
-                page.wait_for_timeout(5000)
+                page.wait_for_timeout(2000)
 
-                # Verify modal closed
-                modal_count = page.locator('[role="dialog"]').count()
-                print(f"📊 Modal count after posting: {modal_count}")
+                # Verify post was actually submitted by checking for failure indicators
+                print("🔍 Verifying post submission...")
 
-                if modal_count > 0:
-                    # Close remaining modals
-                    print("🧹 Closing remaining modals...")
-                    for i in range(3):
-                        page.keyboard.press("Escape")
-                        page.wait_for_timeout(500)
+                # Check for "save draft" or "discard" modals (indicates failure)
+                draft_indicators = [
+                    "Save draft",
+                    "Discard post",
+                    "Save as draft",
+                    "Discard",
+                ]
+
+                found_draft_modal = False
+                for indicator in draft_indicators:
+                    if page.locator(f'text="{indicator}"').count() > 0:
+                        print(f"   ❌ Found draft/discard modal: '{indicator}'")
+                        found_draft_modal = True
+                        break
+
+                # If draft modal found, post failed
+                if found_draft_modal:
+                    print("❌ Post was NOT submitted - draft/discard modal detected")
+
+                    # Take screenshot for debugging
+                    try:
+                        screenshot_path = self.vault_path / "gold" / "debug_facebook_draft_modal.png"
+                        page.screenshot(path=str(screenshot_path))
+                        print(f"   📸 Screenshot saved: {screenshot_path}")
+                    except:
+                        pass
+
+                    browser.close()
+                    return {
+                        "success": False,
+                        "error": "Draft modal detected",
+                        "message": "Post was not submitted - save draft modal appeared. The wrong button was clicked."
+                    }
+
+                # If no draft modal found, assume success
+                # (Success messages disappear too quickly to reliably detect)
+                print("✅ No draft modal detected - post submitted successfully!")
+
+                # Wait a bit longer to ensure post is fully processed
+                page.wait_for_timeout(2000)
 
                 browser.close()
 
-                print("✅ Successfully posted to Facebook!")
                 return {
                     "success": True,
                     "timestamp": datetime.now().isoformat(),

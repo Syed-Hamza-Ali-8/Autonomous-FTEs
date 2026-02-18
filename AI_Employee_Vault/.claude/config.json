@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "stop": {
+      "enabled": true,
+      "command": "python3",
+      "args": [".claude/hooks/ralph-wiggum-stop.py"],
+      "description": "Ralph Wiggum loop - keeps Claude working until task is complete"
+    }
+  },
+  "settings": {
+    "ralph_wiggum": {
+      "max_iterations": 10,
+      "completion_strategy": "file_movement",
+      "tasks_dir": "Tasks",
+      "done_dir": "Done",
+      "failed_dir": "Failed"
+    }
+  }
+}

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 import os
+import glob
 from dotenv import load_dotenv
 
 # Playwright imports
@@ -64,6 +65,27 @@ class InstagramPosterPlaywright:
 
         print(f"✅ Instagram poster initialized (session: {self.session_path})")
 
+    def _cleanup_stale_locks(self):
+        """Clean up stale browser lock files to prevent session conflicts."""
+        session_path = Path(self.session_path)
+        if not session_path.exists():
+            return
+
+        # Remove Chromium lock files that can prevent browser from starting
+        lock_patterns = [
+            "SingletonLock",
+            "SingletonSocket",
+            "SingletonCookie"
+        ]
+
+        for pattern in lock_patterns:
+            for lock_file in session_path.glob(f"**/{pattern}"):
+                try:
+                    lock_file.unlink()
+                    print(f"   🧹 Cleaned up stale lock: {lock_file.name}")
+                except Exception as e:
+                    print(f"   ⚠️  Could not remove {lock_file.name}: {e}")
+
     def post_update(self, content: str, image_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Post an update to Instagram.
@@ -82,6 +104,9 @@ class InstagramPosterPlaywright:
         if not image_path:
             print("⚠️  Instagram requires images. Using Stories for text-only content.")
             return self._post_story(content)
+
+        # Clean up any stale lock files before opening browser
+        self._cleanup_stale_locks()
 
         try:
             with sync_playwright() as p:
@@ -168,19 +193,89 @@ class InstagramPosterPlaywright:
                 file_input = page.locator('input[type="file"]').first
                 file_input.set_input_files(image_path)
 
-                # Wait for image to upload
+                # Wait for image to upload and preview to load
+                print("⏳ Waiting for image preview...")
+                page.wait_for_timeout(5000)
+
+                # Click "Next" button (try multiple selectors for different languages)
+                print("🔍 Looking for Next button...")
+
+                next_selectors = [
+                    'button:has-text("Next")',
+                    'button:has-text("Siguiente")',  # Spanish
+                    'button:has-text("Suivant")',    # French
+                    'button:has-text("Weiter")',     # German
+                    'button:has-text("Avanti")',     # Italian
+                    'button:has-text("التالي")',     # Arabic
+                    'button:has-text("अगला")',       # Hindi
+                    'button:has-text("اگلا")',       # Urdu
+                    'div[role="button"]:has-text("Next")',
+                    'div[role="button"]:has-text("Siguiente")',
+                    'div[role="button"]:has-text("اگلا")',
+                    # Fallback: look for any button in the top-right area
+                    'button[type="button"]',
+                ]
+
+                next_clicked = False
+                for selector in next_selectors:
+                    try:
+                        buttons = page.locator(selector)
+                        count = buttons.count()
+                        if count > 0:
+                            # Try each matching button
+                            for i in range(count):
+                                try:
+                                    button = buttons.nth(i)
+                                    if button.is_visible():
+                                        button.click(timeout=5000)
+                                        print(f"✅ Clicked Next button using: {selector}")
+                                        next_clicked = True
+                                        break
+                                except:
+                                    continue
+                        if next_clicked:
+                            break
+                    except:
+                        continue
+
+                if not next_clicked:
+                    print("❌ Could not find Next button")
+                    browser.close()
+                    return {
+                        "success": False,
+                        "error": "Next button not found",
+                        "message": "Could not find Next button after image upload"
+                    }
+
                 page.wait_for_timeout(3000)
 
-                # Click "Next" button
-                print("🔍 Looking for Next button...")
-                next_button = page.locator('button:has-text("Next")').first
-                next_button.click()
-                page.wait_for_timeout(2000)
+                # Click "Next" again (for filters/editing page)
+                print("🔍 Looking for second Next button (filters page)...")
+                next_clicked = False
+                for selector in next_selectors:
+                    try:
+                        buttons = page.locator(selector)
+                        count = buttons.count()
+                        if count > 0:
+                            for i in range(count):
+                                try:
+                                    button = buttons.nth(i)
+                                    if button.is_visible():
+                                        button.click(timeout=5000)
+                                        print(f"✅ Clicked second Next button")
+                                        next_clicked = True
+                                        break
+                                except:
+                                    continue
+                        if next_clicked:
+                            break
+                    except:
+                        continue
 
-                # Click "Next" again (for filters/editing)
-                next_button = page.locator('button:has-text("Next")').first
-                next_button.click()
-                page.wait_for_timeout(2000)
+                if not next_clicked:
+                    print("⚠️  Could not find second Next button, continuing anyway...")
+
+                page.wait_for_timeout(3000)
 
                 # Add caption
                 print("⌨️  Adding caption...")
@@ -189,27 +284,121 @@ class InstagramPosterPlaywright:
                 caption_area.type(content, delay=50)
                 print(f"✅ Typed {len(content)} characters")
 
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(3000)
 
-                # Click "Share" button
+                # Click "Share" button (same pattern as Next buttons)
                 print("🔍 Looking for Share button...")
-                share_button = page.locator('button:has-text("Share")').first
-                share_button.click()
 
-                # Wait for post to be submitted
-                print("⏳ Waiting for post to be submitted...")
-                page.wait_for_timeout(5000)
+                share_selectors = [
+                    'button:has-text("Share")',
+                    'button:has-text("Compartir")',     # Spanish
+                    'button:has-text("Partager")',      # French
+                    'button:has-text("Teilen")',        # German
+                    'button:has-text("Condividi")',     # Italian
+                    'button:has-text("مشاركة")',        # Arabic
+                    'button:has-text("साझा करें")',     # Hindi
+                    'button:has-text("شیئر کریں")',     # Urdu
+                    'div[role="button"]:has-text("Share")',
+                    'div[role="button"]:has-text("Compartir")',
+                    'div[role="button"]:has-text("شیئر کریں")',
+                ]
+
+                share_clicked = False
+                for selector in share_selectors:
+                    try:
+                        buttons = page.locator(selector)
+                        count = buttons.count()
+                        if count > 0:
+                            # Try each matching button (same as Next buttons)
+                            for i in range(count):
+                                try:
+                                    button = buttons.nth(i)
+                                    if button.is_visible():
+                                        button.click(timeout=5000)
+                                        print(f"✅ Clicked Share button using: {selector}")
+                                        share_clicked = True
+                                        break
+                                except:
+                                    continue
+                        if share_clicked:
+                            break
+                    except:
+                        continue
+
+                if not share_clicked:
+                    print("❌ All methods failed to submit post")
+                    print("   Taking screenshot for debugging...")
+                    try:
+                        screenshot_path = self.vault_path / "gold" / "debug_share_button.png"
+                        page.screenshot(path=str(screenshot_path))
+                        print(f"   Screenshot saved: {screenshot_path}")
+                    except:
+                        pass
+
+                    browser.close()
+                    return {
+                        "success": False,
+                        "error": "Share button not clickable",
+                        "message": "Could not submit post - all click methods failed"
+                    }
+
+                # Wait for post to be fully submitted
+                print("⏳ Waiting for post to be fully submitted...")
+                page.wait_for_timeout(8000)  # Increased wait time to see the success message
+
+                # Verify success by checking URL and looking for success indicators
+                current_url = page.url
+                print(f"   Final URL: {current_url}")
+
+                # Look for success notification
+                success_verified = False
+                try:
+                    # Instagram shows "Your post has been shared" notification
+                    success_texts = [
+                        "Your post has been shared",
+                        "Tu publicación se ha compartido",
+                        "Votre publication a été partagée",
+                        "آپ کی پوسٹ شیئر کر دی گئی",
+                    ]
+
+                    for text in success_texts:
+                        if page.locator(f'text="{text}"').count() > 0:
+                            print(f"✅ Found success notification: '{text}'")
+                            success_verified = True
+                            break
+                except:
+                    pass
+
+                # Check if we're back on the main feed
+                if "/create/" not in current_url:
+                    print("✅ Redirected away from create page")
+                    success_verified = True
+                else:
+                    print("⚠️  Still on create page - post may have failed")
+
+                # Keep browser open longer so you can see the success confirmation
+                if success_verified:
+                    print("🎉 Post successful! Keeping browser open for 5 seconds so you can see the confirmation...")
+                    page.wait_for_timeout(5000)
 
                 browser.close()
 
-                print("✅ Successfully posted to Instagram!")
-                return {
-                    "success": True,
-                    "timestamp": datetime.now().isoformat(),
-                    "content_length": len(content),
-                    "platform": "instagram",
-                    "has_image": True
-                }
+                if success_verified:
+                    print("✅ Successfully posted to Instagram!")
+                    return {
+                        "success": True,
+                        "timestamp": datetime.now().isoformat(),
+                        "content_length": len(content),
+                        "platform": "instagram",
+                        "has_image": True
+                    }
+                else:
+                    print("⚠️  Post submission uncertain - please verify manually")
+                    return {
+                        "success": False,
+                        "error": "Verification failed",
+                        "message": "Could not verify post was submitted successfully"
+                    }
 
         except PlaywrightTimeout as e:
             print(f"❌ Timeout while posting: {e}")

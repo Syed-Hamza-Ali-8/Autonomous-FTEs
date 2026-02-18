@@ -255,12 +255,39 @@ class SocialMediaApprovalHandler(FileSystemEventHandler):
             print("   ❌ No content found")
             return
 
+        # Extract image path from frontmatter (optional)
+        image_path = frontmatter.get('image', None)
+        if image_path:
+            # Convert to absolute path if relative
+            image_path_obj = Path(image_path)
+            if not image_path_obj.is_absolute():
+                image_path_obj = self.vault_path / image_path
+
+            # Verify image exists
+            if image_path_obj.exists():
+                image_path = str(image_path_obj)
+                print(f"   📸 Image: {image_path_obj.name}")
+            else:
+                print(f"   ⚠️  Image not found: {image_path}")
+                image_path = None
+
         # Show content preview
         preview = content[:100] + "..." if len(content) > 100 else content
         print()
         print("📄 Content Preview:")
         print(f"   {preview}")
         print()
+
+        # Instagram requires images
+        if platform == 'instagram' and not image_path:
+            print("   ❌ Instagram requires an image!")
+            print("   Add 'image: path/to/image.jpg' to frontmatter")
+            print(f"   📁 Moving to Failed/")
+            dest = self.failed_dir / file_path.name
+            file_path.rename(dest)
+            print(f"   ✅ Moved to: {dest}")
+            print("=" * 60)
+            return
 
         # Post to platform
         print(f"🚀 Posting to {platform.upper()}...")
@@ -271,11 +298,11 @@ class SocialMediaApprovalHandler(FileSystemEventHandler):
 
         try:
             if platform == 'facebook' and self.facebook_poster:
-                result = self.facebook_poster.post_update(content)
+                result = self.facebook_poster.post_update(content, image_path)
             elif platform == 'twitter' and self.twitter_poster:
-                result = self.twitter_poster.post_update(content)
+                result = self.twitter_poster.post_update(content, image_path)
             elif platform == 'instagram' and self.instagram_poster:
-                result = self.instagram_poster.post_update(content)
+                result = self.instagram_poster.post_update(content, image_path)
             else:
                 print(f"   ⚠️  Poster not available for {platform}")
                 print(f"   Run: python gold/scripts/setup_{platform}.py")

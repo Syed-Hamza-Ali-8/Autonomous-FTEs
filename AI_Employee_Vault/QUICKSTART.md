@@ -1,10 +1,10 @@
 # 🚀 Quick Start Guide - AI Employee Vault
 
-**Last Updated**: 2026-02-14
-**Silver Tier Status**: ✅ 100% Complete (24/7 Autonomous System)
-**Gold Tier Status**: ✅ 100% Complete (Ralph Wiggum - Social Media Automation)
+**Last Updated**: 2026-02-19
+**Silver Tier Status**: ✅ 95% Complete (24/7 Autonomous System)
+**Gold Tier Status**: ✅ 90% Complete (Social Media + Odoo + CEO Briefing)
 **Architecture**: Autonomous AI Employee with Human-in-the-Loop Approval
-**Deployment**: Single Daemon Process with Auto-Restart
+**Deployment**: Multi-Daemon Architecture (Silver + Gold)
 
 ---
 
@@ -177,6 +177,194 @@ PHASE 4: EXECUTION (Automated Actions)
 
 3. **Check Logs**:
    - `Logs/` folder contains detailed execution logs
+
+---
+
+## 🌟 Gold Tier: Social Media Automation (Playwright)
+
+Gold Tier adds **browser automation** for Facebook, Instagram, and Twitter using Playwright. Posts are created in `Approved/` folder and automatically posted by the social media daemon.
+
+### Gold Tier Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  PHASE 1: CREATE APPROVAL FILES                         │
+│  Create approval_*.md files in Approved/ folder         │
+│  Specify platform: facebook, instagram, twitter         │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  PHASE 2: SOCIAL MEDIA DAEMON                           │
+│  Watches Approved/ folder for social media posts        │
+│  Detects platform from filename or frontmatter          │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  PHASE 3: PLAYWRIGHT AUTOMATION                         │
+│  Opens browser (visible, you can watch!)                │
+│  Logs in using saved session                            │
+│  Posts content automatically                            │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  PHASE 4: VERIFICATION & COMPLETION                     │
+│  Verifies post was successful                           │
+│  Moves file to Done/ folder                             │
+│  Logs result in audit trail                             │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Quick Start: Gold Tier Social Media
+
+#### Step 1: Activate Gold Virtual Environment
+
+```bash
+cd /path/to/AI_Employee_Vault
+source gold/.venv/bin/activate
+```
+
+#### Step 2: Setup Social Media Sessions (One-Time)
+
+```bash
+# Setup Facebook (scan QR code or login)
+python gold/scripts/setup_facebook.py
+
+# Setup Instagram (login with credentials)
+python gold/scripts/setup_instagram.py
+
+# Setup Twitter (login with credentials)
+python gold/scripts/setup_twitter.py
+```
+
+**Note**: Sessions persist, so you only need to login once!
+
+#### Step 3: Test Individual Platforms
+
+```bash
+# Test Facebook posting
+python gold/src/actions/facebook_poster_playwright.py
+
+# Test Instagram posting (requires image)
+python gold/src/actions/instagram_poster_playwright.py
+
+# Test Twitter posting
+python gold/src/actions/twitter_poster_playwright.py
+```
+
+#### Step 4: Run Social Media Daemon
+
+```bash
+# Start daemon (watches Approved/ folder)
+python gold/scripts/social_media_daemon.py
+```
+
+**What the daemon does**:
+- Watches `Approved/` folder for new files
+- Detects platform from filename (e.g., `approval_facebook_*.md`)
+- Opens browser and posts automatically
+- Moves completed posts to `Done/` folder
+
+#### Step 5: Create Approval Files
+
+Create a file in `Approved/` folder:
+
+**Facebook Post Example** (`Approved/approval_facebook_test.md`):
+```markdown
+---
+type: post_facebook
+status: approved
+created: 2026-02-19T12:00:00Z
+---
+
+# Facebook Post
+
+## Content
+
+🚀 Exciting news! We're launching our new AI automation platform.
+
+Transform your business with intelligent automation that works 24/7.
+
+#AI #Automation #Business
+```
+
+**Instagram Post Example** (`Approved/approval_instagram_test.md`):
+```markdown
+---
+type: post_instagram
+status: approved
+created: 2026-02-19T12:00:00Z
+image: images/instagram/my_photo.jpg
+---
+
+# Instagram Post
+
+## Content
+
+✨ Behind the scenes of our AI Employee project!
+
+Building the future of autonomous business automation.
+
+#TechLife #AI #Innovation
+```
+
+**Twitter Post Example** (`Approved/approval_twitter_test.md`):
+```markdown
+---
+type: post_twitter
+status: approved
+created: 2026-02-19T12:00:00Z
+---
+
+# Twitter Post
+
+## Content
+
+🤖 Just shipped a major update to our AI Employee system!
+
+Now with full social media automation using Playwright.
+
+#AI #Automation #Tech
+```
+
+#### Step 6: Watch the Magic Happen
+
+1. **Daemon detects** the approval file
+2. **Browser opens** (visible - you can watch!)
+3. **Posts automatically** to the platform
+4. **File moves** to `Done/` folder
+5. **Check your social media** to verify the post
+
+### Gold Tier: CEO Briefing with Odoo
+
+Generate weekly business briefings with real accounting data from Odoo:
+
+```bash
+# Test Odoo connection
+python gold/test_odoo_connection.py
+
+# Generate CEO briefing
+python gold/generate_ceo_briefing_with_odoo.py
+```
+
+**Output**: Creates detailed briefing in `Reports/CEO_Briefings/` with:
+- Revenue and expenses from Odoo
+- Outstanding invoices
+- Profit margins
+- Business insights and recommendations
+
+**Example Output**:
+```
+CEO Briefing - January 18 to February 17, 2026
+
+Executive Summary:
+- Revenue: PKR 995,000.00 (~$3553.57 USD)
+- Expenses: PKR 95,000.00 (~$339.29 USD)
+- Profit: PKR 900,000.00 (~$3214.29 USD)
+- Profit Margin: 90.5%
+
+Action Required:
+- Review outstanding invoices: 5 invoice(s) pending payment
+```
 
 ---
 
@@ -749,6 +937,197 @@ python silver/scripts/run_daemon.py
 
 ---
 
+## 🔧 Gold Tier Troubleshooting
+
+### Problem: Facebook session expired
+
+**Symptoms**:
+```
+❌ Facebook session expired. Please re-login.
+```
+
+**Solution**:
+```bash
+python gold/scripts/setup_facebook.py
+# Scan QR code or login when browser opens
+```
+
+**Why**: Facebook sessions expire after ~30 days of inactivity
+
+---
+
+### Problem: Instagram login failed
+
+**Symptoms**:
+```
+❌ Instagram login failed
+```
+
+**Solution**:
+```bash
+python gold/scripts/setup_instagram.py
+# Enter your Instagram credentials when prompted
+```
+
+**Note**: Instagram may require 2FA verification. Check your phone for the code.
+
+---
+
+### Problem: Twitter session expired
+
+**Symptoms**:
+```
+❌ Twitter session expired
+```
+
+**Solution**:
+```bash
+python gold/scripts/setup_twitter.py
+# Login with your Twitter credentials
+```
+
+---
+
+### Problem: "Post button not found" (Facebook)
+
+**Symptoms**:
+```
+❌ Could not find or click Post button
+```
+
+**Causes**:
+1. Facebook UI changed
+2. Button is blocked by another element
+3. Modal didn't open properly
+
+**Solution**:
+1. **Update the code** - Facebook UI changes frequently
+2. **Check browser** - Make sure browser opens and you can see the post composer
+3. **Manual verification** - Try posting manually to verify your account works
+
+---
+
+### Problem: Instagram Share button not working
+
+**Symptoms**:
+```
+❌ Could not find Share button
+```
+
+**Solution**: Already fixed in latest version! The Share button now uses the same pattern as Next buttons.
+
+**Verify fix**:
+```bash
+python gold/src/actions/instagram_poster_playwright.py
+# Watch for: "✅ Clicked Share button"
+```
+
+---
+
+### Problem: "Browser lock files" error
+
+**Symptoms**:
+```
+Failed to create a ProcessSingleton for your profile directory
+```
+
+**Solution**: Already fixed! The code now automatically cleans up stale lock files.
+
+**Manual cleanup** (if needed):
+```bash
+# Remove lock files
+rm -rf gold/config/facebook_session/SingletonLock
+rm -rf gold/config/instagram_session/SingletonLock
+rm -rf gold/config/twitter_session/SingletonLock
+```
+
+---
+
+### Problem: Social media daemon not detecting files
+
+**Symptoms**: Files stay in `Approved/` folder, daemon doesn't process them
+
+**Solution**:
+1. **Check daemon is running**:
+   ```bash
+   ps aux | grep social_media_daemon
+   ```
+
+2. **Check file format** - Must have `## Content` section:
+   ```markdown
+   ---
+   type: post_facebook
+   status: approved
+   ---
+
+   # Post Title
+
+   ## Content
+
+   Your post content here
+   ```
+
+3. **Check filename** - Must start with `approval_`:
+   ```
+   ✅ approval_facebook_test.md
+   ✅ approval_instagram_test.md
+   ❌ facebook_post.md
+   ```
+
+4. **Restart daemon**:
+   ```bash
+   pkill -f social_media_daemon
+   python gold/scripts/social_media_daemon.py
+   ```
+
+---
+
+### Problem: Odoo connection failed
+
+**Symptoms**:
+```
+❌ Authentication failed: Odoo Server Error
+```
+
+**Solution**:
+1. **Verify Odoo URL** is correct in `gold/.env`
+2. **Check credentials** - Use API key, not password
+3. **Test manually** - Try logging into Odoo web interface
+4. **Generate new API key**:
+   - Login to Odoo
+   - Go to Settings → Users → Your User
+   - Generate new API key
+   - Update `ODOO_PASSWORD` in `gold/.env`
+
+---
+
+### Problem: CEO briefing shows no data
+
+**Symptoms**: Briefing generated but shows zero revenue/expenses
+
+**Causes**:
+1. No data in Odoo
+2. Wrong date range
+3. Mock mode still enabled
+
+**Solution**:
+1. **Check mock mode** in `gold/.env`:
+   ```bash
+   USE_MOCK_ODOO=false  # Should be false
+   ```
+
+2. **Add sample data** to Odoo:
+   ```bash
+   python gold/populate_odoo_sample_data.py
+   ```
+
+3. **Verify Odoo connection**:
+   ```bash
+   python gold/test_odoo_connection.py
+   ```
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -788,24 +1167,38 @@ AI_Employee_Vault/
 │   ├── KEYWORD_FILTERING.md             # Keyword filtering documentation
 │   └── mcp/                             # MCP servers
 │       └── email-server/                # Email MCP server
-├── gold/                                # Gold Tier (Ralph Wiggum - Social Media)
-│   ├── .venv/                           # Virtual environment
+├── gold/                                # Gold Tier (Social Media + Odoo + CEO Briefing)
+│   ├── .venv/                           # Virtual environment (Python 3.13)
+│   ├── .env                             # Environment variables (Odoo, social media)
 │   ├── config/
-│   │   ├── facebook_session/            # Facebook session data
-│   │   ├── twitter_session/             # Twitter session data
-│   │   └── instagram_session/           # Instagram session data
+│   │   ├── facebook_session/            # Facebook session data (persistent)
+│   │   ├── twitter_session/             # Twitter session data (persistent)
+│   │   └── instagram_session/           # Instagram session data (persistent)
 │   ├── scripts/
-│   │   ├── setup_facebook.py            # Facebook authentication
-│   │   ├── setup_twitter.py             # Twitter authentication
-│   │   ├── setup_instagram.py           # Instagram authentication
-│   │   ├── test_facebook.py             # Facebook posting test
-│   │   ├── test_twitter.py              # Twitter posting test
-│   │   └── test_instagram.py            # Instagram posting test
-│   └── src/
-│       └── social_media/                # Social media automation
-│           ├── facebook_poster.py       # Facebook automation
-│           ├── twitter_poster.py        # Twitter automation
-│           └── instagram_poster.py      # Instagram automation
+│   │   ├── social_media_daemon.py       # 🔥 Social media daemon (watches Approved/)
+│   │   ├── setup_facebook.py            # Facebook authentication (one-time)
+│   │   ├─��� setup_twitter.py             # Twitter authentication (one-time)
+│   │   └── setup_instagram.py           # Instagram authentication (one-time)
+│   ├── src/
+│   │   ├── actions/                     # Playwright automation
+│   │   │   ├── facebook_poster_playwright.py   # Facebook posting (WORKING ✅)
+│   │   │   ├── twitter_poster_playwright.py    # Twitter posting
+│   │   │   └── instagram_poster_playwright.py  # Instagram posting (WORKING ✅)
+│   │   ├── intelligence/                # Business intelligence
+│   │   │   └── ceo_briefing.py          # CEO briefing generator
+│   │   └── core/                        # Core infrastructure
+│   │       ├── error_recovery.py        # Error recovery system
+│   │       ├── health_monitor.py        # Health monitoring
+│   │       ├── watchdog.py              # Process watchdog
+│   │       └── audit_logger.py          # Audit logging
+│   ├── mcp/                             # MCP servers
+│   │   └── odoo-mcp-python/             # Odoo MCP server
+│   │       ├── odoo_client.py           # Odoo XML-RPC client
+│   │       └── odoo_xmlrpc_client.py    # Low-level XML-RPC
+│   ├── generate_ceo_briefing_with_odoo.py  # Generate CEO briefing
+│   ├── test_odoo_connection.py          # Test Odoo connection
+│   ├── populate_odoo_sample_data.py     # Add sample data to Odoo
+│   └── docker-compose.odoo.yml          # Odoo Docker setup (optional)
 ├── Needs_Action/                        # Tasks from watchers
 ├── Pending_Approval/                    # Actions awaiting approval
 ├── Approved/                            # Approved actions (auto-executed)
@@ -849,12 +1242,15 @@ AI_Employee_Vault/
 
 | Task | Command |
 |------|---------|
-| **Facebook test** | `python gold/scripts/test_facebook.py` |
-| **Twitter test** | `python gold/scripts/test_twitter.py` |
-| **Instagram test** | `python gold/scripts/test_instagram.py` |
+| **Social media daemon** | `python gold/scripts/social_media_daemon.py` |
+| **Facebook test** | `python gold/src/actions/facebook_poster_playwright.py` |
+| **Twitter test** | `python gold/src/actions/twitter_poster_playwright.py` |
+| **Instagram test** | `python gold/src/actions/instagram_poster_playwright.py` |
 | **Setup Facebook** | `python gold/scripts/setup_facebook.py` |
 | **Setup Twitter** | `python gold/scripts/setup_twitter.py` |
 | **Setup Instagram** | `python gold/scripts/setup_instagram.py` |
+| **CEO Briefing (Odoo)** | `python gold/generate_ceo_briefing_with_odoo.py` |
+| **Test Odoo connection** | `python gold/test_odoo_connection.py` |
 
 ### Production Commands (Daemon Mode)
 
@@ -1017,48 +1413,68 @@ You now have everything you need to run your autonomous AI Employee 24/7!
 ✅ **Auto-restart** on crash (cron health check every 5 minutes)
 ✅ **WhatsApp sync wait** - 30s wait ensures messages are detected
 
-**Gold Tier (Ralph Wiggum - Social Media):**
-✅ **Facebook** posting automation with Playwright
-✅ **Twitter** posting automation with Playwright
-✅ **Instagram** posting automation with Playwright
-✅ **Browser automation** - No API keys needed
-✅ **Session persistence** - Login once, use forever
+**Gold Tier (Social Media + Odoo + CEO Briefing):**
+✅ **Facebook** posting automation with Playwright (WORKING)
+✅ **Instagram** posting automation with Playwright (WORKING)
+⏳ **Twitter** posting automation with Playwright (code ready, needs testing)
+✅ **Odoo accounting** integration with XML-RPC API (WORKING)
+✅ **CEO Briefing** generation with real financial data (WORKING)
+✅ **Browser automation** - No API keys needed (sessions persist)
+✅ **Social media daemon** - Watches Approved/ folder for posts
+✅ **Error recovery** - Comprehensive error handling and graceful degradation
+✅ **Audit logging** - Complete audit trail for all actions
+✅ **Health monitoring** - System health checks and alerts
 
 ### Next Steps
 
-1. **Start the daemon** for continuous operation
+1. **Start Silver Tier daemon** for continuous operation
    ```bash
    cd /mnt/d/hamza/autonomous-ftes/AI_Employee_Vault
    source silver/.venv/bin/activate
    python silver/scripts/run_daemon.py
    ```
 
-2. **Open Obsidian** and watch the folders:
+2. **Start Gold Tier social media daemon** (in separate terminal)
+   ```bash
+   cd /mnt/d/hamza/autonomous-ftes/AI_Employee_Vault
+   source gold/.venv/bin/activate
+   python gold/scripts/social_media_daemon.py
+   ```
+
+3. **Open Obsidian** and watch the folders:
    - `Needs_Action/` - Incoming messages (only priority with keywords)
    - `Pending_Approval/` - AI-generated replies waiting for review
-   - `Approved/` - Drag files here to send
+   - `Approved/` - Drag files here to send (Silver) or post (Gold)
    - `Done/` - Completed actions
 
-3. **Set up cron** for automatic startup and health checks (optional)
+4. **Set up cron** for automatic startup and health checks (optional)
    ```bash
    crontab -e  # Add the cron entries from Option C
    ```
 
-4. **Customize keyword filtering** in `silver/config/watcher_config.yaml`
+5. **Customize keyword filtering** in `silver/config/watcher_config.yaml`
    - Add your own priority keywords
    - Enable/disable filtering
    - Adjust case sensitivity
 
-5. **Explore Gold Tier** features (Facebook, Twitter, Instagram)
+6. **Test Gold Tier** features (Facebook, Instagram, Twitter, Odoo)
    ```bash
-   python gold/scripts/setup_facebook.py
-   python gold/scripts/test_facebook.py
+   # Test Facebook posting
+   source gold/.venv/bin/activate
+   python gold/src/actions/facebook_poster_playwright.py
+
+   # Test Instagram posting
+   python gold/src/actions/instagram_poster_playwright.py
+
+   # Generate CEO briefing with Odoo data
+   python gold/generate_ceo_briefing_with_odoo.py
    ```
 
 ### Production Deployment Summary
 
-Your AI Employee is now configured for **24/7 autonomous operation**:
+Your AI Employee is now configured for **24/7 autonomous operation** with two-tier architecture:
 
+**Silver Tier Daemon (Communication & Automation):**
 - 🤖 **Single daemon process** handles all monitoring and execution
 - 🔄 **Cron auto-restart** ensures 99.9% uptime
 - 📧 **Gmail monitoring** every 30 seconds (keyword filtering enabled)
@@ -1067,7 +1483,17 @@ Your AI Employee is now configured for **24/7 autonomous operation**:
 - 🔵 **LinkedIn automation** with instant approval execution
 - 📊 **Obsidian integration** for human-in-the-loop approval
 - 🎯 **Keyword filtering** prevents folder chaos (133 messages → ~10-15 priority)
-- 🌐 **Gold Tier** social media automation (Facebook, Twitter, Instagram)
+
+**Gold Tier Daemon (Social Media & Business Intelligence):**
+- 🌐 **Social media daemon** watches Approved/ folder for posts
+- 📘 **Facebook posting** with Playwright automation (WORKING ✅)
+- 📸 **Instagram posting** with Playwright automation (WORKING ✅)
+- 🐦 **Twitter posting** with Playwright automation (code ready ⏳)
+- 💼 **Odoo accounting** integration via XML-RPC API (WORKING ✅)
+- 📊 **CEO Briefing** generation with real financial data (WORKING ✅)
+- 🔒 **Session persistence** - Login once, use forever
+- 🛡️ **Error recovery** - Comprehensive error handling
+- 📝 **Audit logging** - Complete audit trail
 
 **The system runs in the background. You only interact through Obsidian!**
 
@@ -1086,26 +1512,35 @@ Your AI Employee is now configured for **24/7 autonomous operation**:
 **Human Approval:**
 - Review AI replies in Obsidian
 - Edit if needed
-- Drag to Approved/ to send
+- Drag to Approved/ to send (Silver) or post (Gold)
 
 **Automatic Execution:**
 - WhatsApp: Opens browser, waits for chat sync, sends message
 - Email: Sends via Gmail API
 - LinkedIn: Posts to feed
-- Facebook/Twitter/Instagram: Posts via browser automation (Gold Tier)
+- Facebook: Posts via Playwright browser automation (Gold Tier) ✅
+- Instagram: Posts via Playwright browser automation (Gold Tier) ✅
+- Twitter: Posts via Playwright browser automation (Gold Tier) ⏳
+
+**Business Intelligence:**
+- Odoo: Real-time accounting data via XML-RPC API ✅
+- CEO Briefing: Weekly business reports with financial insights ✅
+- Revenue tracking, expense analysis, profit margins ✅
+- Outstanding invoice monitoring ✅
 
 **Response Time:**
 - Message detection: 0-30 seconds
 - AI reply generation: 0-60 seconds
 - Total: 30-90 seconds + your review time
+- Social media posting: Instant (when file moved to Approved/)
 
 **Happy Automating!** 🚀
 
 ---
 
-*Last Updated: 2026-02-14*
-*Silver Tier Status: ✅ 100% Complete (24/7 Autonomous System)*
-*Gold Tier Status: ✅ 100% Complete (Ralph Wiggum - Social Media)*
-*Architecture: Autonomous AI Employee with HITL Approval*
-*Deployment: Single Daemon Process with Auto-Restart*
-*Key Features: Gmail, WhatsApp (with 30s sync wait), LinkedIn, Keyword Filtering, AI Orchestrator, Obsidian integration, 24/7 operation, Facebook, Twitter, Instagram*
+*Last Updated: 2026-02-19*
+*Silver Tier Status: ✅ 95% Complete (24/7 Autonomous System)*
+*Gold Tier Status: ✅ 90% Complete (Social Media + Odoo + CEO Briefing)*
+*Architecture: Two-Tier Autonomous AI Employee with HITL Approval*
+*Deployment: Multi-Daemon Architecture (Silver + Gold)*
+*Key Features: Gmail, WhatsApp (with 30s sync wait), LinkedIn, Keyword Filtering, AI Orchestrator, Obsidian integration, 24/7 operation, Facebook ✅, Instagram ✅, Twitter ⏳, Odoo ✅, CEO Briefing ✅*
