@@ -13,7 +13,8 @@ from sqlalchemy import (
     Column, String, Boolean, Integer, Float, Text, DateTime,
     ForeignKey, CheckConstraint, Index, TIMESTAMP
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, VECTOR
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+# from sqlalchemy.dialects.postgresql import VECTOR  # Commented out: pgvector not available
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -30,7 +31,7 @@ class Customer(Base):
     name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
     identifiers: Mapped[List["CustomerIdentifier"]] = relationship("CustomerIdentifier", back_populates="customer", cascade="all, delete-orphan")
@@ -82,7 +83,7 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
     resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
     customer: Mapped["Customer"] = relationship("Customer", back_populates="conversations")
@@ -113,7 +114,7 @@ class Message(Base):
     channel: Mapped[str] = mapped_column(String(50), nullable=False)
     channel_message_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
     conversation: Mapped["Conversation"] = relationship("Conversation", back_populates="messages")
@@ -149,7 +150,7 @@ class Ticket(Base):
     escalated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     escalation_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     assigned_to: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
     customer: Mapped["Customer"] = relationship("Customer", back_populates="tickets")
@@ -172,26 +173,28 @@ class Ticket(Base):
         return f"<Ticket(id={self.id}, subject={self.subject}, status={self.status})>"
 
 
-class KnowledgeBase(Base):
-    """Knowledge base article with vector embedding."""
-    __tablename__ = "knowledge_base"
-
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[str] = mapped_column(String(100), nullable=False)
-    url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    embedding = Column(VECTOR(1536))  # OpenAI text-embedding-3-small
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
-
-    __table_args__ = (
-        Index("idx_knowledge_base_category", "category"),
-    )
-
-    def __repr__(self):
-        return f"<KnowledgeBase(id={self.id}, title={self.title})>"
+# class KnowledgeBase(Base):
+#     """Knowledge base article with vector embedding."""
+#     __tablename__ = "knowledge_base"
+#
+#     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+#     title: Mapped[str] = mapped_column(String(500), nullable=False)
+#     content: Mapped[str] = mapped_column(Text, nullable=False)
+#     category: Mapped[str] = mapped_column(String(100), nullable=False)
+#     url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+#     embedding = Column(VECTOR(1536))  # OpenAI text-embedding-3-small
+#     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+#     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+#     metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
+#
+#     __table_args__ = (
+#         Index("idx_knowledge_base_category", "category"),
+#     )
+#
+#     def __repr__(self):
+#         return f"<KnowledgeBase(id={self.id}, title={self.title})>"
+#
+# COMMENTED OUT: KnowledgeBase model requires pgvector extension which is not available
 
 
 class ChannelConfig(Base):
@@ -225,7 +228,7 @@ class AgentMetric(Base):
     customer_id: Mapped[Optional[UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     conversation_id: Mapped[Optional[UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
 
     __table_args__ = (
         Index("idx_agent_metrics_type", "metric_type"),

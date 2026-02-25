@@ -39,9 +39,7 @@ class KafkaProducer:
                 value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                 key_serializer=lambda k: k.encode('utf-8') if k else None,
                 compression_type='gzip',
-                acks='all',  # Wait for all replicas
-                retries=3,
-                max_in_flight_requests_per_connection=5
+                acks='all'  # Wait for all replicas
             )
             await self.producer.start()
             self._connected = True

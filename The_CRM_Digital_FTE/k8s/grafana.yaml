@@ -1,0 +1,164 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: customer-success-fte
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: customer-success-fte
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Customer Success FTE - Multi-Channel Dashboard",
+        "panels": [
+          {
+            "title": "Request Rate by Channel",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{job='fte-api'}[5m])",
+                "legendFormat": "{{channel}}"
+              }
+            ],
+            "type": "graph"
+          },
+          {
+            "title": "Response Time P95",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "P95 Latency"
+              }
+            ],
+            "type": "graph"
+          },
+          {
+            "title": "Active Conversations by Channel",
+            "targets": [
+              {
+                "expr": "conversations_active{job='fte-api'}",
+                "legendFormat": "{{channel}}"
+              }
+            ],
+            "type": "graph"
+          },
+          {
+            "title": "Escalation Rate",
+            "targets": [
+              {
+                "expr": "rate(tickets_escalated_total[5m])",
+                "legendFormat": "Escalations/sec"
+              }
+            ],
+            "type": "graph"
+          },
+          {
+            "title": "Error Rate",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{status=~'5..'}[5m])",
+                "legendFormat": "5xx errors"
+              }
+            ],
+            "type": "graph"
+          },
+          {
+            "title": "Database Health",
+            "targets": [
+              {
+                "expr": "database_health",
+                "legendFormat": "DB Status"
+              }
+            ],
+            "type": "stat"
+          },
+          {
+            "title": "Kafka Health",
+            "targets": [
+              {
+                "expr": "kafka_health",
+                "legendFormat": "Kafka Status"
+              }
+            ],
+            "type": "stat"
+          },
+          {
+            "title": "Messages Processed by Channel",
+            "targets": [
+              {
+                "expr": "rate(messages_processed_total[5m])",
+                "legendFormat": "{{channel}}"
+              }
+            ],
+            "type": "graph"
+          }
+        ]
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: customer-success-fte
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        volumeMounts:
+        - name: grafana-datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: grafana-dashboards
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+      volumes:
+      - name: grafana-datasources
+        configMap:
+          name: grafana-datasources
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboards
+      - name: grafana-storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: customer-success-fte
+spec:
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000

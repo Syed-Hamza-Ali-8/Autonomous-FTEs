@@ -22,7 +22,7 @@ from ..database.models import Customer, Conversation, Message, Ticket
 from ..agent.customer_success_agent import CustomerSuccessAgent
 from ..channels.gmail_integration import GmailIntegration
 from ..channels.whatsapp_integration import WhatsAppIntegration
-from .kafka_producer import KafkaProducer
+from ..api.kafka_producer import KafkaProducer
 
 # Configure logging
 logging.basicConfig(
@@ -47,7 +47,15 @@ class KafkaWorker:
         self.consumer: Optional[AIOKafkaConsumer] = None
         self.producer = KafkaProducer()
         self.gmail = GmailIntegration()
-        self.whatsapp = WhatsAppIntegration()
+
+        # Initialize WhatsApp only if credentials are available
+        try:
+            self.whatsapp = WhatsAppIntegration()
+            logger.info("WhatsApp integration initialized")
+        except ValueError as e:
+            logger.warning(f"WhatsApp integration disabled: {e}")
+            self.whatsapp = None
+
         self.running = False
 
     async def start(self):
@@ -312,8 +320,13 @@ class KafkaWorker:
         response_text: str
     ):
         """Send WhatsApp response via Twilio."""
+        if not self.whatsapp:
+            logger.warning("WhatsApp integration not available, skipping WhatsApp response")
+            return
+
         if not customer.phone:
             logger.warning(f"Customer {customer.id} has no phone number")
+            return
             return
 
         # Send WhatsApp message

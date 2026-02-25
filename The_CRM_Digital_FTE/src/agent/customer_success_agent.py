@@ -3,10 +3,12 @@ Customer Success Agent - Production Implementation
 Phase 2: Specialization
 
 OpenAI Agents SDK implementation with function tools.
+Supports OpenRouter and other OpenAI-compatible APIs.
 """
 
 import os
 import json
+import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from uuid import UUID
@@ -16,8 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from ..database.models import (
-    Customer, Conversation, Message, Ticket, KnowledgeBase
+    Customer, Conversation, Message, Ticket
+    # KnowledgeBase  # Commented out: requires pgvector
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CustomerSuccessAgent:
@@ -34,9 +39,21 @@ class CustomerSuccessAgent:
             db: Database session
         """
         self.db = db
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        # Support OpenRouter or OpenAI
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENAI_BASE_URL")  # Optional: for OpenRouter
+
+        if base_url:
+            # Using OpenRouter or custom endpoint
+            self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        else:
+            # Using standard OpenAI
+            self.client = AsyncOpenAI(api_key=api_key)
+
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        self.enable_embeddings = os.getenv("ENABLE_EMBEDDINGS", "false").lower() == "true"
 
         # Escalation thresholds
         self.sentiment_threshold = float(os.getenv("ESCALATION_SENTIMENT_THRESHOLD", "0.3"))
@@ -117,14 +134,10 @@ Company Information:
                 "type": "function",
                 "function": {
                     "name": "create_ticket",
-                    "description": "Create a support ticket for tracking. ALWAYS create a ticket at the start of every conversation. Include the source channel for proper tracking.",
+                    "description": "Create a support ticket for tracking. ALWAYS create a ticket at the start of every conversation. The customer_id and channel are automatically provided.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "customer_id": {
-                                "type": "string",
-                                "description": "Customer UUID"
-                            },
                             "issue": {
                                 "type": "string",
                                 "description": "Brief description of the issue"
@@ -134,18 +147,13 @@ Company Information:
                                 "description": "Ticket priority",
                                 "enum": ["low", "medium", "high"]
                             },
-                            "channel": {
-                                "type": "string",
-                                "description": "Source channel",
-                                "enum": ["email", "whatsapp", "web_form"]
-                            },
                             "category": {
                                 "type": "string",
                                 "description": "Optional ticket category",
                                 "enum": ["general", "technical", "billing", "feedback", "bug_report"]
                             }
                         },
-                        "required": ["customer_id", "issue", "priority", "channel"]
+                        "required": ["issue", "priority"]
                     }
                 }
             },
@@ -355,8 +363,15 @@ Company Information:
 
         history = []
         for msg in messages:
+            # Map database roles to OpenAI-compatible roles
+            role = msg.role
+            if role == "customer":
+                role = "user"
+            elif role == "agent":
+                role = "assistant"
+
             history.append({
-                "role": msg.role if msg.role != "agent" else "assistant",
+                "role": role,
                 "content": msg.content
             })
 
@@ -416,8 +431,17 @@ Company Information:
         if function_name == "search_knowledge_base":
             return await self._search_knowledge_base(**arguments)
         elif function_name == "create_ticket":
-            return await self._create_ticket(conversation_id=conversation_id, **arguments)
+            # Inject customer_id and channel automatically
+            return await self._create_ticket(
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+                channel=channel,
+                **arguments
+            )
         elif function_name == "get_customer_history":
+            # Inject customer_id automatically if not provided
+            if 'customer_id' not in arguments:
+                arguments['customer_id'] = str(customer_id)
             return await self._get_customer_history(**arguments)
         elif function_name == "escalate_to_human":
             return await self._escalate_to_human(**arguments)
@@ -432,52 +456,107 @@ Company Information:
         max_results: int = 5,
         category: Optional[str] = None
     ) -> str:
-        """Search knowledge base using semantic search."""
-        # Generate embedding for query
-        embedding_response = await self.client.embeddings.create(
-            model=self.embedding_model,
-            input=query
-        )
-        query_embedding = embedding_response.data[0].embedding
+        """Search knowledge base using semantic search or simple text search."""
 
-        # Search using pgvector
-        # Note: This uses raw SQL for vector similarity search
-        sql = """
-            SELECT id, title, content, category, url,
-                   1 - (embedding <=> :query_embedding::vector) as similarity
-            FROM knowledge_base
-            WHERE (:category IS NULL OR category = :category)
-            ORDER BY embedding <=> :query_embedding::vector
-            LIMIT :max_results
-        """
+        if self.enable_embeddings:
+            # Use semantic search with embeddings (requires paid OpenAI account)
+            try:
+                embedding_response = await self.client.embeddings.create(
+                    model=self.embedding_model,
+                    input=query
+                )
+                query_embedding = embedding_response.data[0].embedding
 
-        result = await self.db.execute(
-            sql,
-            {
-                "query_embedding": str(query_embedding),
-                "category": category,
-                "max_results": max_results
-            }
-        )
-        articles = result.fetchall()
+                # Search using pgvector
+                sql = """
+                    SELECT id, title, content, category, url,
+                           1 - (embedding <=> :query_embedding::vector) as similarity
+                    FROM knowledge_base
+                    WHERE (:category IS NULL OR category = :category)
+                    ORDER BY embedding <=> :query_embedding::vector
+                    LIMIT :max_results
+                """
 
-        if not articles:
-            return "No relevant articles found in the knowledge base."
+                result = await self.db.execute(
+                    sql,
+                    {
+                        "query_embedding": str(query_embedding),
+                        "category": category,
+                        "max_results": max_results
+                    }
+                )
+                articles = result.fetchall()
 
-        # Format results
-        formatted_results = []
-        for article in articles:
-            formatted_results.append(
-                f"**{article.title}** (relevance: {article.similarity:.2f})\n"
-                f"{article.content[:300]}...\n"
-                f"Learn more: {article.url}\n"
+                if not articles:
+                    return "No relevant articles found in the knowledge base."
+
+                # Format results
+                formatted_results = []
+                for article in articles:
+                    formatted_results.append(
+                        f"**{article.title}** (relevance: {article.similarity:.2f})\n"
+                        f"{article.content[:300]}...\n"
+                        f"Learn more: {article.url}\n"
+                    )
+
+                return "\n---\n\n".join(formatted_results)
+            except Exception as e:
+                logger.warning(f"Embedding search failed: {e}, falling back to text search")
+                # Fall through to simple text search
+
+        # Simple text search (no embeddings required)
+        # This is a fallback that works without paid OpenAI account
+        try:
+            from sqlalchemy import text, or_
+
+            # Use PostgreSQL full-text search
+            sql = text("""
+                SELECT id, title, content, category, url
+                FROM knowledge_base
+                WHERE (:category IS NULL OR category = :category)
+                AND (
+                    title ILIKE :search_pattern
+                    OR content ILIKE :search_pattern
+                )
+                LIMIT :max_results
+            """)
+
+            search_pattern = f"%{query}%"
+            result = await self.db.execute(
+                sql,
+                {
+                    "category": category,
+                    "search_pattern": search_pattern,
+                    "max_results": max_results
+                }
             )
+            articles = result.fetchall()
 
-        return "\n---\n\n".join(formatted_results)
+            if not articles:
+                return "No relevant articles found in the knowledge base. For better results, consider enabling embeddings with a paid OpenAI account."
+
+            # Format results
+            formatted_results = []
+            for article in articles:
+                formatted_results.append(
+                    f"**{article.title}**\n"
+                    f"{article.content[:300]}...\n"
+                    f"Learn more: {article.url}\n"
+                )
+
+            return "\n---\n\n".join(formatted_results)
+        except Exception as e:
+            # Handle missing knowledge_base table gracefully
+            if "knowledge_base" in str(e) and "does not exist" in str(e):
+                logger.info("Knowledge base table not available - using general knowledge")
+                return "I'll help you based on my general knowledge. For more detailed information, please contact our support team."
+            else:
+                logger.error(f"Knowledge base search failed: {e}")
+                return "Knowledge base search is currently unavailable. I'll do my best to help based on my training."
 
     async def _create_ticket(
         self,
-        customer_id: str,
+        customer_id: UUID,
         conversation_id: UUID,
         issue: str,
         priority: str,
@@ -486,7 +565,7 @@ Company Information:
     ) -> str:
         """Create a support ticket."""
         ticket = Ticket(
-            customer_id=UUID(customer_id),
+            customer_id=customer_id,
             conversation_id=conversation_id,
             subject=issue[:500],
             status="open",

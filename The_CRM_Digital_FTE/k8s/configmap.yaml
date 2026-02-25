@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fte-config
+  namespace: customer-success-fte
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "customer_success_fte"
+  POSTGRES_USER: "fte_user"
+  # Channel configs
+  GMAIL_ENABLED: "true"
+  WHATSAPP_ENABLED: "true"
+  WEBFORM_ENABLED: "true"
+  # Response limits
+  MAX_EMAIL_LENGTH: "2000"
+  MAX_WHATSAPP_LENGTH: "1600"
+  MAX_WEBFORM_LENGTH: "1000"
+  # API settings
+  API_PORT: "8000"
+  WORKERS_COUNT: "2"

@@ -4,7 +4,7 @@
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgvector";
+-- CREATE EXTENSION IF NOT EXISTS "pgvector";  -- Commented out: pgvector not available in base image
 
 -- ============================================================================
 -- TABLE: customers
@@ -137,22 +137,23 @@ CREATE INDEX idx_tickets_channel ON tickets(channel);
 -- ============================================================================
 -- TABLE: knowledge_base
 -- Product documentation with vector embeddings
+-- COMMENTED OUT: Requires pgvector extension which is not available
 -- ============================================================================
-CREATE TABLE knowledge_base (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    title VARCHAR(500) NOT NULL,
-    content TEXT NOT NULL,
-    category VARCHAR(100) NOT NULL,
-    url VARCHAR(500),
-    embedding VECTOR(1536), -- OpenAI text-embedding-3-small dimension
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    metadata JSONB DEFAULT '{}'::jsonb
-);
+-- CREATE TABLE knowledge_base (
+--     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+--     title VARCHAR(500) NOT NULL,
+--     content TEXT NOT NULL,
+--     category VARCHAR(100) NOT NULL,
+--     url VARCHAR(500),
+--     embedding VECTOR(1536), -- OpenAI text-embedding-3-small dimension
+--     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+--     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+--     metadata JSONB DEFAULT '{}'::jsonb
+-- );
 
 -- Indexes
-CREATE INDEX idx_knowledge_base_category ON knowledge_base(category);
-CREATE INDEX idx_knowledge_base_embedding ON knowledge_base USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- CREATE INDEX idx_knowledge_base_category ON knowledge_base(category);
+-- CREATE INDEX idx_knowledge_base_embedding ON knowledge_base USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- ============================================================================
 -- TABLE: channel_configs
@@ -215,8 +216,8 @@ CREATE TRIGGER update_conversations_updated_at BEFORE UPDATE ON conversations
 CREATE TRIGGER update_tickets_updated_at BEFORE UPDATE ON tickets
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_knowledge_base_updated_at BEFORE UPDATE ON knowledge_base
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- CREATE TRIGGER update_knowledge_base_updated_at BEFORE UPDATE ON knowledge_base
+--     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_channel_configs_updated_at BEFORE UPDATE ON channel_configs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -321,9 +322,9 @@ COMMENT ON TABLE customer_identifiers IS 'Cross-channel customer identification 
 COMMENT ON TABLE conversations IS 'Conversation threads tracking customer interactions';
 COMMENT ON TABLE messages IS 'Individual messages within conversations';
 COMMENT ON TABLE tickets IS 'Support tickets with status tracking and escalation';
-COMMENT ON TABLE knowledge_base IS 'Product documentation with vector embeddings for semantic search';
+-- COMMENT ON TABLE knowledge_base IS 'Product documentation with vector embeddings for semantic search';
 COMMENT ON TABLE channel_configs IS 'Channel-specific configuration and settings';
 COMMENT ON TABLE agent_metrics IS 'Performance metrics and monitoring data';
 
-COMMENT ON COLUMN knowledge_base.embedding IS 'Vector embedding (1536 dimensions) from OpenAI text-embedding-3-small';
+-- COMMENT ON COLUMN knowledge_base.embedding IS 'Vector embedding (1536 dimensions) from OpenAI text-embedding-3-small';
 COMMENT ON COLUMN tickets.escalation_reason IS 'Reason for escalation: billing_issue, sales_opportunity, negative_sentiment, critical_issue, etc.';

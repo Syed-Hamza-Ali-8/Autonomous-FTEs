@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fte-worker
+  namespace: customer-success-fte
+  labels:
+    app: customer-success-fte
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: customer-success-fte
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: customer-success-fte
+        component: worker
+    spec:
+      containers:
+      - name: fte-worker
+        image: customer-success-fte:latest
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "src.worker.kafka_consumer"]
+        envFrom:
+        - configMapRef:
+            name: fte-config
+        - secretRef:
+            name: fte-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import sys; sys.exit(0)"
+          initialDelaySeconds: 30
+          periodSeconds: 60

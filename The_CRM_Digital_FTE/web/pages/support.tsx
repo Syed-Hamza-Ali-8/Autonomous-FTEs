@@ -85,7 +85,7 @@ export default function SupportPage() {
     setSubmitStatus('idle');
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
       const response = await fetch(`${apiUrl}/support/submit`, {
         method: 'POST',
         headers: {

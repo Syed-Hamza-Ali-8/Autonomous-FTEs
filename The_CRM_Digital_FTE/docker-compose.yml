@@ -139,15 +139,13 @@ services:
       dockerfile: Dockerfile
     container_name: crm_fte_api
     depends_on:
-      postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      # Database
-      DATABASE_URL: postgresql://fte_user:${POSTGRES_PASSWORD:-fte_password_change_me}@postgres:5432/customer_success_fte
+      # Database (using Neon.tech from .env)
+      DATABASE_URL: ${DATABASE_URL}
 
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -171,7 +169,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./credentials:/app/credentials:ro
       - ./logs:/app/logs
@@ -184,23 +182,23 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: crm_fte_worker
     depends_on:
-      postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      # Same as API
-      DATABASE_URL: postgresql://fte_user:${POSTGRES_PASSWORD:-fte_password_change_me}@postgres:5432/customer_success_fte
+      # Database (using Neon.tech from .env)
+      DATABASE_URL: ${DATABASE_URL}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_URL: redis://redis:6379/0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ENABLE_EMBEDDINGS: ${ENABLE_EMBEDDINGS:-false}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    command: python -m src.worker.message_processor
+    command: python -m src.worker.kafka_consumer
     volumes:
       - ./logs:/app/logs
     networks:
