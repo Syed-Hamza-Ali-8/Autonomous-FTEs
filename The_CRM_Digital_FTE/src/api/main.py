@@ -20,7 +20,7 @@ from sqlalchemy import select
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from ..database.connection import get_db, check_db_health
-from ..database.models import Customer, CustomerIdentifier, Conversation, Message
+from ..database.models import Customer, CustomerIdentifier, Conversation, Message, Ticket
 from ..channels.gmail_integration import GmailIntegration
 from ..channels.whatsapp_integration import WhatsAppIntegration
 from .kafka_producer import KafkaProducer
@@ -77,6 +77,51 @@ class CustomerLookupResponse(BaseModel):
     created_at: str
     total_conversations: int
     total_tickets: int
+
+
+class TicketResponse(BaseModel):
+    """Ticket response model."""
+    id: str
+    customer_id: str
+    customer_name: Optional[str]
+    customer_email: Optional[str]
+    subject: str
+    status: str
+    priority: str
+    category: str
+    channel: str
+    created_at: str
+    updated_at: str
+    resolved_at: Optional[str]
+    escalated_at: Optional[str]
+    escalation_reason: Optional[str]
+    assigned_to: Optional[str]
+
+
+class TicketDetailResponse(BaseModel):
+    """Detailed ticket response with conversation history."""
+    ticket: TicketResponse
+    messages: list[Dict[str, Any]]
+
+
+class TicketUpdateRequest(BaseModel):
+    """Ticket update request model."""
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    assigned_to: Optional[str] = None
+    escalation_reason: Optional[str] = None
+
+
+class TicketStatsResponse(BaseModel):
+    """Ticket statistics response model."""
+    total: int
+    open: int
+    in_progress: int
+    resolved: int
+    escalated: int
+    by_priority: Dict[str, int]
+    by_channel: Dict[str, int]
+    by_category: Dict[str, int]
 
 
 class HealthResponse(BaseModel):
@@ -405,6 +450,290 @@ async def lookup_customer(
         raise
     except Exception as e:
         logger.error(f"Customer lookup error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Ticket management endpoints
+@app.get("/tickets", response_model=list[TicketResponse])
+async def list_tickets(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    channel: Optional[str] = None,
+    category: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all tickets with optional filtering.
+
+    Args:
+        status: Filter by status (open, in_progress, resolved, escalated)
+        priority: Filter by priority (low, medium, high)
+        channel: Filter by channel (email, whatsapp, web_form)
+        category: Filter by category
+        limit: Maximum number of results
+        offset: Pagination offset
+
+    Returns:
+        List of tickets
+    """
+    try:
+        from sqlalchemy import desc, and_
+
+        # Build query with joins
+        query = select(Ticket, Customer).join(
+            Customer, Ticket.customer_id == Customer.id
+        )
+
+        # Apply filters
+        filters = []
+        if status:
+            filters.append(Ticket.status == status)
+        if priority:
+            filters.append(Ticket.priority == priority)
+        if channel:
+            filters.append(Ticket.channel == channel)
+        if category:
+            filters.append(Ticket.category == category)
+
+        if filters:
+            query = query.where(and_(*filters))
+
+        # Order by created_at descending
+        query = query.order_by(desc(Ticket.created_at))
+
+        # Apply pagination
+        query = query.limit(limit).offset(offset)
+
+        result = await db.execute(query)
+        rows = result.all()
+
+        # Format response
+        tickets = []
+        for ticket, customer in rows:
+            tickets.append({
+                "id": str(ticket.id),
+                "customer_id": str(ticket.customer_id),
+                "customer_name": customer.name,
+                "customer_email": customer.email,
+                "subject": ticket.subject,
+                "status": ticket.status,
+                "priority": ticket.priority,
+                "category": ticket.category,
+                "channel": ticket.channel,
+                "created_at": ticket.created_at.isoformat(),
+                "updated_at": ticket.updated_at.isoformat(),
+                "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
+                "escalated_at": ticket.escalated_at.isoformat() if ticket.escalated_at else None,
+                "escalation_reason": ticket.escalation_reason,
+                "assigned_to": ticket.assigned_to
+            })
+
+        return tickets
+
+    except Exception as e:
+        logger.error(f"List tickets error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tickets/stats", response_model=TicketStatsResponse)
+async def get_ticket_stats(db: AsyncSession = Depends(get_db)):
+    """
+    Get ticket statistics.
+
+    Returns:
+        Ticket statistics including counts by status, priority, channel, and category
+    """
+    try:
+        from sqlalchemy import func
+
+        # Total tickets
+        total_result = await db.execute(select(func.count(Ticket.id)))
+        total = total_result.scalar()
+
+        # By status
+        status_result = await db.execute(
+            select(Ticket.status, func.count(Ticket.id))
+            .group_by(Ticket.status)
+        )
+        status_counts = {row[0]: row[1] for row in status_result.all()}
+
+        # By priority
+        priority_result = await db.execute(
+            select(Ticket.priority, func.count(Ticket.id))
+            .group_by(Ticket.priority)
+        )
+        priority_counts = {row[0]: row[1] for row in priority_result.all()}
+
+        # By channel
+        channel_result = await db.execute(
+            select(Ticket.channel, func.count(Ticket.id))
+            .group_by(Ticket.channel)
+        )
+        channel_counts = {row[0]: row[1] for row in channel_result.all()}
+
+        # By category
+        category_result = await db.execute(
+            select(Ticket.category, func.count(Ticket.id))
+            .group_by(Ticket.category)
+        )
+        category_counts = {row[0]: row[1] for row in category_result.all()}
+
+        return {
+            "total": total,
+            "open": status_counts.get("open", 0),
+            "in_progress": status_counts.get("in_progress", 0),
+            "resolved": status_counts.get("resolved", 0),
+            "escalated": status_counts.get("escalated", 0),
+            "by_priority": priority_counts,
+            "by_channel": channel_counts,
+            "by_category": category_counts
+        }
+
+    except Exception as e:
+        logger.error(f"Get ticket stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tickets/{ticket_id}")
+async def get_ticket(
+    ticket_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get detailed ticket information including conversation history.
+
+    Args:
+        ticket_id: Ticket UUID
+
+    Returns:
+        Detailed ticket information with messages
+    """
+    try:
+        # Get ticket with customer info
+        query = select(Ticket, Customer).join(
+            Customer, Ticket.customer_id == Customer.id
+        ).where(Ticket.id == UUID(ticket_id))
+
+        result = await db.execute(query)
+        row = result.one_or_none()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+
+        ticket, customer = row
+
+        # Get conversation messages
+        messages_query = select(Message).where(
+            Message.conversation_id == ticket.conversation_id
+        ).order_by(Message.timestamp)
+
+        messages_result = await db.execute(messages_query)
+        messages = messages_result.scalars().all()
+
+        # Format response as plain dictionaries
+        ticket_data = {
+            "id": str(ticket.id),
+            "customer_id": str(ticket.customer_id),
+            "customer_name": customer.name,
+            "customer_email": customer.email,
+            "subject": ticket.subject,
+            "status": ticket.status,
+            "priority": ticket.priority,
+            "category": ticket.category,
+            "channel": ticket.channel,
+            "created_at": ticket.created_at.isoformat(),
+            "updated_at": ticket.updated_at.isoformat(),
+            "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
+            "escalated_at": ticket.escalated_at.isoformat() if ticket.escalated_at else None,
+            "escalation_reason": ticket.escalation_reason,
+            "assigned_to": ticket.assigned_to
+        }
+
+        messages_data = [
+            {
+                "id": str(msg.id),
+                "role": msg.role,
+                "content": msg.content,
+                "channel": msg.channel,
+                "timestamp": msg.timestamp.isoformat(),
+                "metadata": msg.metadata_ if msg.metadata_ else {}
+            }
+            for msg in messages
+        ]
+
+        # Return plain dict, let FastAPI handle serialization
+        return {
+            "ticket": ticket_data,
+            "messages": messages_data
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get ticket error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/tickets/{ticket_id}")
+async def update_ticket(
+    ticket_id: str,
+    update: TicketUpdateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update ticket status, priority, or assignment.
+
+    Args:
+        ticket_id: Ticket UUID
+        update: Update request with fields to change
+
+    Returns:
+        Updated ticket information
+    """
+    try:
+        # Get ticket
+        query = select(Ticket).where(Ticket.id == UUID(ticket_id))
+        result = await db.execute(query)
+        ticket = result.scalar_one_or_none()
+
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+
+        # Update fields
+        if update.status is not None:
+            ticket.status = update.status
+            if update.status == "resolved":
+                ticket.resolved_at = datetime.now()
+            elif update.status == "escalated":
+                ticket.escalated_at = datetime.now()
+
+        if update.priority is not None:
+            ticket.priority = update.priority
+
+        if update.assigned_to is not None:
+            ticket.assigned_to = update.assigned_to
+
+        if update.escalation_reason is not None:
+            ticket.escalation_reason = update.escalation_reason
+
+        await db.commit()
+        await db.refresh(ticket)
+
+        return {
+            "success": True,
+            "message": "Ticket updated successfully",
+            "ticket_id": str(ticket.id),
+            "status": ticket.status,
+            "priority": ticket.priority
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update ticket error: {e}")
+        await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 

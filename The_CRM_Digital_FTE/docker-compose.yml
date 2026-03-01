@@ -169,7 +169,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     ports:
-      - "8001:8000"
+      - "8002:8000"
     volumes:
       - ./credentials:/app/credentials:ro
       - ./logs:/app/logs
