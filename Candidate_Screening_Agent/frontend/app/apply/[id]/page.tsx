@@ -1,0 +1,455 @@
+'use client'
+
+import { useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+import Modal from '@/components/Modal'
+
+interface Job {
+  id: number
+  title: string
+  description: string
+  total_candidates: number
+}
+
+export default function JobApplicationPage() {
+  const params = useParams()
+  const router = useRouter()
+  const [job, setJob] = useState<Job | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [modalTitle, setModalTitle] = useState('')
+  const [modalMessage, setModalMessage] = useState('')
+  const [modalType, setModalType] = useState<'error' | 'success' | 'warning' | 'info'>('info')
+
+  // Form state
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [resume, setResume] = useState<File | null>(null)
+
+  // Helper function to show modal
+  const showModal = (title: string, message: string, type: 'error' | 'success' | 'warning' | 'info') => {
+    setModalTitle(title)
+    setModalMessage(message)
+    setModalType(type)
+    setIsModalOpen(true)
+  }
+
+  useEffect(() => {
+    const fetchJob = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/jobs/${params.id}`)
+        if (!response.ok) throw new Error('Job not found')
+        const data = await response.json()
+        setJob(data)
+      } catch (err: any) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (params.id) {
+      fetchJob()
+    }
+  }, [params.id])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+
+    if (!resume) {
+      showModal('Resume Required', 'Please upload your resume to continue with your application.', 'warning')
+      setSubmitting(false)
+      return
+    }
+
+    if (resume.type !== 'application/pdf') {
+      showModal('Invalid File Type', 'Resume must be a PDF file. Please upload a PDF version of your resume.', 'error')
+      setSubmitting(false)
+      return
+    }
+
+    try {
+      const formData = new FormData()
+      formData.append('name', name)
+      formData.append('email', email)
+      formData.append('resume', resume)
+      formData.append('job_id', params.id as string)
+
+      const response = await fetch('http://localhost:8000/api/applications/submit', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Failed to submit application')
+      }
+
+      setSuccess(true)
+      setName('')
+      setEmail('')
+      setResume(null)
+    } catch (err: any) {
+      showModal('Application Error', err.message, 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <div className="relative w-16 h-16 mx-auto mb-6">
+            <div className="absolute inset-0 rounded-full border-2 animate-spin"
+                 style={{
+                   borderColor: 'var(--cyan-electric)',
+                   borderTopColor: 'transparent'
+                 }} />
+          </div>
+          <p className="font-mono text-sm uppercase tracking-wider"
+             style={{ color: 'var(--navy-mid)' }}>
+            Loading position details...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error && !job) {
+    return (
+      <div className="max-w-2xl mx-auto px-6 py-16">
+        <div className="border-l-4 p-8"
+             style={{
+               borderColor: 'var(--coral-warm)',
+               background: 'rgba(255, 107, 107, 0.05)'
+             }}>
+          <h2 className="font-display text-2xl mb-3"
+              style={{ color: 'var(--navy-deep)' }}>
+            Position Not Found
+          </h2>
+          <p style={{ color: 'var(--navy-mid)' }}>{error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (success) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-16">
+        <div className="text-center py-16 border-l-4"
+             style={{
+               borderColor: 'var(--sage-green)',
+               background: 'white',
+               boxShadow: 'var(--shadow-soft)'
+             }}>
+          <div className="inline-flex items-center justify-center w-20 h-20 mb-8"
+               style={{ background: 'var(--sage-green)' }}>
+            <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="font-display text-4xl mb-4"
+              style={{ color: 'var(--navy-deep)' }}>
+            Application Submitted
+          </h2>
+          <p className="text-xl mb-2"
+             style={{ color: 'var(--navy-mid)' }}>
+            Thank you for applying to <span className="font-display">{job?.title}</span>
+          </p>
+          <p className="text-lg mb-12 max-w-xl mx-auto"
+             style={{ color: 'var(--navy-light)' }}>
+            Our AI will review your resume shortly. You'll receive screening questions
+            via email within 24 hours if your profile matches our requirements.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={() => router.push('/jobs')}
+              className="px-8 py-3 font-medium transition-all hover:opacity-90"
+              style={{
+                background: 'var(--navy-deep)',
+                color: 'var(--off-white)'
+              }}
+            >
+              View Other Positions
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="px-8 py-3 font-medium border transition-all hover:opacity-70"
+              style={{
+                borderColor: 'var(--navy-deep)',
+                color: 'var(--navy-deep)',
+                background: 'transparent'
+              }}
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto px-6 py-16">
+      {/* Modal for errors and warnings */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={modalTitle}
+        message={modalMessage}
+        type={modalType}
+      />
+
+      {/* Header */}
+      <div className="mb-12">
+        <div className="font-mono text-xs uppercase tracking-wider mb-4"
+             style={{ color: 'var(--navy-mid)' }}>
+          Application
+        </div>
+        <h1 className="font-display text-5xl mb-4"
+            style={{ color: 'var(--navy-deep)' }}>
+          {job?.title}
+        </h1>
+        <p className="text-xl leading-relaxed max-w-2xl"
+           style={{ color: 'var(--navy-light)' }}>
+          {job?.description}
+        </p>
+      </div>
+
+      {/* Divider */}
+      <div className="h-px mb-12" style={{ background: 'var(--warm-gray)' }} />
+
+      {/* Application Form */}
+      <div className="grid lg:grid-cols-12 gap-12">
+        {/* Form - Main Column */}
+        <div className="lg:col-span-7">
+          <form onSubmit={handleSubmit} className="space-y-8">
+            {/* Name */}
+            <div>
+              <label htmlFor="name"
+                     className="block font-medium mb-3 text-sm uppercase tracking-wider"
+                     style={{ color: 'var(--navy-mid)' }}>
+                Full Name *
+              </label>
+              <input
+                type="text"
+                id="name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-6 py-4 border-2 font-medium transition-all focus:outline-none"
+                style={{
+                  borderColor: 'var(--warm-gray)',
+                  color: 'var(--navy-deep)',
+                  background: 'white'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--cyan-electric)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--warm-gray)'}
+                placeholder="John Doe"
+              />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label htmlFor="email"
+                     className="block font-medium mb-3 text-sm uppercase tracking-wider"
+                     style={{ color: 'var(--navy-mid)' }}>
+                Email Address *
+              </label>
+              <input
+                type="email"
+                id="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-6 py-4 border-2 font-medium transition-all focus:outline-none"
+                style={{
+                  borderColor: 'var(--warm-gray)',
+                  color: 'var(--navy-deep)',
+                  background: 'white'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--cyan-electric)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--warm-gray)'}
+                placeholder="john.doe@example.com"
+              />
+            </div>
+
+            {/* Resume Upload */}
+            <div>
+              <label htmlFor="resume"
+                     className="block font-medium mb-3 text-sm uppercase tracking-wider"
+                     style={{ color: 'var(--navy-mid)' }}>
+                Resume / CV (PDF only) *
+              </label>
+              <div className="border-2 border-dashed p-12 text-center transition-all hover:border-opacity-100 cursor-pointer"
+                   style={{
+                     borderColor: resume ? 'var(--sage-green)' : 'var(--warm-gray)',
+                     background: resume ? 'rgba(78, 205, 196, 0.03)' : 'white'
+                   }}>
+                <div className="space-y-4">
+                  <svg className="mx-auto h-12 w-12"
+                       style={{ color: resume ? 'var(--sage-green)' : 'var(--navy-mid)' }}
+                       stroke="currentColor"
+                       fill="none"
+                       viewBox="0 0 48 48">
+                    <path
+                      d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <div>
+                    <label
+                      htmlFor="resume"
+                      className="relative cursor-pointer font-medium transition-opacity hover:opacity-70"
+                      style={{ color: 'var(--cyan-electric)' }}
+                    >
+                      <span>Choose file</span>
+                      <input
+                        id="resume"
+                        name="resume"
+                        type="file"
+                        accept=".pdf"
+                        required
+                        onChange={(e) => setResume(e.target.files?.[0] || null)}
+                        className="sr-only"
+                      />
+                    </label>
+                    <span className="ml-2" style={{ color: 'var(--navy-mid)' }}>
+                      or drag and drop
+                    </span>
+                  </div>
+                  <p className="font-mono text-xs uppercase tracking-wider"
+                     style={{ color: 'var(--navy-mid)' }}>
+                    PDF up to 10MB
+                  </p>
+                  {resume && (
+                    <div className="pt-4 border-t"
+                         style={{ borderColor: 'var(--warm-gray)' }}>
+                      <p className="font-medium"
+                         style={{ color: 'var(--sage-green)' }}>
+                        ✓ {resume.name}
+                      </p>
+                      <p className="font-mono text-xs mt-1"
+                         style={{ color: 'var(--navy-mid)' }}>
+                        {(resume.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Submit Buttons */}
+            <div className="flex gap-4 pt-4">
+              <button
+                type="button"
+                onClick={() => router.push('/jobs')}
+                className="flex-1 px-8 py-4 font-medium border-2 transition-all hover:opacity-70"
+                style={{
+                  borderColor: 'var(--navy-deep)',
+                  color: 'var(--navy-deep)',
+                  background: 'transparent'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex-1 px-8 py-4 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+                style={{
+                  background: submitting ? 'var(--navy-mid)' : 'var(--navy-deep)',
+                  color: 'var(--off-white)'
+                }}
+              >
+                {submitting ? (
+                  <span className="flex items-center justify-center gap-3">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Submitting...
+                  </span>
+                ) : (
+                  'Submit Application'
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Info Panel - Side Column */}
+        <div className="lg:col-span-5">
+          <div className="sticky top-8 accent-line pl-6 space-y-8">
+            <div>
+              <h3 className="font-display text-2xl mb-4"
+                  style={{ color: 'var(--navy-deep)' }}>
+                What Happens Next
+              </h3>
+              <ol className="space-y-4">
+                {[
+                  { num: '01', text: 'AI reviews your resume against job requirements' },
+                  { num: '02', text: 'Matching candidates receive screening questions via email' },
+                  { num: '03', text: 'Hiring team reviews your responses' },
+                  { num: '04', text: 'Qualified candidates are invited for interviews' }
+                ].map((step) => (
+                  <li key={step.num} className="flex gap-4">
+                    <span className="font-mono font-medium flex-shrink-0"
+                          style={{ color: 'var(--cyan-electric)' }}>
+                      {step.num}
+                    </span>
+                    <span style={{ color: 'var(--navy-light)' }}>
+                      {step.text}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <div className="pt-8 border-t"
+                 style={{ borderColor: 'var(--warm-gray)' }}>
+              <h3 className="font-display text-xl mb-3"
+                  style={{ color: 'var(--navy-deep)' }}>
+                AI-Powered Screening
+              </h3>
+              <p className="text-sm leading-relaxed"
+                 style={{ color: 'var(--navy-light)' }}>
+                Our intelligent system analyzes your application with precision,
+                ensuring your skills and experience get the attention they deserve.
+                Every decision is reviewed by our hiring team.
+              </p>
+            </div>
+
+            <div className="pt-8 border-t"
+                 style={{ borderColor: 'var(--warm-gray)' }}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-2 h-2 rounded-full"
+                     style={{ background: 'var(--sage-green)' }} />
+                <span className="font-mono text-xs uppercase tracking-wider"
+                      style={{ color: 'var(--navy-mid)' }}>
+                  Response Time
+                </span>
+              </div>
+              <p className="font-display text-3xl"
+                 style={{ color: 'var(--navy-deep)' }}>
+                24 Hours
+              </p>
+              <p className="text-sm mt-2"
+                 style={{ color: 'var(--navy-light)' }}>
+                You'll hear from us within one business day
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
