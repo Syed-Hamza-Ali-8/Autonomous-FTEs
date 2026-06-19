@@ -3,18 +3,22 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { useAuth } from '@/components/AuthProvider'
 
-export default function AdminNav() {
+export default function AdminNav({ onLogout }: { onLogout?: () => void }) {
+  const { user } = useAuth()
   const pathname = usePathname()
   const [pendingCount, setPendingCount] = useState(0)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const isSuperAdmin = user?.role === 'super_admin'
 
   const navigation = [
     { name: 'Dashboard', href: '/' },
+    { name: 'Companies', href: '/companies', adminOnly: true },
     { name: 'Candidates', href: '/candidates' },
     { name: 'Approvals', href: '/approvals' },
     { name: 'Jobs', href: '/jobs' },
-  ]
+  ].filter(item => !item.adminOnly || isSuperAdmin)
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'

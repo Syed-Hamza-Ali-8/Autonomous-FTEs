@@ -1,30 +1,15 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
-import AdminNav from '@/components/AdminNav'
+import { AuthProvider } from '@/components/AuthProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Candidate Screening — Admin Panel',
-  description: 'Admin dashboard for candidate screening',
+  title: 'Candidate Screening — AI-Powered Hiring',
+  description: 'AI-powered candidate screening platform with human-in-the-loop approval',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  return (
-    <html lang="en">
-      <body className={inter.className}>
-        <div className="min-h-screen" style={{ background: 'var(--off-white)' }}>
-          <AdminNav />
-          <main>
-            {children}
-          </main>
-        </div>
-      </body>
-    </html>
-  )
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (<html lang="en"><body className={inter.className}><AuthProvider>{children}</AuthProvider></body></html>)
 }

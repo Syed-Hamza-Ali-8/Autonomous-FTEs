@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from dotenv import load_dotenv
 import os
+import secrets
 from db.models import Base
 
 load_dotenv()
@@ -22,6 +23,21 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+_jwt_secret: str | None = None
+
+def get_jwt_secret() -> str:
+    """Get the JWT secret from env, or generate one for dev mode (cached)."""
+    global _jwt_secret
+    if _jwt_secret is not None:
+        return _jwt_secret
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        secret = secrets.token_hex(32)
+        print("WARNING: JWT_SECRET_KEY not set. Using generated key (tokens will invalidate on restart).")
+    _jwt_secret = secret
+    return _jwt_secret
 
 
 async def get_db():
