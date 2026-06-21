@@ -112,21 +112,17 @@ export default function JobDetailPage() {
               <dt className="text-sm font-medium text-gray-500">Job Title</dt>
               <dd className="mt-1 text-sm text-gray-900">{job.title}</dd>
             </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Hiring Manager</dt>
-              <dd className="mt-1 text-sm text-gray-900">{job.hiring_manager_email || 'Not specified'}</dd>
-            </div>
             <div className="sm:col-span-2">
               <dt className="text-sm font-medium text-gray-500">Description</dt>
               <dd className="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{job.description}</dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-gray-500">Rubric Path</dt>
-              <dd className="mt-1 text-sm text-gray-900 font-mono text-xs">{job.rubric_path}</dd>
+              <dt className="text-sm font-medium text-gray-500">Company</dt>
+              <dd className="mt-1 text-sm text-gray-900">{job.company_name || 'Not specified'}</dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-gray-500">Total Candidates</dt>
-              <dd className="mt-1 text-sm text-gray-900">{job.total_candidates || 0}</dd>
+              <dt className="text-sm font-medium text-gray-500">Posted</dt>
+              <dd className="mt-1 text-sm text-gray-900">{new Date(job.created_at).toLocaleDateString()}</dd>
             </div>
           </dl>
         </div>

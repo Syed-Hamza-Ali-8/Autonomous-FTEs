@@ -62,7 +62,7 @@ export const rejectCandidate = async (approvalId: number) => {
 // Jobs
 export const getJobs = async () => {
   try {
-    const response = await api.get('/api/jobs/')
+    const response = await api.get('/api/jobs/public')
     return response.data
   } catch (error) {
     console.error('Error fetching jobs:', error)
@@ -71,7 +71,7 @@ export const getJobs = async () => {
 }
 
 export const getJob = async (id: number) => {
-  const response = await api.get(`/api/jobs/${id}`)
+  const response = await api.get(`/api/jobs/public/${id}`)
   return response.data
 }
 
@@ -81,7 +81,7 @@ export const createJob = async (jobData: {
   rubric_path: string
   hiring_manager_email?: string
 }) => {
-  const response = await api.post('/api/jobs/', jobData)
+  const response = await api.post('/api/jobs/public', jobData)
   return response.data
 }
 

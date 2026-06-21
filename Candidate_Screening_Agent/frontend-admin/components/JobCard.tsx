@@ -16,10 +16,12 @@ interface JobCardProps {
 }
 
 export default function JobCard({ job, isAdmin = false }: JobCardProps) {
-  const pendingApprovals = job.status_counts['pending_approval'] || 0
-  const approved = job.status_counts['approved'] || 0
-  const rejected = job.status_counts['rejected'] || 0
-  const inProgress = job.total_candidates - approved - rejected
+  const statusCounts = job.status_counts || {}
+  const pendingApprovals = statusCounts['pending_approval'] || 0
+  const approved = statusCounts['approved'] || 0
+  const rejected = statusCounts['rejected'] || 0
+  const totalCandidates = job.total_candidates || job.candidate_count || 0
+  const inProgress = totalCandidates - approved - rejected
 
   return (
     <div className="group relative hover-lift border-l-4 p-8"
@@ -46,7 +48,7 @@ export default function JobCard({ job, isAdmin = false }: JobCardProps) {
           <div className="text-center">
             <div className="font-display text-3xl mb-1"
                  style={{ color: 'var(--navy-deep)' }}>
-              {job.total_candidates}
+              {totalCandidates}
             </div>
             <div className="font-mono text-xs uppercase tracking-wider"
                  style={{ color: 'var(--navy-mid)' }}>
@@ -87,11 +89,11 @@ export default function JobCard({ job, isAdmin = false }: JobCardProps) {
       )}
 
       {/* Status Breakdown - Only show for admins */}
-      {isAdmin && Object.keys(job.status_counts).length > 0 && (
+      {isAdmin && Object.keys(statusCounts).length > 0 && (
         <div className="mb-6 pb-6 border-b"
              style={{ borderColor: 'var(--warm-gray)' }}>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(job.status_counts).map(([status, count]) => (
+            {Object.entries(statusCounts).map(([status, count]) => (
               <span
                 key={status}
                 className="inline-flex items-center gap-2 px-3 py-1 font-mono text-xs"

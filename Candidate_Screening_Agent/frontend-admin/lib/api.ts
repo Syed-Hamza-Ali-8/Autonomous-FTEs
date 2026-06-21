@@ -4,12 +4,33 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 const api = axios.create({
   baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 10000, // 10 second timeout
-  maxRedirects: 5, // Follow up to 5 redirects
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 60000,
+  maxRedirects: 5,
 })
+
+// Inject JWT token from localStorage
+api.interceptors.request.use((config) => {
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+  } catch {}
+  return config
+})
+
+// Redirect to login on 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      try { localStorage.removeItem('auth_token') } catch {}
+      if (typeof window !== 'undefined') window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
 
 // Candidates
 export const getCandidates = async (jobId?: number) => {
@@ -17,8 +38,7 @@ export const getCandidates = async (jobId?: number) => {
     const url = jobId ? `/api/candidates?job_id=${jobId}` : '/api/candidates'
     const response = await api.get(url)
     return response.data
-  } catch (error) {
-    console.error('Error fetching candidates:', error)
+  } catch {
     return []
   }
 }
@@ -43,8 +63,7 @@ export const getPendingApprovals = async () => {
   try {
     const response = await api.get('/api/approvals/pending')
     return response.data
-  } catch (error) {
-    console.error('Error fetching approvals:', error)
+  } catch {
     return []
   }
 }
@@ -64,8 +83,7 @@ export const getJobs = async () => {
   try {
     const response = await api.get('/api/jobs/')
     return response.data
-  } catch (error) {
-    console.error('Error fetching jobs:', error)
+  } catch {
     return []
   }
 }

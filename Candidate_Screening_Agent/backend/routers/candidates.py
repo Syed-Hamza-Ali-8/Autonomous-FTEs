@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_db
 from db import crud
+from auth import get_current_user, TokenPayload
 from typing import List, Optional
 
 router = APIRouter()
@@ -10,15 +11,14 @@ router = APIRouter()
 @router.get("/")
 async def get_all_candidates(
     db: AsyncSession = Depends(get_db),
-    job_id: Optional[int] = Query(None, description="Filter candidates by job ID")
+    user: TokenPayload = Depends(get_current_user),
+    job_id: Optional[int] = Query(None, description="Filter candidates by job ID"),
 ):
-    """Get all candidates with scores and status. Optionally filter by job_id."""
+    """Get all candidates for the current company. Optionally filter by job_id."""
     if job_id is not None:
-        # Filter by specific job
-        candidates = await crud.get_candidates_by_job(db, job_id)
+        candidates = await crud.get_candidates_by_job(db, job_id, company_id=user.company_id)
     else:
-        # Get all candidates
-        candidates = await crud.get_all_candidates(db)
+        candidates = await crud.get_all_candidates(db, company_id=user.company_id)
 
     return [
         {
@@ -39,9 +39,13 @@ async def get_all_candidates(
 
 
 @router.get("/{candidate_id}")
-async def get_candidate(candidate_id: int, db: AsyncSession = Depends(get_db)):
-    """Get full candidate detail including scores, questions, and replies."""
-    candidate = await crud.get_candidate(db, candidate_id)
+async def get_candidate(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Get full candidate detail (current company only)."""
+    candidate = await crud.get_candidate(db, candidate_id, company_id=user.company_id)
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -71,8 +75,12 @@ async def get_candidate(candidate_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/by-status/{status}")
-async def get_candidates_by_status(status: str, db: AsyncSession = Depends(get_db)):
-    """Filter candidates by pipeline status."""
+async def get_candidates_by_status(
+    status: str,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Filter candidates by pipeline status (current company only)."""
     valid_statuses = [
         "queued", "scoring", "scored", "questions_sent", "awaiting_reply",
         "replied", "shortlisted", "rejected", "hired", "manual_review"
@@ -81,7 +89,7 @@ async def get_candidates_by_status(status: str, db: AsyncSession = Depends(get_d
     if status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
 
-    candidates = await crud.get_candidates_by_status(db, status)
+    candidates = await crud.get_candidates_by_status(db, status, company_id=user.company_id)
     return [
         {
             "id": c.id,
@@ -98,21 +106,24 @@ async def get_candidates_by_status(status: str, db: AsyncSession = Depends(get_d
 
 
 @router.get("/{candidate_id}/brief")
-async def get_candidate_brief(candidate_id: int, db: AsyncSession = Depends(get_db)):
-    """Get one-page candidate brief for quick review."""
-    candidate = await crud.get_candidate(db, candidate_id)
+async def get_candidate_brief(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Get one-page candidate brief for quick review (current company only)."""
+    candidate = await crud.get_candidate(db, candidate_id, company_id=user.company_id)
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    job = await crud.get_job(db, candidate.job_id)
+    job = await crud.get_job(db, candidate.job_id, company_id=user.company_id)
 
-    # Build screening Q&A
     screening_qa = []
     if candidate.screening_questions and candidate.candidate_reply:
         for i, question in enumerate(candidate.screening_questions):
             screening_qa.append({
                 "question": question,
-                "answer": f"See full reply for answer {i+1}"  # Simplified for brief
+                "answer": f"See full reply for answer {i+1}",
             })
 
     return {

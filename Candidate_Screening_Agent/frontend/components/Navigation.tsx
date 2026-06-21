@@ -62,11 +62,11 @@ export default function Navigation() {
               <div className="hidden sm:block">
                 <div className="font-display text-lg leading-none"
                      style={{ color: 'var(--navy-deep)' }}>
-                  Candidate
+                  HireAI
                 </div>
                 <div className="font-mono text-xs uppercase tracking-wider"
                      style={{ color: 'var(--navy-mid)' }}>
-                  Screening
+                  Jobs Portal
                 </div>
               </div>
             </Link>

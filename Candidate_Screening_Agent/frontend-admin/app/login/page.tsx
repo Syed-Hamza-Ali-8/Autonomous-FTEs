@@ -13,7 +13,13 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault(); setError(''); setSubmitting(true)
-    try { await login(email, password, '/') } catch (err: any) { setError(err.message || 'Login failed'); setSubmitting(false) }
+    try {
+      await login(email, password)
+      window.location.href = '/'
+    } catch (err: any) {
+      setError(err.message || 'Login failed')
+      setSubmitting(false)
+    }
   }
 
   return (

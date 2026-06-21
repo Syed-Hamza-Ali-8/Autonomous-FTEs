@@ -10,26 +10,40 @@ export default function AdminNav({ onLogout }: { onLogout?: () => void }) {
   const pathname = usePathname()
   const [pendingCount, setPendingCount] = useState(0)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const isSuperAdmin = user?.role === 'super_admin'
 
-  const navigation = [
-    { name: 'Dashboard', href: '/' },
-    { name: 'Companies', href: '/companies', adminOnly: true },
-    { name: 'Candidates', href: '/candidates' },
-    { name: 'Approvals', href: '/approvals' },
-    { name: 'Jobs', href: '/jobs' },
-  ].filter(item => !item.adminOnly || isSuperAdmin)
+  const role = user?.role || ''
+  const isSuperAdmin = role.includes('super_admin')
+
+  // Super admin sees: Dashboard + Companies
+  // Company admin sees: Dashboard + Candidates + Approvals + Jobs
+  const navigation = isSuperAdmin
+    ? [
+        { name: 'Dashboard', href: '/' },
+        { name: 'Companies', href: '/companies' },
+      ]
+    : [
+        { name: 'Dashboard', href: '/' },
+        { name: 'Candidates', href: '/candidates' },
+        { name: 'Approvals', href: '/approvals' },
+        { name: 'Jobs', href: '/jobs' },
+      ]
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
     return pathname.startsWith(href)
   }
 
-  // Fetch pending approval count
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/approvals/pending`)
-      .then(r => r.json())
-      .then(data => setPendingCount(data.length))
+    const token = localStorage.getItem('auth_token')
+    if (!token) return
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/approvals/pending`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => {
+        if (r.status === 401) { try { localStorage.removeItem('auth_token') } catch {}; if (typeof window !== 'undefined') window.location.href = '/login'; return { length: 0 } }
+        return r.json()
+      })
+      .then(data => setPendingCount(Array.isArray(data) ? data.length : 0))
       .catch(() => {})
   }, [])
 
@@ -54,11 +68,11 @@ export default function AdminNav({ onLogout }: { onLogout?: () => void }) {
               <div className="hidden sm:block">
                 <div className="font-display text-lg leading-none"
                      style={{ color: 'var(--navy-deep)' }}>
-                  Admin Panel
+                  {isSuperAdmin ? 'Super Admin' : 'HireAI'}
                 </div>
                 <div className="font-mono text-xs uppercase tracking-wider"
                      style={{ color: 'var(--navy-mid)' }}>
-                  Candidate Screening
+                  HireAI
                 </div>
               </div>
             </Link>
@@ -88,15 +102,24 @@ export default function AdminNav({ onLogout }: { onLogout?: () => void }) {
             </div>
           </div>
 
-          {/* Status indicator + Mobile hamburger */}
+          {/* Status indicator + Logout + Mobile hamburger */}
           <div className="flex items-center gap-3">
             <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full"
                  style={{ background: 'rgba(10, 22, 40, 0.05)', border: '1px solid var(--warm-gray)' }}>
               <div className="w-2 h-2 rounded-full" style={{ background: 'var(--sage-green)' }} />
               <span className="font-mono text-xs" style={{ color: 'var(--navy-mid)' }}>
-                Admin Mode
+                {isSuperAdmin ? 'Super Admin' : 'HireAI'}
               </span>
             </div>
+            {onLogout && (
+              <button
+                className="hidden md:block px-4 py-2 rounded-lg font-mono text-xs uppercase tracking-wider transition-colors hover:opacity-70"
+                style={{ color: 'var(--coral-warm)', border: '1px solid var(--coral-warm)' }}
+                onClick={onLogout}
+              >
+                Logout
+              </button>
+            )}
 
             {/* Mobile hamburger */}
             <button

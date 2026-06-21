@@ -10,6 +10,7 @@ from db.models import Candidate, Job, InterviewSlot, SchedulingConversation
 from services.calendar_service import calendar_service
 from services.gmail_service import gmail_service
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -55,18 +56,13 @@ class SchedulingAgent:
         if not candidate or not job:
             raise ValueError(f"Candidate {candidate_id} or Job {job_id} not found")
 
-        # Get available slots
+        # Get available slots - create defaults if none exist
         available_slots = await calendar_service.get_available_slots(db, job_id, limit=5)
 
         if not available_slots:
-            logger.warning(f"No available slots for job {job_id}")
-            # Send email saying we'll reach out when slots are available
-            message_id = gmail_service.send_email(
-                to=candidate.email,
-                subject=f"Interview Invitation - {job.title}",
-                body=self._generate_no_slots_message(candidate.name or candidate.email, job.title)
-            )
-            return message_id
+            # Auto-create default interview slots (next 5 weekdays, 10am-2pm)
+            available_slots = await self._create_default_slots(db, job_id)
+            logger.info(f"Created {len(available_slots)} default slots for job {job_id}")
 
         # Propose slots to candidate
         slot_ids = [slot.id for slot in available_slots]
@@ -109,6 +105,41 @@ class SchedulingAgent:
 
         logger.info(f"Initiated scheduling for candidate {candidate_id}, message ID: {message_id}")
         return message_id
+
+    async def _create_default_slots(self, db, job_id: int) -> list:
+        """Create default interview slots for next 5 weekdays."""
+        from sqlalchemy import select
+        slots = []
+        now = datetime.utcnow()
+        times = ["10:00", "11:00", "14:00", "15:00", "16:00"]
+        day = 1
+        slot_time_idx = 0
+        created = []
+        while len(created) < 5 and day < 14:
+            candidate_date = now + timedelta(days=day)
+            if candidate_date.weekday() < 5:  # Weekday
+                time_str = times[slot_time_idx % len(times)]
+                hour, minute = map(int, time_str.split(":"))
+                start = candidate_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                end = start + timedelta(minutes=45)
+                slot = InterviewSlot(
+                    company_id=1,
+                    job_id=job_id,
+                    start_time=start,
+                    end_time=end,
+                    status="available",
+                    timezone="UTC",
+                    interviewer_name="Hiring Manager",
+                )
+                db.add(slot)
+                created.append(slot)
+                slot_time_idx += 1
+            day += 1
+        await db.commit()
+        # Refresh to get IDs
+        for slot in created:
+            await db.refresh(slot)
+        return created
 
     def _build_threading_headers(self, conversation, reply_message_id: str) -> tuple[str, str]:
         """Build In-Reply-To and References headers for proper Gmail threading.

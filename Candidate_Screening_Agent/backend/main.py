@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from db.database import init_db
-from routers import candidates_router, approvals_router, jobs_router, applications_router
+from routers import candidates_router, approvals_router, jobs_router, applications_router, auth_router
 from orchestrator import run_orchestrator
 from watchers.gmail_watcher import GmailApplicationWatcher
 from watchers.reply_watcher import ReplyWatcher
@@ -132,6 +132,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(candidates_router, prefix="/api/candidates", tags=["candidates"])
 app.include_router(approvals_router, prefix="/api/approvals", tags=["approvals"])
 app.include_router(jobs_router, prefix="/api/jobs", tags=["jobs"])

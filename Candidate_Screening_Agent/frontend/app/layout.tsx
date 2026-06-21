@@ -7,7 +7,7 @@ import AuthProvider from '@/components/AuthProvider'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Candidate Screening Agent',
+  title: 'HireAI',
   description: 'AI-powered candidate screening with human-in-the-loop approval',
 }
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_db
 from db import crud
+from auth import get_current_user, TokenPayload
 from pydantic import BaseModel
 from typing import Optional
 
@@ -17,44 +18,67 @@ class JobCreate(BaseModel):
 
 
 @router.get("/")
-async def get_all_jobs(db: AsyncSession = Depends(get_db)):
-    """Get all jobs with candidate counts."""
-    jobs = await crud.get_all_jobs(db)
+async def get_all_jobs(
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Get all jobs for the current company (authenticated)."""
+    jobs = await crud.get_all_jobs(db, company_id=user.company_id)
 
     result = []
     for job in jobs:
-        # Get candidate counts by status
-        candidates = await crud.get_candidates_by_job(db, job.id)
-
-        status_counts = {}
-        for candidate in candidates:
-            status = candidate.status
-            status_counts[status] = status_counts.get(status, 0) + 1
-
+        candidates = await crud.get_candidates_by_job(db, job.id, company_id=user.company_id)
         result.append({
-            "id": job.id,
-            "title": job.title,
-            "description": job.description,
-            "rubric_path": job.rubric_path,
+            "id": job.id, "title": job.title, "slug": job.slug,
+            "description": job.description, "rubric_path": job.rubric_path,
             "hiring_manager_email": job.hiring_manager_email,
-            "total_candidates": len(candidates),
-            "status_counts": status_counts,
-            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "status": job.status, "created_at": job.created_at.isoformat(),
+            "candidate_count": len(candidates),
         })
+    return result
 
+
+@router.get("/public")
+async def get_public_jobs(db: AsyncSession = Depends(get_db)):
+    """Get all open jobs (no auth required - for candidate-facing frontend)."""
+    from sqlalchemy import select
+    from db.models import Job, Candidate, Company
+    result_db = await db.execute(
+        select(Job, Company.name.label('company_name'))
+        .join(Company, Job.company_id == Company.id)
+        .where(Job.status == 'open')
+        .order_by(Job.created_at.desc())
+    )
+    jobs_with_company = result_db.all()
+    result = []
+    for job, company_name in jobs_with_company:
+        candidates_result = await db.execute(select(Candidate).where(Candidate.job_id == job.id))
+        candidates = candidates_result.scalars().all()
+        result.append({
+            "id": job.id, "title": job.title, "slug": job.slug,
+            "description": job.description, "rubric_path": job.rubric_path,
+            "hiring_manager_email": job.hiring_manager_email,
+            "status": job.status, "created_at": job.created_at.isoformat(),
+            "candidate_count": len(candidates), "company_name": company_name,
+        })
     return result
 
 
 @router.post("/")
-async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new job posting."""
+async def create_job(
+    job_data: JobCreate,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Create a new job posting for the current company."""
     try:
         job = await crud.create_job(
             db=db,
             title=job_data.title,
             description=job_data.description,
             rubric_path=job_data.rubric_path,
-            hiring_manager_email=job_data.hiring_manager_email
+            hiring_manager_email=job_data.hiring_manager_email,
+            company_id=user.company_id,
         )
 
         return {
@@ -69,17 +93,42 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to create job: {e}")
 
 
+@router.get("/public/{job_id}")
+async def get_public_job(job_id: int, db: AsyncSession = Depends(get_db)):
+    """Get public job details (no auth required)."""
+    from sqlalchemy import select
+    from db.models import Job, Company
+    result = await db.execute(
+        select(Job, Company.name.label('company_name'))
+        .join(Company, Job.company_id == Company.id)
+        .where(Job.id == job_id)
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job, company_name = row
+    return {
+        "id": job.id, "title": job.title, "slug": job.slug,
+        "description": job.description, "rubric_path": job.rubric_path,
+        "hiring_manager_email": job.hiring_manager_email,
+        "status": job.status, "created_at": job.created_at.isoformat(),
+        "company_name": company_name,
+    }
+
+
 @router.get("/{job_id}")
-async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
-    """Get job details with full candidate list."""
-    job = await crud.get_job(db, job_id)
+async def get_job(
+    job_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Get job details with full candidate list (current company only)."""
+    job = await crud.get_job(db, job_id, company_id=user.company_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Get all candidates for this job
-    candidates = await crud.get_candidates_by_job(db, job_id)
+    candidates = await crud.get_candidates_by_job(db, job_id, company_id=user.company_id)
 
-    # Build candidate summaries
     candidate_summaries = []
     for c in candidates:
         candidate_summaries.append({

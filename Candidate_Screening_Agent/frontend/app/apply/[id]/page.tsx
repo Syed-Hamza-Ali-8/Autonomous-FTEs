@@ -43,7 +43,7 @@ export default function JobApplicationPage() {
   useEffect(() => {
     const fetchJob = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/jobs/${params.id}`)
+        const response = await fetch(`http://localhost:8000/api/jobs/public/${params.id}`)
         if (!response.ok) throw new Error('Job not found')
         const data = await response.json()
         setJob(data)

@@ -103,12 +103,14 @@ class GmailService:
             ).execute()
 
             # Fetch the actual Message-ID Gmail assigned (Gmail overrides custom Message-ID)
+            # Also get threadId for reply matching
             sent_msg = self.service.users().messages().get(
                 userId="me",
                 id=result["id"],
                 format="metadata",
                 metadataHeaders=["Message-ID"]
             ).execute()
+            thread_id = result.get("threadId", "")
             for h in sent_msg.get("payload", {}).get("headers", []):
                 if h["name"] == "Message-ID":
                     message_id = h["value"]

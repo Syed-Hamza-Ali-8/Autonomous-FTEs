@@ -16,10 +16,12 @@ interface JobCardProps {
 }
 
 export default function JobCard({ job, isAdmin = false }: JobCardProps) {
-  const pendingApprovals = job.status_counts['pending_approval'] || 0
-  const approved = job.status_counts['approved'] || 0
-  const rejected = job.status_counts['rejected'] || 0
-  const inProgress = job.total_candidates - approved - rejected
+  const statusCounts = job.status_counts || {}
+  const pendingApprovals = statusCounts['pending_approval'] || 0
+  const approved = statusCounts['approved'] || 0
+  const rejected = statusCounts['rejected'] || 0
+  const totalCandidates = job.total_candidates || job.candidate_count || 0
+  const inProgress = totalCandidates - approved - rejected
 
   return (
     <div className="group relative hover-lift border-l-4 p-8"
@@ -30,10 +32,21 @@ export default function JobCard({ job, isAdmin = false }: JobCardProps) {
          }}>
       {/* Header */}
       <div className="mb-6">
-        <h3 className="font-display text-2xl mb-3 transition-colors group-hover:opacity-80"
+        <h3 className="font-display text-2xl mb-2 transition-colors group-hover:opacity-80"
             style={{ color: 'var(--navy-deep)' }}>
           {job.title}
         </h3>
+        {!isAdmin && job.company_name && (
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-3"
+               style={{ background: 'var(--off-white)', border: '1px solid var(--warm-gray)' }}>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                 style={{ color: 'var(--navy-mid)' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            <span className="font-mono text-xs" style={{ color: 'var(--navy-mid)' }}>{job.company_name}</span>
+          </div>
+        )}
         <p className="text-base leading-relaxed line-clamp-2"
            style={{ color: 'var(--navy-light)' }}>
           {job.description}
@@ -46,7 +59,7 @@ export default function JobCard({ job, isAdmin = false }: JobCardProps) {
           <div className="text-center">
             <div className="font-display text-3xl mb-1"
                  style={{ color: 'var(--navy-deep)' }}>
-              {job.total_candidates}
+              {totalCandidates}
             </div>
             <div className="font-mono text-xs uppercase tracking-wider"
                  style={{ color: 'var(--navy-mid)' }}>
@@ -87,11 +100,11 @@ export default function JobCard({ job, isAdmin = false }: JobCardProps) {
       )}
 
       {/* Status Breakdown - Only show for admins */}
-      {isAdmin && Object.keys(job.status_counts).length > 0 && (
+      {isAdmin && Object.keys(statusCounts).length > 0 && (
         <div className="mb-6 pb-6 border-b"
              style={{ borderColor: 'var(--warm-gray)' }}>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(job.status_counts).map(([status, count]) => (
+            {Object.entries(statusCounts).map(([status, count]) => (
               <span
                 key={status}
                 className="inline-flex items-center gap-2 px-3 py-1 font-mono text-xs"
