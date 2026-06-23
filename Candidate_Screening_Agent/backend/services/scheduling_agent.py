@@ -30,7 +30,7 @@ class SchedulingAgent:
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
         )
-        self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+        self.model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     async def initiate_scheduling(
         self,
@@ -106,7 +106,7 @@ class SchedulingAgent:
         logger.info(f"Initiated scheduling for candidate {candidate_id}, message ID: {message_id}")
         return message_id
 
-    async def _create_default_slots(self, db, job_id: int) -> list:
+    async def _create_default_slots(self, db, job_id: int, company_id: int = 1) -> list:
         """Create default interview slots for next 5 weekdays."""
         from sqlalchemy import select
         slots = []
@@ -123,7 +123,7 @@ class SchedulingAgent:
                 start = candidate_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
                 end = start + timedelta(minutes=45)
                 slot = InterviewSlot(
-                    company_id=1,
+                    company_id=company_id,
                     job_id=job_id,
                     start_time=start,
                     end_time=end,
@@ -205,7 +205,7 @@ class SchedulingAgent:
             and_(
                 SchedulingConversation.candidate_id == candidate_id,
                 SchedulingConversation.conversation_state.in_([
-                    "proposing_times", "awaiting_confirmation", "rescheduling"
+                    "awaiting_questions_reply", "proposing_times", "awaiting_confirmation", "rescheduling", "confirmed"
                 ])
             )
         ).order_by(SchedulingConversation.updated_at.desc())
@@ -228,11 +228,25 @@ class SchedulingAgent:
             "message_id": reply_message_id
         })
 
+        # Check if awaiting questions reply
+        if conversation.conversation_state == "awaiting_questions_reply":
+            # Analyze questions reply and send time slots
+            await self._handle_questions_reply(db, conversation, candidate, job, reply_text)
+            return
+
+        # Get slot details for intent analysis
+        slots = []
+        if conversation.proposed_slots:
+            slot_query = select(InterviewSlot).where(InterviewSlot.id.in_(conversation.proposed_slots))
+            slot_result = await db.execute(slot_query)
+            slots = slot_result.scalars().all()
+
         # Analyze reply using LLM to understand intent
-        intent = await self._analyze_candidate_intent(
+        intent = await self._analyze_intent_after_questions(
             reply_text=reply_text,
             conversation_history=conversation.conversation_history,
-            proposed_slots=conversation.proposed_slots
+            proposed_slots=conversation.proposed_slots,
+            slots=slots
         )
 
         logger.info(f"Candidate {candidate_id} intent: {intent['action']}")
@@ -324,11 +338,149 @@ Generate the email body (no subject line):"""
         email_body = response.choices[0].message.content.strip()
         return email_body
 
-    async def _analyze_candidate_intent(
+    async def _generate_approval_email_with_questions(
+        self,
+        candidate_name: str,
+        job_title: str,
+        questions: List[str],
+        slots_text: str
+    ) -> str:
+        """Generate email with interview invitation + screening questions."""
+
+        questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions)])
+
+        prompt = f"""You are an AI recruiting assistant. Generate a warm, professional email inviting a candidate for an interview AND include screening questions they need to answer.
+
+Candidate Name: {candidate_name}
+Job Title: {job_title}
+
+Available Time Slots:
+{slots_text}
+
+Screening Questions (include these in the email):
+{questions_text}
+
+Requirements:
+- Start with congratulations on being selected for interview
+- Present the time slots clearly and ask them to choose one OR suggest alternative
+- Include the screening questions they need to answer via email reply
+- Tell them to reply to this email with: (1) preferred time slot, (2) answers to screening questions
+- Be warm and enthusiastic
+- Keep it professional but friendly
+- Sign off as "AI Recruiting Assistant"
+
+Generate the email body (no subject line):"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=1500
+        )
+
+        email_body = response.choices[0].message.content.strip()
+        return email_body
+
+    async def _handle_questions_reply(
+        self,
+        db: AsyncSession,
+        conversation: SchedulingConversation,
+        candidate: Candidate,
+        job: Job,
+        reply_text: str
+    ):
+        """Handle reply to screening questions - check for slot selection, book if found."""
+        from db import crud
+
+        # Update candidate reply
+        await crud.update_candidate_reply(db, conversation.candidate_id, reply_text, {"questions_analyzed": True})
+
+        # Get slot details
+        slots = []
+        if conversation.proposed_slots:
+            slot_query = select(InterviewSlot).where(InterviewSlot.id.in_(conversation.proposed_slots))
+            slot_result = await db.execute(slot_query)
+            slots = slot_result.scalars().all()
+
+        # Check if reply also contains a slot selection
+        intent = await self._analyze_intent_after_questions(
+            reply_text=reply_text,
+            conversation_history=conversation.conversation_history,
+            proposed_slots=conversation.proposed_slots,
+            slots=slots
+        )
+
+        # If candidate explicitly selected a slot, book it directly
+        if intent.get("action") == "accept_slot":
+            slot_num = intent.get("slot_number")
+            if isinstance(slot_num, str):
+                try:
+                    slot_num = int(slot_num)
+                except (ValueError, TypeError):
+                    slot_num = None
+
+            if slot_num and 1 <= slot_num <= len(conversation.proposed_slots):
+                logger.info(f"Candidate also selected slot {slot_num} with screening answers - booking directly")
+                await self._handle_slot_acceptance(
+                    db, conversation, candidate, job, intent
+                )
+                return
+
+        # No slot selection found - send time slots email as before
+        # Format slots for email
+        formatted_slots = []
+        for i, slot in enumerate(slots, 1):
+            slot_info = calendar_service.format_slot_for_display(slot, display_timezone="UTC")
+            formatted_slots.append(f"{i}. {slot_info['date']} at {slot_info['time']} {slot_info['timezone']}")
+
+        slots_text = "\n".join(formatted_slots)
+
+        # Generate time slots email
+        prompt = f"""You are an AI recruiting assistant. Thank the candidate for answering screening questions and provide available interview time slots.
+
+Candidate Name: {candidate.name or candidate.email}
+Job Title: {job.title}
+
+Available Time Slots:
+{slots_text}
+
+Requirements:
+- Thank them for answering the screening questions
+- Present the time slots clearly
+- Ask them to reply with their preferred slot number (1-5) or suggest alternative time
+- Be warm and appreciative
+- Sign off as "AI Recruiting Assistant"
+
+Generate the email body (no subject line):"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500
+        )
+
+        email_body = response.choices[0].message.content.strip()
+
+        # Send email
+        message_id = gmail_service.send_email(
+            to=candidate.email,
+            subject=f"Interview Time Slots - {job.title}",
+            body=email_body
+        )
+
+        # Update conversation state
+        conversation.conversation_state = "proposing_times"
+        await db.commit()
+
+        logger.info(f"Sent time slots to {candidate.email} for candidate {candidate.id}")
+
+    async def _analyze_intent_after_questions(
         self,
         reply_text: str,
         conversation_history: List[Dict],
-        proposed_slots: List[int]
+        proposed_slots: List[int],
+        slots: List[InterviewSlot] = None
     ) -> Dict:
         """
         Analyze candidate's reply to understand their intent using LLM.
@@ -337,6 +489,7 @@ Generate the email body (no subject line):"""
             reply_text: Candidate's reply
             conversation_history: Previous conversation
             proposed_slots: Slot IDs that were proposed
+            slots: Slot details for matching
 
         Returns:
             Dict with action and extracted info
@@ -347,27 +500,49 @@ Generate the email body (no subject line):"""
             for msg in conversation_history[-3:]  # Last 3 messages
         ])
 
+        # Format slots for the prompt
+        slots_text = ""
+        if slots:
+            slots_text = "\nProposed Time Slots:\n"
+            for i, slot in enumerate(slots, 1):
+                slot_info = calendar_service.format_slot_for_display(slot, display_timezone="UTC")
+                slots_text += f"  Slot {i}: {slot_info['date']} at {slot_info['time']} {slot_info['timezone']}\n"
+
         prompt = f"""Analyze this candidate's reply to an interview scheduling email.
 
-Conversation History:
-{history_text}
-
+{slots_text}
 Candidate's Latest Reply:
 {reply_text}
 
-Determine the candidate's intent and extract relevant information.
+Determine the candidate's intent.
+
+IMPORTANT - Slot Recognition Rules:
+- "Option 1/2/3/4/5" or "option 1/2/3/4/5" → accept_slot with that slot number
+- "Slot 1/2/3/4/5" or "slot 1/2/3/4/5" → accept_slot with that slot number
+- "first/second/third/fourth/fifth option" → accept_slot with corresponding number
+- "I prefer" or "I choose" or "I will go with" → accept_slot
+- "Option 2" or "option 2" or "Monday" or "Tuesday" → accept_slot with appropriate slot number
+- "looking forward" or "excited" or "confirmed" or "sounds great" → accept_slot
+
+ONLY decline if explicitly stated:
+- "decline" or "withdraw" or "not interested" or "accept another company" or "going with another company"
+
+request_alternative ONLY if:
+- "don't work" or "not available" or "alternative" or "different time" or "conflict"
+
+If answers provided but NO slot mentioned → unclear (not decline!)
 
 Possible intents:
-1. accept_slot - They're accepting one of the proposed times (extract which slot number)
-2. request_alternative - They want different times (extract reason if mentioned)
-3. ask_question - They have a question (extract the question)
-4. decline - They're declining the interview
-5. unclear - Intent is not clear
+1. accept_slot - They want to book one of the proposed times (most common)
+2. request_alternative - They want different times
+3. ask_question - They have a question
+4. unclear - Cannot determine intent (DEFAULT if unsure)
+5. decline - ONLY if explicitly declining
 
 Respond in JSON format:
 {{
-    "action": "accept_slot|request_alternative|ask_question|decline|unclear",
-    "slot_number": <number if accepting, else null>,
+    "action": "accept_slot|request_alternative|ask_question|unclear|decline",
+    "slot_number": <slot number (1-5) if accepting, null otherwise>,
     "reason": "<reason if declining or requesting alternative>",
     "question": "<question if asking>",
     "confidence": "high|medium|low"
@@ -377,11 +552,17 @@ Respond in JSON format:
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=300,
-            response_format={"type": "json_object"}
+            max_tokens=500,
         )
 
-        intent = json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content.strip()
+        # Extract JSON from response
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+
+        intent = json.loads(content)
         return intent
 
     async def _handle_slot_acceptance(

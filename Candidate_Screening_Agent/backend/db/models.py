@@ -263,7 +263,7 @@ class SchedulingConversation(Base):
     __table_args__ = (
         CheckConstraint(
             "conversation_state IN ('initiated', 'proposing_times', 'awaiting_confirmation', "
-            "'confirmed', 'rescheduling', 'cancelled')",
+            "'awaiting_questions_reply', 'confirmed', 'rescheduling', 'cancelled')",
             name="check_conversation_state"
         ),
         Index("idx_scheduling_company", "company_id"),

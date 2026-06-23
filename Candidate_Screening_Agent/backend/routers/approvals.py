@@ -46,7 +46,7 @@ async def approve_candidate(
     db: AsyncSession = Depends(get_db),
     user: TokenPayload = Depends(get_current_user),
 ):
-    """Approve a candidate and initiate intelligent interview scheduling."""
+    """Approve a candidate and send interview invitation with screening questions."""
     approval = await crud.get_approval(db, approval_id, company_id=user.company_id)
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
@@ -60,27 +60,70 @@ async def approve_candidate(
     await crud.approve_candidate(db, approval_id, user.email)
 
     try:
+        # Generate screening questions
+        from screening_agent import generate_screening_questions
         from services.scheduling_agent import scheduling_agent
 
-        message_id = await scheduling_agent.initiate_scheduling(
-            db=db,
+        questions = await generate_screening_questions(candidate.cv_text or "", job.rubric_path or "")
+        await crud.update_candidate_questions(db, candidate.id, questions)
+
+        # Create scheduling conversation
+        from services.calendar_service import calendar_service
+        available_slots = await calendar_service.get_available_slots(db, job.id, limit=5)
+        if not available_slots:
+            available_slots = await scheduling_agent._create_default_slots(db, job.id, company_id=user.company_id)
+
+        slot_ids = [slot.id for slot in available_slots]
+        proposed_slots = await calendar_service.propose_slots(db, slot_ids, candidate.id)
+
+        from db.models import SchedulingConversation
+        conversation = SchedulingConversation(
             candidate_id=candidate.id,
             job_id=job.id,
+            company_id=user.company_id,
+            conversation_state="awaiting_questions_reply",
+            proposed_slots=slot_ids,
+            conversation_history=[]
+        )
+        db.add(conversation)
+
+        # Format slots for email
+        formatted_slots = []
+        for i, slot in enumerate(available_slots, 1):
+            slot_info = calendar_service.format_slot_for_display(slot, display_timezone="UTC")
+            formatted_slots.append(f"{i}. {slot_info['date']} at {slot_info['time']} {slot_info['timezone']}")
+
+        # Generate email with interview invitation + screening questions
+        email_body = await scheduling_agent._generate_approval_email_with_questions(
+            candidate_name=candidate.name or candidate.email,
+            job_title=job.title,
+            questions=questions,
+            slots_text="\n".join(formatted_slots)
         )
 
-        success_message = f"Approved and initiated scheduling conversation with {candidate.email}"
+        # Send email
+        message_id = gmail_service.send_email(
+            to=candidate.email,
+            subject=f"Interview Invitation - {job.title}",
+            body=email_body
+        )
+
+        candidate.gmail_message_id = message_id
+        await db.commit()
+
+        success_message = f"Approved! Interview invitation with screening questions sent to {candidate.email}"
 
     except Exception as e:
         await audit_service.log_action(
             db=db,
-            action_type="initiate_scheduling",
+            action_type="approve_candidate",
             actor=user.email,
             result="failure",
             candidate_id=candidate.id,
             company_id=user.company_id,
             output_summary=str(e),
         )
-        raise HTTPException(status_code=500, detail=f"Approval succeeded but scheduling failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Approval failed: {e}")
 
     await audit_service.log_action(
         db=db,

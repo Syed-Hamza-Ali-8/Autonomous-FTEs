@@ -79,99 +79,36 @@ async def process_new_candidate(candidate_id: int, db: AsyncSession):
             })
         )
 
-        # 5. If not must_haves_met, create rejection approval and return
-        if not score_data.get("must_haves_met"):
-            logger.info(f"Candidate {candidate_id} disqualified: {score_data.get('disqualification_reason')}")
+        # 5. Create pending approval immediately after scoring
+        if score_data.get("must_haves_met"):
+            action = "advance"
+            recommendation = score_data.get("recommendation", "advance")
+        else:
+            action = "reject"
+            recommendation = score_data.get("disqualification_reason") or "Does not meet requirements"
 
-            await crud.create_pending_approval(
-                db=db,
-                candidate_id=candidate_id,
-                job_id=candidate.job_id,
-                action="reject",
-                score=score_data.get("total_score"),
-                recommendation=score_data.get("disqualification_reason"),
-                brief_summary=f"Scored {score_data.get('total_score')}/100. Does not meet must-have requirements."
-            )
-
-            await crud.update_candidate_status(db, candidate_id, "shortlisted")
-
-            await audit_service.log_action(
-                db=db,
-                action_type="create_pending_approval",
-                actor="system",
-                result="success",
-                candidate_id=candidate_id,
-                output_summary="Rejection approval created (disqualified)"
-            )
-
-            return
-
-        # 6. Generate screening questions with Grok
-        logger.info(f"Generating screening questions for candidate {candidate_id}")
-        try:
-            questions = await generate_screening_questions(candidate.cv_text, rubric_path)
-            logger.info(f"Generated {len(questions)} questions for candidate {candidate_id}")
-        except Exception as e:
-            logger.error(f"Error generating questions for candidate {candidate_id}: {e}")
-            await crud.update_candidate_status(db, candidate_id, "manual_review")
-            await audit_service.log_action(
-                db=db,
-                action_type="generate_questions",
-                actor="grok-3-mini",
-                result="failure",
-                candidate_id=candidate_id,
-                output_summary=str(e)
-            )
-            return
-
-        # 7. Update DB with questions
-        await crud.update_candidate_questions(db, candidate_id, questions)
-
-        # 8. Send screening questions via Gmail
-        logger.info(f"Sending screening questions to {candidate.email}")
-        try:
-            message_id = gmail_service.send_screening_questions(
-                to=candidate.email,
-                candidate_name=candidate.name or candidate.email,
-                job_title=job.title,
-                questions=questions
-            )
-            logger.info(f"Screening questions sent to {candidate.email} (message ID: {message_id})")
-        except Exception as e:
-            logger.error(f"Error sending screening questions to {candidate.email}: {e}")
-            await audit_service.log_action(
-                db=db,
-                action_type="send_screening_questions",
-                actor="system",
-                result="failure",
-                candidate_id=candidate_id,
-                output_summary=str(e)
-            )
-            return
-
-        # 8.5 Update candidate's gmail_message_id to the actual screening email ID for reply matching
-        from sqlalchemy import text
-        await db.execute(
-            text('UPDATE candidates SET gmail_message_id = :mid WHERE id = :cid'),
-            {'mid': message_id, 'cid': candidate_id}
+        await crud.create_pending_approval(
+            db=db,
+            candidate_id=candidate_id,
+            job_id=candidate.job_id,
+            action=action,
+            score=score_data.get("total_score"),
+            recommendation=recommendation,
+            brief_summary=score_data.get("summary") or f"Scored {score_data.get('total_score')}/100. {recommendation}."
         )
-        await db.commit()
-        logger.info(f"Updated candidate {candidate_id} gmail_message_id to {message_id}")
 
-        # 9. Update status to awaiting_reply
-        await crud.update_candidate_status(db, candidate_id, "awaiting_reply")
+        await crud.update_candidate_status(db, candidate_id, "shortlisted")
 
-        # Log to audit
         await audit_service.log_action(
             db=db,
-            action_type="send_screening_questions",
+            action_type="create_pending_approval",
             actor="system",
             result="success",
             candidate_id=candidate_id,
-            output_summary=f"Sent {len(questions)} questions to {candidate.email}"
+            output_summary=f"Created {action} approval with score {score_data.get('total_score')}"
         )
 
-        logger.info(f"Successfully processed candidate {candidate_id}")
+        logger.info(f"Successfully processed candidate {candidate_id} - {action} approval created")
 
     except Exception as e:
         logger.error(f"Unexpected error processing candidate {candidate_id}: {e}")

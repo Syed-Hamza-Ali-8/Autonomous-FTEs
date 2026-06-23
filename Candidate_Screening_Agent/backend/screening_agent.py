@@ -38,28 +38,38 @@ def get_groq_model(model_name: str = None):
 
 async def score_candidate(cv_text: str, rubric_path: str) -> dict:
     """
-    Score a candidate's CV against a job rubric using Groq.
+    Score a candidate's CV using Groq. Uses rubric if available, otherwise uses default criteria.
 
     Args:
         cv_text: Extracted text from candidate's CV
-        rubric_path: Path to the job rubric markdown file
+        rubric_path: Path to the job rubric markdown file (optional)
 
     Returns:
         dict with scoring results including total_score, must_haves_met,
         recommendation, strengths, weaknesses, etc.
     """
-    # Load rubric content
-    rubric_content = Path(rubric_path).read_text()
+    # Try to load rubric, use default if not found
+    rubric_content = ""
+    rubric_section = ""
+    try:
+        if rubric_path and Path(rubric_path).exists():
+            rubric_content = Path(rubric_path).read_text()
+            rubric_section = f"RUBRIC:\n{rubric_content}\n\n"
+    except Exception:
+        pass
 
-    prompt = f"""You are an expert technical recruiter. Score this CV objectively based ONLY on the rubric provided.
+    prompt = f"""You are an expert technical recruiter. Score this CV based on standard hiring criteria.
 
-RUBRIC:
-{rubric_content}
-
-CV:
+{rubric_section}CV:
 {cv_text}
 
-Return ONLY valid JSON with no markdown, no code blocks, no prose, no explanations. Just the raw JSON object.
+Scoring criteria (if no rubric provided):
+- Skills (40 pts): Technical skills, tools, languages relevant to the role
+- Experience (25 pts): Work experience, seniority, achievements
+- Projects (20 pts): Portfolio, side projects, contributions
+- Communication (15 pts): Clarity, articulation, written communication
+
+Return ONLY valid JSON with the word JSON in your response, no code blocks, no prose, no explanations. Just the raw JSON object.
 
 Required fields:
 - total_score (integer 0-100)
@@ -77,7 +87,7 @@ Required fields:
 - confidence (string: "high" | "medium" | "low")
 - summary (string)
 
-Ensure all scores add up correctly and follow the rubric weights."""
+Ensure all scores add up correctly."""
 
     client = get_groq_client()
     model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
@@ -87,7 +97,7 @@ Ensure all scores add up correctly and follow the rubric weights."""
             response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=1000,
+                max_tokens=2000,
                 temperature=0.3,
                 response_format={"type": "json_object"}
             )
@@ -115,24 +125,27 @@ async def generate_screening_questions(cv_text: str, rubric_path: str) -> list[s
 
     Args:
         cv_text: Extracted text from candidate's CV
-        rubric_path: Path to the job rubric markdown file
+        rubric_path: Path to the job rubric markdown file (optional)
 
     Returns:
         list of exactly 5 screening questions
     """
-    rubric_content = Path(rubric_path).read_text()
+    rubric_content = ""
+    rubric_section = ""
+    try:
+        if rubric_path and Path(rubric_path).exists():
+            rubric_content = Path(rubric_path).read_text()
+            rubric_section = f"RUBRIC:\n{rubric_content}\n\n"
+    except Exception:
+        pass
 
     prompt = f"""You are an expert technical recruiter. Generate exactly 5 personalized screening questions for this candidate.
 
-RUBRIC:
-{rubric_content}
-
-CV:
+{rubric_section}CV:
 {cv_text}
 
 Requirements:
 - Reference specific items from the candidate's CV
-- Align with rubric requirements
 - Ask about technical depth, not just surface knowledge
 - Include at least one behavioral question
 - Keep questions concise (1-2 sentences each)
@@ -214,7 +227,7 @@ Evaluate:
 - Communication skills
 - Red flags or concerns
 
-Return ONLY valid JSON with no markdown, no code blocks, no prose.
+Return ONLY valid JSON with the word JSON in your response, no code blocks, no prose.
 
 Required fields:
 - reply_score_delta (integer -20 to +20, adjustment to original score)

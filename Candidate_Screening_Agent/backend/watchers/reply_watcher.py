@@ -54,7 +54,7 @@ class ReplyWatcher(BaseWatcher):
                 # Get candidates in active scheduling conversations
                 scheduling_query = select(SchedulingConversation).where(
                     SchedulingConversation.conversation_state.in_([
-                        "proposing_times", "awaiting_confirmation", "rescheduling"
+                        "proposing_times", "awaiting_confirmation", "awaiting_questions_reply", "rescheduling", "confirmed"
                     ])
                 )
                 result = await db.execute(scheduling_query)
@@ -68,7 +68,7 @@ class ReplyWatcher(BaseWatcher):
             # For each candidate awaiting reply, search for their response
             for candidate in screening_candidates:
                 # Search for replies FROM this candidate
-                query = f"from:{candidate.email} newer_than:1d"
+                query = f"from:{candidate.email} newer_than:1h"
                 results = self.service.users().messages().list(
                     userId="me", q=query, maxResults=5
                 ).execute()
@@ -99,7 +99,7 @@ class ReplyWatcher(BaseWatcher):
                     if not cand:
                         continue
 
-                query = f"from:{cand.email} newer_than:1d"
+                query = f"from:{cand.email} newer_than:1h"
                 results = self.service.users().messages().list(
                     userId="me", q=query, maxResults=5
                 ).execute()
