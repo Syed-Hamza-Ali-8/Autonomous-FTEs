@@ -144,55 +144,38 @@ export default function JobApplicationPage() {
 
   if (success) {
     return (
-      <div className="max-w-3xl mx-auto px-6 py-16">
-        <div className="text-center py-16 border-l-4"
-             style={{
-               borderColor: 'var(--sage-green)',
-               background: 'white',
-               boxShadow: 'var(--shadow-soft)'
-             }}>
-          <div className="inline-flex items-center justify-center w-20 h-20 mb-8"
-               style={{ background: 'var(--sage-green)' }}>
-            <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="max-w-2xl mx-auto px-6 py-16">
+        <div className="text-center py-12"
+             style={{ background: 'white', borderRadius: '12px', boxShadow: 'var(--shadow-soft)' }}>
+          <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full"
+               style={{ background: 'rgba(78, 205, 196, 0.1)' }}>
+            <svg className="w-8 h-8" style={{ color: 'var(--sage-green)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="font-display text-4xl mb-4"
+          <h2 className="font-display text-3xl mb-3"
               style={{ color: 'var(--navy-deep)' }}>
-            Application Submitted
+            Application Received
           </h2>
-          <p className="text-xl mb-2"
-             style={{ color: 'var(--navy-mid)' }}>
-            Thank you for applying to <span className="font-display">{job?.title}</span>
-          </p>
-          <p className="text-lg mb-12 max-w-xl mx-auto"
+          <p className="text-lg mb-8"
              style={{ color: 'var(--navy-light)' }}>
-            Our AI will review your resume shortly. You'll receive screening questions
-            via email within 24 hours if your profile matches our requirements.
+            Thank you for applying, <span className="font-medium">{name}</span>
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={() => router.push('/jobs')}
-              className="px-8 py-3 font-medium transition-all hover:opacity-90"
-              style={{
-                background: 'var(--navy-deep)',
-                color: 'var(--off-white)'
-              }}
-            >
-              View Other Positions
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="px-8 py-3 font-medium border transition-all hover:opacity-70"
-              style={{
-                borderColor: 'var(--navy-deep)',
-                color: 'var(--navy-deep)',
-                background: 'transparent'
-              }}
-            >
-              Back to Home
-            </button>
-          </div>
+          <p className="text-sm mb-10 max-w-md mx-auto"
+             style={{ color: 'var(--navy-mid)' }}>
+            Your application for <span className="font-medium">{job?.title}</span> has been submitted. We review all applications carefully and will be in touch if there's a fit.
+          </p>
+          <button
+            onClick={() => router.push('/jobs')}
+            className="px-8 py-3 font-medium transition-all hover:opacity-90"
+            style={{
+              background: 'var(--navy-deep)',
+              color: 'var(--off-white)',
+              borderRadius: '8px'
+            }}
+          >
+            View More Jobs
+          </button>
         </div>
       </div>
     )
@@ -388,63 +371,63 @@ export default function JobApplicationPage() {
 
         {/* Info Panel - Side Column */}
         <div className="lg:col-span-5">
-          <div className="sticky top-8 accent-line pl-6 space-y-8">
-            <div>
-              <h3 className="font-display text-2xl mb-4"
-                  style={{ color: 'var(--navy-deep)' }}>
-                What Happens Next
+          <div className="sticky top-8 space-y-6">
+            {/* Application Tips */}
+            <div className="p-6 rounded-xl" style={{ background: 'var(--warm-gray)', opacity: 0.3 }}>
+              <h3 className="font-medium text-sm uppercase tracking-wider mb-4"
+                  style={{ color: 'var(--navy-mid)' }}>
+                Application Tips
               </h3>
-              <ol className="space-y-4">
-                {[
-                  { num: '01', text: 'AI reviews your resume against job requirements' },
-                  { num: '02', text: 'Matching candidates receive screening questions via email' },
-                  { num: '03', text: 'Hiring team reviews your responses' },
-                  { num: '04', text: 'Qualified candidates are invited for interviews' }
-                ].map((step) => (
-                  <li key={step.num} className="flex gap-4">
-                    <span className="font-mono font-medium flex-shrink-0"
-                          style={{ color: 'var(--cyan-electric)' }}>
-                      {step.num}
-                    </span>
-                    <span style={{ color: 'var(--navy-light)' }}>
-                      {step.text}
-                    </span>
-                  </li>
-                ))}
-              </ol>
+              <ul className="space-y-3 text-sm" style={{ color: 'var(--navy-light)' }}>
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--sage-green)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Ensure your resume is up to date with your latest experience</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--sage-green)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Tailor your resume to highlight relevant skills</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--sage-green)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Use a professional email address</span>
+                </li>
+              </ul>
             </div>
 
-            <div className="pt-8 border-t"
-                 style={{ borderColor: 'var(--warm-gray)' }}>
-              <h3 className="font-display text-xl mb-3"
-                  style={{ color: 'var(--navy-deep)' }}>
-                AI-Powered Screening
+            {/* Required Documents */}
+            <div className="p-6 rounded-xl" style={{ background: 'white', border: '1px solid var(--warm-gray)' }}>
+              <h3 className="font-medium text-sm uppercase tracking-wider mb-4"
+                  style={{ color: 'var(--navy-mid)' }}>
+                Required Documents
               </h3>
-              <p className="text-sm leading-relaxed"
-                 style={{ color: 'var(--navy-light)' }}>
-                Our intelligent system analyzes your application with precision,
-                ensuring your skills and experience get the attention they deserve.
-                Every decision is reviewed by our hiring team.
-              </p>
-            </div>
-
-            <div className="pt-8 border-t"
-                 style={{ borderColor: 'var(--warm-gray)' }}>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-2 h-2 rounded-full"
-                     style={{ background: 'var(--sage-green)' }} />
-                <span className="font-mono text-xs uppercase tracking-wider"
-                      style={{ color: 'var(--navy-mid)' }}>
-                  Response Time
-                </span>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center"
+                     style={{ background: 'rgba(0, 229, 255, 0.1)' }}>
+                  <svg className="w-5 h-5" style={{ color: 'var(--cyan-electric)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-medium" style={{ color: 'var(--navy-deep)' }}>Resume / CV</p>
+                  <p className="text-sm" style={{ color: 'var(--navy-mid)' }}>PDF format only</p>
+                </div>
               </div>
-              <p className="font-display text-3xl"
-                 style={{ color: 'var(--navy-deep)' }}>
-                24 Hours
-              </p>
-              <p className="text-sm mt-2"
-                 style={{ color: 'var(--navy-light)' }}>
-                You'll hear from us within one business day
+            </div>
+
+            {/* Need Help */}
+            <div className="p-6 rounded-xl" style={{ background: 'white', border: '1px solid var(--warm-gray)' }}>
+              <h3 className="font-medium text-sm uppercase tracking-wider mb-3"
+                  style={{ color: 'var(--navy-mid)' }}>
+                Need Help?
+              </h3>
+              <p className="text-sm" style={{ color: 'var(--navy-light)' }}>
+                If you have questions about this position, please contact the hiring team directly through the job posting.
               </p>
             </div>
           </div>

@@ -20,6 +20,7 @@ class BaseWatcher(ABC):
         """
         self.check_interval = check_interval
         self.logger = logging.getLogger(self.__class__.__name__)
+        self._handled_items: set = set()  # Track handled items to prevent duplicates
 
     @abstractmethod
     async def check_for_updates(self) -> list:
@@ -55,9 +56,19 @@ class BaseWatcher(ABC):
                 # Check for new items
                 items = await self.check_for_updates()
 
-                # Process each item
+                # Deduplicate items (by message_id - first element of tuple)
+                seen = set()
+                unique_items = []
                 for item in items:
+                    item_key = str(item[0]) if item else ""
+                    if item_key and item_key not in seen and item_key not in self._handled_items:
+                        seen.add(item_key)
+                        unique_items.append(item)
+
+                # Process each unique item
+                for item in unique_items:
                     try:
+                        self._handled_items.add(str(item[0]) if item else "")
                         await self.handle_item(item)
                     except Exception as e:
                         self.logger.error(f"Error handling item: {e}")

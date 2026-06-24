@@ -48,52 +48,54 @@ export default function AdminNav({ onLogout }: { onLogout?: () => void }) {
   }, [])
 
   return (
-    <nav className="relative border-b"
-         style={{ background: 'var(--off-white)', borderColor: 'var(--warm-gray)' }}>
+    <nav className="relative glass-card border-b-0 rounded-b-2xl"
+         style={{ borderColor: 'var(--warm-gray)' }}>
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
         <div className="flex justify-between h-20">
           {/* Logo & Nav */}
           <div className="flex items-center gap-12">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3 group">
-              <div className="relative w-10 h-10 flex items-center justify-center"
-                   style={{ background: 'var(--navy-deep)' }}>
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                     style={{ background: 'var(--cyan-electric)' }} />
-                <span className="relative z-10 font-display text-xl"
+              <div className="relative w-12 h-12 flex items-center justify-center rounded-xl overflow-hidden"
+                   style={{ background: 'linear-gradient(135deg, var(--navy-deep), var(--navy-mid))' }}>
+                {/* Animated gradient overlay */}
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                     style={{ background: 'linear-gradient(135deg, var(--cyan-electric), var(--sage-green))' }} />
+                <span className="relative z-10 font-display text-2xl font-bold"
                       style={{ color: 'var(--off-white)' }}>
-                  C
+                  H
                 </span>
               </div>
               <div className="hidden sm:block">
-                <div className="font-display text-lg leading-none"
+                <div className="font-display text-xl leading-none"
                      style={{ color: 'var(--navy-deep)' }}>
                   {isSuperAdmin ? 'Super Admin' : 'HireAI'}
                 </div>
-                <div className="font-mono text-xs uppercase tracking-wider"
-                     style={{ color: 'var(--navy-mid)' }}>
-                  HireAI
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="w-2 h-2 rounded-full" style={{ background: 'var(--sage-green)' }} />
+                  <span className="font-mono text-xs" style={{ color: 'var(--navy-mid)' }}>
+                    {isSuperAdmin ? 'Platform' : user?.company_name || 'Dashboard'}
+                  </span>
                 </div>
               </div>
             </Link>
 
             {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-1">
               {navigation.map((item) => (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className="relative px-4 py-2 font-medium text-sm transition-colors"
-                  style={{ color: isActive(item.href) ? 'var(--navy-deep)' : 'var(--navy-mid)' }}
+                  className="relative px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200"
+                  style={{
+                    color: isActive(item.href) ? 'white' : 'var(--navy-mid)',
+                    background: isActive(item.href) ? 'var(--navy-deep)' : 'transparent',
+                  }}
                 >
                   {item.name}
-                  {isActive(item.href) && (
-                    <div className="absolute bottom-0 left-4 right-4 h-0.5"
-                         style={{ background: 'var(--cyan-electric)' }} />
-                  )}
                   {item.href === '/approvals' && pendingCount > 0 && (
-                    <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white rounded-full"
-                          style={{ background: 'var(--coral-warm)' }}>
+                    <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full animate-pulse"
+                          style={{ background: 'var(--coral-warm)', color: 'white' }}>
                       {pendingCount}
                     </span>
                   )}
@@ -102,33 +104,56 @@ export default function AdminNav({ onLogout }: { onLogout?: () => void }) {
             </div>
           </div>
 
-          {/* Status indicator + Logout + Mobile hamburger */}
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full"
-                 style={{ background: 'rgba(10, 22, 40, 0.05)', border: '1px solid var(--warm-gray)' }}>
-              <div className="w-2 h-2 rounded-full" style={{ background: 'var(--sage-green)' }} />
-              <span className="font-mono text-xs" style={{ color: 'var(--navy-mid)' }}>
-                {isSuperAdmin ? 'Super Admin' : 'HireAI'}
+          {/* Right Side Actions */}
+          <div className="flex items-center gap-4">
+            {/* Live Indicator */}
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full"
+                 style={{ background: 'rgba(78, 205, 196, 0.1)', border: '1px solid rgba(78, 205, 196, 0.3)' }}>
+              <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--sage-green)' }} />
+              <span className="font-mono text-xs uppercase tracking-wider" style={{ color: 'var(--sage-green)' }}>
+                Live
               </span>
             </div>
+
+            {/* User Avatar */}
+            <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full"
+                 style={{ background: 'var(--warm-gray)' }}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm"
+                   style={{ background: 'var(--navy-deep)', color: 'var(--off-white)' }}>
+                {user?.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div className="text-sm">
+                <div className="font-medium" style={{ color: 'var(--navy-deep)' }}>
+                  {user?.name || 'User'}
+                </div>
+                <div className="font-mono text-xs" style={{ color: 'var(--navy-mid)' }}>
+                  {user?.email || ''}
+                </div>
+              </div>
+            </div>
+
+            {/* Logout Button */}
             {onLogout && (
               <button
-                className="hidden md:block px-4 py-2 rounded-lg font-mono text-xs uppercase tracking-wider transition-colors hover:opacity-70"
+                className="hidden md:flex items-center gap-2 px-4 py-2 rounded-xl font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80"
                 style={{ color: 'var(--coral-warm)', border: '1px solid var(--coral-warm)' }}
                 onClick={onLogout}
               >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
                 Logout
               </button>
             )}
 
             {/* Mobile hamburger */}
             <button
-              className="md:hidden flex items-center justify-center w-10 h-10 rounded-lg transition-colors"
-              style={{ color: 'var(--navy-deep)' }}
+              className="lg:hidden flex items-center justify-center w-12 h-12 rounded-xl transition-colors"
+              style={{ color: 'var(--navy-deep)', background: 'var(--warm-gray)' }}
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 {mobileOpen ? (
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 ) : (
@@ -142,28 +167,40 @@ export default function AdminNav({ onLogout }: { onLogout?: () => void }) {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="md:hidden border-t" style={{ borderColor: 'var(--warm-gray)', background: 'var(--off-white)' }}>
-          <div className="px-6 py-4 space-y-1">
+        <div className="lg:hidden border-t" style={{ borderColor: 'var(--warm-gray)', background: 'white' }}>
+          <div className="px-6 py-4 space-y-2">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 href={item.href}
-                className="block px-4 py-3 rounded-lg font-medium text-base transition-colors"
+                className="flex items-center justify-between px-4 py-3 rounded-xl font-medium transition-colors"
                 style={{
-                  color: isActive(item.href) ? 'var(--navy-deep)' : 'var(--navy-mid)',
-                  background: isActive(item.href) ? 'rgba(10, 22, 40, 0.05)' : 'transparent',
+                  color: isActive(item.href) ? 'white' : 'var(--navy-mid)',
+                  background: isActive(item.href) ? 'var(--navy-deep)' : 'var(--warm-gray)',
                 }}
                 onClick={() => setMobileOpen(false)}
               >
                 {item.name}
                 {item.href === '/approvals' && pendingCount > 0 && (
-                  <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white rounded-full"
-                        style={{ background: 'var(--coral-warm)' }}>
+                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full"
+                        style={{ background: 'var(--coral-warm)', color: 'white' }}>
                     {pendingCount}
                   </span>
                 )}
               </Link>
             ))}
+            {onLogout && (
+              <button
+                className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl font-mono text-xs uppercase tracking-wider"
+                style={{ color: 'var(--coral-warm)', border: '1px solid var(--coral-warm)' }}
+                onClick={onLogout}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Logout
+              </button>
+            )}
           </div>
         </div>
       )}

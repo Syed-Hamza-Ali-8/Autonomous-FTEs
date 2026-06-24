@@ -1,15 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { getJobs, createJob } from '@/lib/api'
 import JobCard from '@/components/JobCard'
 import { useSession } from 'next-auth/react'
+
+const STORAGE_KEY = 'jobs_page_data'
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { data: session } = useSession()
+  const hasLoadedRef = useRef(false)
 
   // Create Job Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -24,10 +27,13 @@ export default function JobsPage() {
 
   const fetchJobs = async () => {
     try {
-      setLoading(true)
       setError(null)
       const data = await getJobs()
       setJobs(data)
+      // Store in localStorage for persistence
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load jobs')
     } finally {
@@ -48,7 +54,6 @@ export default function JobsPage() {
         hiring_manager_email: formData.hiring_manager_email || undefined
       })
 
-      // Reset form and close modal
       setFormData({
         title: '',
         description: '',
@@ -56,8 +61,6 @@ export default function JobsPage() {
         hiring_manager_email: ''
       })
       setIsCreateModalOpen(false)
-
-      // Refresh jobs list
       await fetchJobs()
     } catch (err: any) {
       setCreateError(err.response?.data?.detail || err.message || 'Failed to create job')
@@ -67,7 +70,24 @@ export default function JobsPage() {
   }
 
   useEffect(() => {
-    fetchJobs()
+    // Load from localStorage first (instant), then fetch fresh data
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        try {
+          setJobs(JSON.parse(stored))
+          setLoading(false)
+        } catch (e) {
+          // Invalid JSON, ignore
+        }
+      }
+    }
+
+    // Only fetch if we haven't loaded yet OR if data is empty
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true
+      fetchJobs()
+    }
   }, [])
 
   if (loading) {

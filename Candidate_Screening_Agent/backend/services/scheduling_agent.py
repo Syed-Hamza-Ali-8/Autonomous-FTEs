@@ -228,6 +228,18 @@ class SchedulingAgent:
             "message_id": reply_message_id
         })
 
+        # FAIL-SAFE: Keyword check BEFORE any processing
+        decline_phrases = [
+            "not interested", "no longer interested", "decline",
+            "withdraw", "not pursuing", "remove me", "unsubscribe",
+            "going with another", "accepted another", "don't want"
+        ]
+        reply_lower = reply_text.lower()
+        if any(phrase in reply_lower for phrase in decline_phrases):
+            logger.info(f"Candidate {candidate_id} matched decline keyword - bypassing LLM")
+            await self._handle_decline(db, conversation, candidate, job, reply_message_id)
+            return
+
         # Check if awaiting questions reply
         if conversation.conversation_state == "awaiting_questions_reply":
             # Analyze questions reply and send time slots
@@ -240,6 +252,18 @@ class SchedulingAgent:
             slot_query = select(InterviewSlot).where(InterviewSlot.id.in_(conversation.proposed_slots))
             slot_result = await db.execute(slot_query)
             slots = slot_result.scalars().all()
+
+        # FAIL-SAFE: Keyword check BEFORE LLM (if LLM fails, this catches it)
+        decline_phrases = [
+            "not interested", "no longer interested", "decline",
+            "withdraw", "not pursuing", "remove me", "unsubscribe",
+            "going with another", "accepted another", "don't want"
+        ]
+        reply_lower = reply_text.lower()
+        if any(phrase in reply_lower for phrase in decline_phrases):
+            logger.info(f"Candidate {candidate_id} matched decline keyword - bypassing LLM")
+            await self._handle_decline(db, conversation, candidate, job, reply_message_id)
+            return
 
         # Analyze reply using LLM to understand intent
         intent = await self._analyze_intent_after_questions(
@@ -508,40 +532,45 @@ Generate the email body (no subject line):"""
                 slot_info = calendar_service.format_slot_for_display(slot, display_timezone="UTC")
                 slots_text += f"  Slot {i}: {slot_info['date']} at {slot_info['time']} {slot_info['timezone']}\n"
 
-        prompt = f"""Analyze this candidate's reply to an interview scheduling email.
+        prompt = f"""You are analyzing a candidate's reply to an interview scheduling email.
 
 {slots_text}
 Candidate's Latest Reply:
+---
 {reply_text}
+---
 
-Determine the candidate's intent.
+## CRITICAL RULE: DECLINE Detection
+If the candidate says ANYTHING like:
+- "I am not interested" or "not interested" or "not interested in this position"
+- "I am no longer interested" or "no longer interested"
+- "I decline" or "declining" or "I withdraw"
+- "I am going with another company" or "accepted another offer"
+- "Please remove me" or "unsubscribe"
+- "I don't want to proceed" or "not moving forward"
 
-IMPORTANT - Slot Recognition Rules:
-- "Option 1/2/3/4/5" or "option 1/2/3/4/5" → accept_slot with that slot number
-- "Slot 1/2/3/4/5" or "slot 1/2/3/4/5" → accept_slot with that slot number
-- "first/second/third/fourth/fifth option" → accept_slot with corresponding number
-- "I prefer" or "I choose" or "I will go with" → accept_slot
-- "Option 2" or "option 2" or "Monday" or "Tuesday" → accept_slot with appropriate slot number
-- "looking forward" or "excited" or "confirmed" or "sounds great" → accept_slot
+Then you MUST return: action="decline"
 
-ONLY decline if explicitly stated:
-- "decline" or "withdraw" or "not interested" or "accept another company" or "going with another company"
+## ACCEPT_SLOT Detection
+Only if the candidate explicitly selects a time slot:
+- "Option 1" or "Slot 1" or "first option"
+- "I prefer option 2" or "I'll take slot 3"
+- "I will be available at [time]" or "Monday works" or "Friday at 9am"
+- "Option 5" or "the last one"
 
-request_alternative ONLY if:
-- "don't work" or "not available" or "alternative" or "different time" or "conflict"
+## IMPORTANT EXAMPLES:
+- "I am not interested in this position" → decline
+- "I will be available at Monday 9am" → accept_slot
+- "No thanks, I found another job" → decline
+- "Option 3 works for me" → accept_slot
+- "I am no longer interested, thanks" → decline
 
-If answers provided but NO slot mentioned → unclear (not decline!)
-
-Possible intents:
-1. accept_slot - They want to book one of the proposed times (most common)
-2. request_alternative - They want different times
-3. ask_question - They have a question
-4. unclear - Cannot determine intent (DEFAULT if unsure)
-5. decline - ONLY if explicitly declining
+Respond ONLY with JSON:
+{{"action": "decline|accept_slot|request_alternative|ask_question|unclear", "slot_number": null or 1-5, "reason": null or "string", "confidence": "high|medium|low"}}
 
 Respond in JSON format:
 {{
-    "action": "accept_slot|request_alternative|ask_question|unclear|decline",
+    "action": "decline|accept_slot|request_alternative|ask_question|unclear",
     "slot_number": <slot number (1-5) if accepting, null otherwise>,
     "reason": "<reason if declining or requesting alternative>",
     "question": "<question if asking>",
@@ -590,8 +619,33 @@ Respond in JSON format:
         )
 
         if not booked_slot:
-            # Slot no longer available
-            response = await self._generate_slot_unavailable_response(candidate.name or candidate.email, job.title)
+            # Slot no longer available - get NEW available slots and propose them
+            # Release the proposed slots first
+            await calendar_service.release_proposed_slots(db, candidate.id)
+
+            # Get fresh available slots
+            available_slots = await calendar_service.get_available_slots(db, job.id, limit=5)
+
+            if available_slots:
+                # Propose the new available slots
+                slot_ids = [slot.id for slot in available_slots]
+                proposed_slots = await calendar_service.propose_slots(db, slot_ids, candidate.id)
+
+                # Generate response with new slots
+                response = await self._generate_alternative_slots_email(
+                    candidate.name or candidate.email,
+                    job.title,
+                    proposed_slots,
+                    "The slot you selected was just booked. Here are other available times:"
+                )
+
+                # Update conversation
+                conversation.proposed_slots = slot_ids
+                conversation.conversation_state = "proposing_times"
+            else:
+                # No slots available at all
+                response = await self._generate_no_slots_message(candidate.name or candidate.email, job.title)
+                conversation.conversation_state = "awaiting_slots"
         else:
             # Generate confirmation email
             slot_info = calendar_service.format_slot_for_display(booked_slot)

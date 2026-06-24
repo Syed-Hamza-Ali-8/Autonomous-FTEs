@@ -37,6 +37,43 @@ class ReplyWatcher(BaseWatcher):
         )
         self.service = build("gmail", "v1", credentials=self.credentials)
 
+        # Track processed message IDs in Redis (persists across restarts)
+        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        self._redis = None
+        self._processed_cache: set = set()  # In-memory cache for quick checks
+
+    async def _get_redis(self):
+        """Get Redis connection."""
+        if self._redis is None:
+            self._redis = redis.from_url(self.redis_url)
+        return self._redis
+
+    async def _is_processed(self, msg_id: str) -> bool:
+        """Check if message was already processed (Redis + cache)."""
+        if msg_id in self._processed_cache:
+            return True
+        r = await self._get_redis()
+        if await r.sismember("processed_emails", msg_id):
+            self._processed_cache.add(msg_id)
+            return True
+        return False
+
+    async def _mark_processed(self, msg_id: str) -> None:
+        """Mark message as processed in Redis and cache."""
+        self._processed_cache.add(msg_id)
+        r = await self._get_redis()
+        await r.sadd("processed_emails", msg_id)
+
+        # Gmail OAuth2 setup
+        self.credentials = Credentials(
+            token=None,
+            refresh_token=os.getenv("GMAIL_REFRESH_TOKEN"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv("GMAIL_CLIENT_ID"),
+            client_secret=os.getenv("GMAIL_CLIENT_SECRET"),
+        )
+        self.service = build("gmail", "v1", credentials=self.credentials)
+
         # Redis connection
         self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         self.redis = None
@@ -67,26 +104,35 @@ class ReplyWatcher(BaseWatcher):
 
             # For each candidate awaiting reply, search for their response
             for candidate in screening_candidates:
-                # Search for replies FROM this candidate
-                query = f"from:{candidate.email} newer_than:1h"
+                # Search for replies FROM this candidate (exclude sent to avoid loops)
+                query = f"from:{candidate.email} -in:sent newer_than:1h"
                 results = self.service.users().messages().list(
                     userId="me", q=query, maxResults=5
                 ).execute()
 
                 messages = results.get("messages", [])
                 for msg in messages:
+                    # Skip already processed messages
+                    if await self._is_processed(msg["id"]):
+                        continue
+
                     full_msg = self.service.users().messages().get(
                         userId="me", id=msg["id"], format="full"
                     ).execute()
 
                     headers = full_msg["payload"].get("headers", [])
+                    sender = next((h["value"] for h in headers if h["name"] == "From"), "")
+                    # Make sure it's FROM the candidate (not TO them)
+                    if candidate.email.lower() not in sender.lower():
+                        continue
+
                     in_reply_to = next((h["value"] for h in headers if h["name"] == "In-Reply-To"), "")
 
                     # If this email has In-Reply-To, it's a reply to something we sent
-                    # Since candidate only has one active screening thread, this is their reply
                     if in_reply_to:
                         reply_text = self._extract_body(full_msg)
                         if reply_text and len(reply_text) > 20:  # Minimum reply length
+                            await self._mark_processed(msg["id"])
                             replies.append((msg["id"], candidate.id, reply_text, "screening"))
                             self.logger.info(f"Found screening reply from {candidate.email} (candidate {candidate.id})")
 
@@ -99,21 +145,31 @@ class ReplyWatcher(BaseWatcher):
                     if not cand:
                         continue
 
-                query = f"from:{cand.email} newer_than:1h"
+                query = f"from:{cand.email} -in:sent newer_than:1h"
                 results = self.service.users().messages().list(
                     userId="me", q=query, maxResults=5
                 ).execute()
 
                 for msg in results.get("messages", []):
+                    # Skip already processed messages
+                    if await self._is_processed(msg["id"]):
+                        continue
+
                     full_msg = self.service.users().messages().get(
                         userId="me", id=msg["id"], format="full"
                     ).execute()
                     headers = full_msg["payload"].get("headers", [])
+                    sender = next((h["value"] for h in headers if h["name"] == "From"), "")
+                    # Make sure it's FROM the candidate (not TO them)
+                    if cand.email.lower() not in sender.lower():
+                        continue
+
                     in_reply_to = next((h["value"] for h in headers if h["name"] == "In-Reply-To"), "")
 
                     if in_reply_to:
                         reply_text = self._extract_body(full_msg)
                         if reply_text and len(reply_text) > 10:
+                            await self._mark_processed(msg["id"])
                             replies.append((msg["id"], conv.candidate_id, reply_text, "scheduling"))
                             self.logger.info(f"Found scheduling reply from {cand.email}")
 

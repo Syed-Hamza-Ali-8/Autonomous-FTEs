@@ -14,6 +14,8 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from dotenv import load_dotenv
+import sys
+import webbrowser
 
 load_dotenv()
 
@@ -31,38 +33,65 @@ def authenticate():
     # Check if token.json exists
     if os.path.exists('token.json'):
         print("Found existing token.json")
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-
-    # If no valid credentials, run OAuth flow
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            print("Refreshing expired token...")
-            creds.refresh(Request())
-        else:
-            print("Starting OAuth2 authentication flow...")
-            print("\nMake sure you have credentials.json in this directory!")
-
-            if not os.path.exists('credentials.json'):
-                print("\n❌ ERROR: credentials.json not found!")
-                print("Please download it from Google Cloud Console and place it in the backend/ folder")
+        try:
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+            if creds and creds.expired and creds.refresh_token:
+                print("Refreshing expired token...")
+                creds.refresh(Request())
+                with open('token.json', 'w') as token:
+                    token.write(creds.to_json())
+                print("✅ Token refreshed!")
                 return
+        except Exception as e:
+            print(f"Token invalid: {e}")
+            os.remove('token.json')
 
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
+    # Run OAuth flow
+    print("Starting OAuth2 authentication flow...")
+    print("\nMake sure you have credentials.json in this directory!")
 
-            # Manual flow for WSL/headless
-            auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
-            print(f"\n🌐 Please go to this URL:\n{auth_url}\n")
-            code = input("Enter the authorization code: ")
-            flow.fetch_token(code=code)
-            creds = flow.credentials
+    if not os.path.exists('credentials.json'):
+        print("\n❌ ERROR: credentials.json not found!")
+        print("Please download it from Google Cloud Console and place it in the backend/ folder")
+        print("\nIMPORTANT: In Google Cloud Console, add 'http://localhost' to authorized redirect URIs!")
+        return
 
-        # Save credentials
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
+    # Load credentials
+    with open('credentials.json', 'r') as f:
+        creds_data = json.load(f)
 
-        print("\n✅ Authentication successful!")
-        print(f"✅ Saved credentials to token.json")
+    flow = InstalledAppFlow.from_client_secrets_file(
+        'credentials.json', SCOPES)
+
+    # Use default redirect URI from credentials.json (http://localhost)
+    auth_url = flow.authorization_url(prompt='consent', access_type='offline')[0]
+    print(f"\n🌐 Opening browser for authorization...")
+    print(f"Or copy this URL manually:\n{auth_url}\n")
+
+    # Try to open browser
+    try:
+        webbrowser.open(auth_url)
+        print("Browser opened. If it didn't open, copy the URL above manually.")
+    except:
+        print("Could not open browser automatically. Please copy the URL above manually.")
+
+    # Check if code was passed as argument
+    if len(sys.argv) > 1:
+        code = sys.argv[1]
+    else:
+        print("\n📋 After authorizing, you'll see a page with a code.")
+        print("   Copy the code (it will look like: 4/0Adeu5B...)")
+        code = input("Enter the authorization code from the browser: ")
+
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+
+    # Save credentials
+    with open('token.json', 'w') as token:
+        token.write(creds.to_json())
+
+    print("\n✅ Authentication successful!")
+    print(f"✅ Saved credentials to token.json")
 
     # Display refresh token
     print("\n" + "="*60)
