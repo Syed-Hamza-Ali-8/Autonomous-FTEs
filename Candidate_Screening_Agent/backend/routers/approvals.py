@@ -6,6 +6,7 @@ from auth import get_current_user, TokenPayload
 from services.gmail_service import gmail_service
 from services import audit_service
 from typing import List
+from datetime import datetime
 
 router = APIRouter()
 
@@ -101,14 +102,23 @@ async def approve_candidate(
             slots_text="\n".join(formatted_slots)
         )
 
-        # Send email
-        message_id = gmail_service.send_email(
+        # Send email and get Gmail's actual Message-ID
+        gmail_message_id, thread_id = gmail_service.send_email(
             to=candidate.email,
             subject=f"Interview Invitation - {job.title}",
             body=email_body
         )
 
-        candidate.gmail_message_id = message_id
+        # Save GMAIL's actual Message-ID to conversation for threading
+        conversation.conversation_history.append({
+            "role": "assistant",
+            "content": email_body,
+            "timestamp": datetime.utcnow().isoformat(),
+            "message_id": gmail_message_id
+        })
+        conversation.last_message_id = gmail_message_id
+
+        candidate.gmail_message_id = gmail_message_id
         await db.commit()
 
         success_message = f"Approved! Interview invitation with screening questions sent to {candidate.email}"

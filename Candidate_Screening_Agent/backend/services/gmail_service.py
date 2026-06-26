@@ -92,7 +92,7 @@ class GmailService:
 
         # Send real email
         try:
-            message, message_id = self._create_message(
+            message, our_message_id = self._create_message(
                 to, subject, body,
                 in_reply_to=in_reply_to,
                 references=references
@@ -102,8 +102,7 @@ class GmailService:
                 body=message
             ).execute()
 
-            # Fetch the actual Message-ID Gmail assigned (Gmail overrides custom Message-ID)
-            # Also get threadId for reply matching
+            # Fetch Gmail's actual Message-ID (Gmail overrides our custom Message-ID)
             sent_msg = self.service.users().messages().get(
                 userId="me",
                 id=result["id"],
@@ -111,13 +110,16 @@ class GmailService:
                 metadataHeaders=["Message-ID"]
             ).execute()
             thread_id = result.get("threadId", "")
+            gmail_message_id = our_message_id
             for h in sent_msg.get("payload", {}).get("headers", []):
-                if h["name"] == "Message-ID":
-                    message_id = h["value"]
+                # Gmail returns "Message-Id" (lowercase 'i')
+                if h["name"].lower() == "message-id":
+                    gmail_message_id = h["value"]
                     break
 
-            logger.info(f"Email sent to {to}: {subject} (Message-ID: {message_id})")
-            return message_id
+            logger.info(f"Email sent to {to}: {subject} (Gmail-ID: {gmail_message_id})")
+            # Return tuple: (gmail_actual_id, thread_id)
+            return gmail_message_id, thread_id
 
         except Exception as e:
             logger.error(f"Failed to send email to {to}: {e}")

@@ -87,19 +87,19 @@ class SchedulingAgent:
         )
 
         # Send email
-        message_id = gmail_service.send_email(
+        gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
             subject=f"Interview Invitation - {job.title}",
             body=email_body
         )
 
         # Update conversation with message ID
-        conversation.last_message_id = message_id
+        conversation.last_message_id = gmail_msg_id
         conversation.conversation_history.append({
             "role": "assistant",
             "content": email_body,
             "timestamp": datetime.utcnow().isoformat(),
-            "message_id": message_id
+            "message_id": gmail_msg_id
         })
         await db.commit()
 
@@ -144,8 +144,9 @@ class SchedulingAgent:
     def _build_threading_headers(self, conversation, reply_message_id: str) -> tuple[str, str]:
         """Build In-Reply-To and References headers for proper Gmail threading.
 
-        Gmail threads emails based on the FIRST Message-ID in the References chain.
-        All replies must reference the ORIGINAL invite's Message-ID as the anchor.
+        For proper thread continuation:
+        - In-Reply-To should be the IMMEDIATE parent message (candidate's latest reply)
+        - References should contain the full chain starting with original invite
         """
         # Find the original invite's Message-ID from conversation history (first assistant message)
         original_msg_id = ""
@@ -153,12 +154,9 @@ class SchedulingAgent:
             mid = msg.get("message_id", "")
             if mid and mid.startswith("<") and mid.endswith(">"):
                 original_msg_id = mid
-                break  # Use the FIRST one (original invite)
+                break
 
-        # In-Reply-To: always the original invite ID (Gmail's threading anchor)
-        in_reply_to = original_msg_id
-
-        # References: full chain - original invite + all intermediate messages + current reply
+        # Build References: full chain starting with original invite
         references_parts = []
         if original_msg_id:
             references_parts.append(original_msg_id)
@@ -166,21 +164,28 @@ class SchedulingAgent:
             mid = msg.get("message_id", "")
             if mid and mid.startswith("<") and mid.endswith(">") and mid != original_msg_id:
                 references_parts.append(mid)
-        # Add the reply ID
+
+        # In-Reply-To: reply to the IMMEDIATE parent (candidate's latest reply if available)
         if reply_message_id:
             rid = reply_message_id if reply_message_id.startswith("<") else f"<{reply_message_id}>"
+            in_reply_to = rid
+            # Add candidate's reply to references if not already there
             if rid not in references_parts:
                 references_parts.append(rid)
+        else:
+            # No reply_message_id - reply to last message in chain
+            in_reply_to = references_parts[-1] if references_parts else original_msg_id
 
-        # Deduplicate while preserving order
-        seen = set()
-        unique_refs = []
+        # References must start with original invite for proper Gmail threading
+        # Reorder so original is first
+        final_refs = []
+        if original_msg_id and original_msg_id not in final_refs:
+            final_refs.append(original_msg_id)
         for ref in references_parts:
-            if ref not in seen:
-                seen.add(ref)
-                unique_refs.append(ref)
+            if ref != original_msg_id and ref not in final_refs:
+                final_refs.append(ref)
 
-        references = " ".join(unique_refs) if unique_refs else in_reply_to
+        references = " ".join(final_refs) if final_refs else in_reply_to
 
         return in_reply_to, references
 
@@ -243,7 +248,7 @@ class SchedulingAgent:
         # Check if awaiting questions reply
         if conversation.conversation_state == "awaiting_questions_reply":
             # Analyze questions reply and send time slots
-            await self._handle_questions_reply(db, conversation, candidate, job, reply_text)
+            await self._handle_questions_reply(db, conversation, candidate, job, reply_text, reply_message_id)
             return
 
         # Get slot details for intent analysis
@@ -411,7 +416,8 @@ Generate the email body (no subject line):"""
         conversation: SchedulingConversation,
         candidate: Candidate,
         job: Job,
-        reply_text: str
+        reply_text: str,
+        reply_message_id: str = ""
     ):
         """Handle reply to screening questions - check for slot selection, book if found."""
         from db import crud
@@ -446,7 +452,7 @@ Generate the email body (no subject line):"""
             if slot_num and 1 <= slot_num <= len(conversation.proposed_slots):
                 logger.info(f"Candidate also selected slot {slot_num} with screening answers - booking directly")
                 await self._handle_slot_acceptance(
-                    db, conversation, candidate, job, intent
+                    db, conversation, candidate, job, intent, reply_message_id
                 )
                 return
 
@@ -487,7 +493,7 @@ Generate the email body (no subject line):"""
         email_body = response.choices[0].message.content.strip()
 
         # Send email
-        message_id = gmail_service.send_email(
+        gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
             subject=f"Interview Time Slots - {job.title}",
             body=email_body
@@ -659,11 +665,20 @@ Respond in JSON format:
             conversation.conversation_state = "confirmed"
             conversation.confirmed_slot_id = booked_slot.id
 
-        # Send email with threading
+        # Send email with threading - use same subject as original for proper threading
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
-        message_id = gmail_service.send_email(
+        # Use same subject as original email for Gmail threading
+        original_subject = "Interview Invitation - " + job.title
+
+        # DEBUG LOGGING
+        logger.info(f"[THREAD_DEBUG] reply_message_id: {reply_message_id}")
+        logger.info(f"[THREAD_DEBUG] in_reply_to: {in_reply_to}")
+        logger.info(f"[THREAD_DEBUG] references: {references}")
+        logger.info(f"[THREAD_DEBUG] subject: {original_subject}")
+
+        gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
-            subject=f"Interview Confirmed - {job.title}",
+            subject=original_subject,
             body=response,
             in_reply_to=in_reply_to,
             references=references
@@ -674,9 +689,9 @@ Respond in JSON format:
             "role": "assistant",
             "content": response,
             "timestamp": datetime.utcnow().isoformat(),
-            "message_id": message_id
+            "message_id": gmail_msg_id
         })
-        conversation.last_message_id = message_id
+        conversation.last_message_id = gmail_msg_id
 
         logger.info(f"Confirmed interview slot {slot_id} for candidate {candidate.id}")
 
@@ -717,7 +732,7 @@ Respond in JSON format:
 
         # Send email with threading
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
-        message_id = gmail_service.send_email(
+        gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
             subject=f"Alternative Interview Times - {job.title}",
             body=response,
@@ -729,9 +744,9 @@ Respond in JSON format:
             "role": "assistant",
             "content": response,
             "timestamp": datetime.utcnow().isoformat(),
-            "message_id": message_id
+            "message_id": gmail_msg_id
         })
-        conversation.last_message_id = message_id
+        conversation.last_message_id = gmail_msg_id
 
     async def _handle_question(
         self,
@@ -757,7 +772,7 @@ Respond in JSON format:
         in_reply_to, references = self._build_threading_headers(conversation, "")
 
         # Send email with threading
-        message_id = gmail_service.send_email(
+        gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
             subject=f"Re: Interview - {job.title}",
             body=response,
@@ -769,9 +784,9 @@ Respond in JSON format:
             "role": "assistant",
             "content": response,
             "timestamp": datetime.utcnow().isoformat(),
-            "message_id": message_id
+            "message_id": gmail_msg_id
         })
-        conversation.last_message_id = message_id
+        conversation.last_message_id = gmail_msg_id
 
     async def _handle_decline(
         self,
@@ -790,7 +805,7 @@ Respond in JSON format:
 
         # Send email with threading
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
-        message_id = gmail_service.send_email(
+        gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
             subject=f"Re: Interview - {job.title}",
             body=response,
@@ -804,9 +819,9 @@ Respond in JSON format:
             "role": "assistant",
             "content": response,
             "timestamp": datetime.utcnow().isoformat(),
-            "message_id": message_id
+            "message_id": gmail_msg_id
         })
-        conversation.last_message_id = message_id
+        conversation.last_message_id = gmail_msg_id
 
         logger.info(f"Candidate {candidate.id} declined interview")
 
@@ -828,7 +843,7 @@ Respond in JSON format:
 
         # Send email with threading
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
-        message_id = gmail_service.send_email(
+        gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
             subject=f"Re: Interview - {job.title}",
             body=response,
@@ -840,9 +855,9 @@ Respond in JSON format:
             "role": "assistant",
             "content": response,
             "timestamp": datetime.utcnow().isoformat(),
-            "message_id": message_id
+            "message_id": gmail_msg_id
         })
-        conversation.last_message_id = message_id
+        conversation.last_message_id = gmail_msg_id
 
     async def _generate_confirmation_email(
         self,
