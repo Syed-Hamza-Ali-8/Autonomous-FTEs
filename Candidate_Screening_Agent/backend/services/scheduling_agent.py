@@ -495,7 +495,7 @@ Generate the email body (no subject line):"""
         # Send email
         gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
-            subject=f"Interview Time Slots - {job.title}",
+            subject=f"Interview Invitation - {job.title}",
             body=email_body
         )
 
@@ -734,7 +734,7 @@ Respond in JSON format:
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
         gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
-            subject=f"Alternative Interview Times - {job.title}",
+            subject=f"Interview Invitation - {job.title}",
             body=response,
             in_reply_to=in_reply_to,
             references=references
@@ -774,7 +774,7 @@ Respond in JSON format:
         # Send email with threading
         gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
-            subject=f"Re: Interview - {job.title}",
+            subject=f"Interview Invitation - {job.title}",
             body=response,
             in_reply_to=in_reply_to,
             references=references
@@ -807,7 +807,7 @@ Respond in JSON format:
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
         gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
-            subject=f"Re: Interview - {job.title}",
+            subject=f"Interview Invitation - {job.title}",
             body=response,
             in_reply_to=in_reply_to,
             references=references
@@ -845,7 +845,7 @@ Respond in JSON format:
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
         gmail_msg_id, thread_id = gmail_service.send_email(
             to=candidate.email,
-            subject=f"Re: Interview - {job.title}",
+            subject=f"Interview Invitation - {job.title}",
             body=response,
             in_reply_to=in_reply_to,
             references=references
