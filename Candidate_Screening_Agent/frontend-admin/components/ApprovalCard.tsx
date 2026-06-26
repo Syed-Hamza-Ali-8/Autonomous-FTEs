@@ -24,12 +24,10 @@ interface ApprovalCardProps {
 export default function ApprovalCard({ approval, onApprovalComplete }: ApprovalCardProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showConfirm, setShowConfirm] = useState<'approve' | 'reject' | null>(null)
 
   const handleApprove = async () => {
-    if (!confirm(`Approve ${approval.candidate_name} for ${approval.job_title}?`)) {
-      return
-    }
-
+    setShowConfirm(null)
     setLoading(true)
     setError(null)
 
@@ -43,10 +41,7 @@ export default function ApprovalCard({ approval, onApprovalComplete }: ApprovalC
   }
 
   const handleReject = async () => {
-    if (!confirm(`Reject ${approval.candidate_name} for ${approval.job_title}?`)) {
-      return
-    }
-
+    setShowConfirm(null)
     setLoading(true)
     setError(null)
 
@@ -65,12 +60,61 @@ export default function ApprovalCard({ approval, onApprovalComplete }: ApprovalC
     : 'rgba(255, 107, 107, 0.05)'
 
   return (
-    <div className="rounded-2xl p-8"
-         style={{
-           background: 'var(--off-white)',
-           border: `1px solid var(--warm-gray)`,
-           borderLeft: `4px solid ${borderColor}`,
-         }}>
+    <>
+      {/* Confirmation Modal */}
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
+                   style={{ background: showConfirm === 'approve' ? 'rgba(78, 205, 196, 0.1)' : 'rgba(255, 107, 107, 0.1)' }}>
+                {showConfirm === 'approve' ? (
+                  <svg className="w-8 h-8" style={{ color: 'var(--sage-green)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : (
+                  <svg className="w-8 h-8" style={{ color: 'var(--coral-warm)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+              <h3 className="font-display text-xl mb-2" style={{ color: 'var(--navy-deep)' }}>
+                {showConfirm === 'approve' ? 'Approve & Send Interview Invite?' : 'Reject Application?'}
+              </h3>
+              <p className="text-sm" style={{ color: 'var(--navy-mid)' }}>
+                {showConfirm === 'approve'
+                  ? `Send interview invitation with time slots and screening questions to ${approval.candidate_name}?`
+                  : `This will reject ${approval.candidate_name}'s application and send a rejection email.`
+                }
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowConfirm(null)}
+                className="flex-1 px-6 py-3 font-medium border-2 rounded-xl transition-all hover:opacity-70"
+                style={{ borderColor: 'var(--navy-mid)', color: 'var(--navy-deep)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={showConfirm === 'approve' ? handleApprove : handleReject}
+                disabled={loading}
+                className="flex-1 px-6 py-3 font-medium rounded-xl transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ background: showConfirm === 'approve' ? 'var(--sage-green)' : 'var(--coral-warm)', color: 'white' }}
+              >
+                {loading ? 'Processing...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl p-8"
+           style={{
+             background: 'var(--off-white)',
+             border: `1px solid var(--warm-gray)`,
+             borderLeft: `4px solid ${borderColor}`,
+           }}>
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -135,7 +179,7 @@ export default function ApprovalCard({ approval, onApprovalComplete }: ApprovalC
           Summary
         </p>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--navy-deep)' }}>
-          {approval.brief_summary}
+          {approval.brief_summary?.replace(/^JSON\s*/i, '')}
         </p>
       </div>
 
@@ -153,20 +197,20 @@ export default function ApprovalCard({ approval, onApprovalComplete }: ApprovalC
       {/* Action Buttons */}
       <div className="flex gap-4">
         <button
-          onClick={handleApprove}
+          onClick={() => setShowConfirm('approve')}
           disabled={loading}
-          className="flex-1 px-6 py-3 font-medium transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 px-6 py-3 font-medium rounded-xl transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ background: 'var(--sage-green)', color: 'white' }}
         >
-          {loading ? 'Processing...' : '✓ Approve & Send Interview Invite'}
+          ✓ Approve & Send Interview Invite
         </button>
         <button
-          onClick={handleReject}
+          onClick={() => setShowConfirm('reject')}
           disabled={loading}
-          className="flex-1 px-6 py-3 font-medium transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 px-6 py-3 font-medium rounded-xl transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ background: 'var(--coral-warm)', color: 'white' }}
         >
-          {loading ? 'Processing...' : '✗ Reject & Send Rejection Email'}
+          ✗ Reject Application
         </button>
       </div>
 
@@ -180,6 +224,7 @@ export default function ApprovalCard({ approval, onApprovalComplete }: ApprovalC
           View Full Candidate Profile →
         </Link>
       </div>
-    </div>
+      </div>
+    </>
   )
 }

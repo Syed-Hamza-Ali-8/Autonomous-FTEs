@@ -76,6 +76,14 @@ export default function JobApplicationPage() {
       return
     }
 
+    // Check file size (5MB limit)
+    const maxSize = 5 * 1024 * 1024 // 5MB in bytes
+    if (resume.size > maxSize) {
+      showModal('File Too Large', 'Resume must be smaller than 5MB. Please compress your PDF or use a smaller file.', 'error')
+      setSubmitting(false)
+      return
+    }
+
     try {
       const formData = new FormData()
       formData.append('name', name)
@@ -314,7 +322,7 @@ export default function JobApplicationPage() {
                   </div>
                   <p className="font-mono text-xs uppercase tracking-wider"
                      style={{ color: 'var(--navy-mid)' }}>
-                    PDF up to 10MB
+                    PDF up to 5MB
                   </p>
                   {resume && (
                     <div className="pt-4 border-t"

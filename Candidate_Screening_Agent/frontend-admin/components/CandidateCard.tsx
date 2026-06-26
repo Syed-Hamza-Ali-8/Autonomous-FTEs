@@ -1,6 +1,16 @@
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 
+// Format date - show "Today" for same day, otherwise show date
+function formatAppliedDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) {
+    return 'Today'
+  }
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 interface CandidateCardProps {
   candidate: {
     id: number
@@ -89,7 +99,7 @@ export default function CandidateCard({ candidate, compact = false }: CandidateC
       <div className="mt-5 pt-4 flex items-center justify-between"
            style={{ borderTop: '1px solid var(--warm-gray)' }}>
         <p className="font-mono text-xs uppercase tracking-wider" style={{ color: 'var(--navy-mid)' }}>
-          {formatDistanceToNow(new Date(candidate.created_at), { addSuffix: true })}
+          Applied {formatAppliedDate(candidate.created_at)}
         </p>
         <Link
           href={`/candidates/${candidate.id}`}

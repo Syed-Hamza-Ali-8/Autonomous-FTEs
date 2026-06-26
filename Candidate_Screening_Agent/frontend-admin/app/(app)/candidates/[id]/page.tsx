@@ -4,6 +4,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { getCandidate, getCandidateBrief, getPendingApprovals } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
+
+// Format date - show "Today" for same day, otherwise show date
+function formatAppliedDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) {
+    return 'Today'
+  }
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
 import Link from 'next/link'
 import ScoreBar from '@/components/ScoreBar'
 import ApprovalPanel from '@/components/ApprovalPanel'
@@ -140,7 +150,7 @@ export default function CandidateDetailPage() {
             )}
             <p className="mt-3 font-mono text-xs uppercase tracking-wider"
                style={{ color: 'var(--navy-mid)' }}>
-              Applied {formatDistanceToNow(new Date(candidate.created_at), { addSuffix: true })}
+              Applied {formatAppliedDate(candidate.created_at)}
             </p>
           </div>
 
@@ -310,7 +320,7 @@ export default function CandidateDetailPage() {
                style={{ background: 'var(--off-white)', border: '1px solid var(--warm-gray)' }}>
             {candidate.reply_analysis.brief_summary && (
               <p className="text-base leading-relaxed mb-6" style={{ color: 'var(--navy-deep)' }}>
-                {candidate.reply_analysis.brief_summary}
+                {candidate.reply_analysis.brief_summary?.replace(/^JSON\s*/i, '')}
               </p>
             )}
             {candidate.reply_analysis.notable_answers?.length > 0 && (
