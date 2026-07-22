@@ -415,8 +415,8 @@ Requirements:
 - Be warm and enthusiastic (they were approved!)
 - CRITICAL: List the time slots in the EXACT SAME ORDER and with the EXACT SAME NUMBERS as shown above. Do NOT reorder, sort, or renumber them. Slot 1 must stay slot 1, etc.
 - Present the time slots clearly in their local timezone
-- Ask them to choose one by number (e.g., "Option 1") or suggest an alternative time
-- If they want to suggest a different time, tell them to just say the day/time and we'll check availability
+- Ask them to choose one of the listed times by its option number (e.g., "Option 1")
+- Do NOT invite them to suggest a different/custom time. Interviews can only be booked at one of the listed times, so ask them to pick from the options above.
 - Keep it concise but friendly
 - Don't use generic phrases like "we'll reach out shortly"
 - Be specific and actionable
@@ -455,10 +455,10 @@ Requirements:
 - CRITICAL: List the time slots in the EXACT SAME ORDER and with the EXACT SAME NUMBERS as shown above. Do NOT reorder, sort, or renumber them. Slot 1 must stay slot 1, etc.
 - Present the time slots clearly - these are shown in UTC
 - IMPORTANT: The times above are shown in UTC. If this is not the candidate's local timezone, ask them to tell us their timezone in their reply (e.g., "I'm in IST", "I'm in PKT", "I'm in EST", "I'm in PST")
-- Ask them to choose one by number (Option 1, Option 2, etc.) OR suggest an alternative time
+- Ask them to choose one of the listed times by its option number (Option 1, Option 2, etc.)
 - Tell them to reply with: (1) their timezone if different from UTC, (2) their preferred time slot number
 - Do NOT include or ask any screening questions
-- If they want to suggest a different time, tell them to just say the day/time and we'll check availability
+- Do NOT invite them to suggest a different/custom time. Interviews can only be booked at one of the listed times, so ask them to pick from the options above.
 - Be warm and enthusiastic
 - Keep it professional but friendly
 - Sign off as "AI Recruiting Assistant"
@@ -501,10 +501,10 @@ Requirements:
 - CRITICAL: List the time slots in the EXACT SAME ORDER and with the EXACT SAME NUMBERS as shown above. Do NOT reorder, sort, or renumber them. Slot 1 must stay slot 1, etc.
 - Present the time slots clearly - these are shown in your local timezone
 - IMPORTANT: The times above are shown in UTC. If this is not your local timezone, please tell us your timezone in your reply (e.g., "I'm in IST", "I'm in PKT", "I'm in EST", "I'm in PST")
-- Ask them to choose one by number (Option 1, Option 2, etc.) OR suggest an alternative time
+- Ask them to choose one of the listed times by its option number (Option 1, Option 2, etc.)
 - Include the screening questions they need to answer via email reply
 - Tell them to reply with: (1) their timezone if different from UTC, (2) their preferred time slot number, (3) answers to screening questions
-- If they want to suggest a different time, tell them to just say the day/time and we'll check availability
+- Do NOT invite them to suggest a different/custom time. Interviews can only be booked at one of the listed times, so ask them to pick from the options above.
 - Be warm and enthusiastic
 - Keep it professional but friendly
 - Sign off as "AI Recruiting Assistant"
@@ -696,8 +696,8 @@ Requirements:
 - Thank them for providing their timezone
 - CRITICAL: List the time slots in the EXACT SAME ORDER and with the EXACT SAME NUMBERS as shown above. Do NOT reorder, sort, or renumber them. Slot 1 must stay slot 1, etc.
 - Show the time slots clearly in their local timezone ({timezone})
-- Ask them to choose one by number (Option 1, Option 2, etc.)
-- Or suggest an alternative time if none work
+- Ask them to choose one of the listed times by its option number (Option 1, Option 2, etc.)
+- Do NOT invite them to suggest a different/custom time. Interviews can only be booked at one of the listed times.
 - Be warm and professional
 - Sign as "AI Recruiting Assistant"."""
 
@@ -778,7 +778,8 @@ Requirements:
 - CRITICAL: List the time slots in the EXACT SAME ORDER and with the EXACT SAME NUMBERS as shown above. Do NOT reorder, sort, or renumber them. Slot 1 must stay slot 1, etc.
 - Present the time slots clearly in their local timezone
 - If the times are in UTC, remind them to tell us their timezone if different
-- Ask them to reply with their preferred slot number (1-5) or suggest alternative time
+- Ask them to reply with their preferred slot number (1-5)
+- Do NOT invite them to suggest a different/custom time. Interviews can only be booked at one of the listed times.
 - Be warm and appreciative
 - Sign off as "AI Recruiting Assistant"
 
@@ -993,9 +994,30 @@ Respond ONLY with valid JSON:
         """Handle candidate accepting a time slot."""
         slot_number = intent.get("slot_number")
         if not slot_number or slot_number < 1 or slot_number > len(conversation.proposed_slots):
-            # Invalid slot number - ask for clarification
-            await self._handle_unclear_intent(db, conversation, candidate, job)
-            return
+            # No explicit slot number in the reply. If the candidate is ALREADY
+            # confirmed (e.g. a bare "ok sure sounds good" after we sent the
+            # confirmation), don't ask them to pick again - treat it as an
+            # acknowledgement of their existing booking and default to that slot.
+            if conversation.confirmed_slot_id:
+                slot_number = None
+                # Resolve the confirmed slot's option number so the rest of the
+                # flow (which indexes proposed_slots) stays consistent.
+                if conversation.confirmed_slot_id in (conversation.proposed_slots or []):
+                    slot_number = conversation.proposed_slots.index(conversation.confirmed_slot_id) + 1
+                if slot_number:
+                    logger.info(
+                        f"Candidate {candidate.id} sent a bare affirmation while already "
+                        f"confirmed on slot {conversation.confirmed_slot_id}; re-confirming it."
+                    )
+                    intent["slot_number"] = slot_number
+                else:
+                    # Confirmed slot isn't in the proposed list anymore - just clarify.
+                    await self._handle_unclear_intent(db, conversation, candidate, job)
+                    return
+            else:
+                # Invalid slot number - ask for clarification
+                await self._handle_unclear_intent(db, conversation, candidate, job)
+                return
 
         # Get the slot ID
         slot_id = conversation.proposed_slots[slot_number - 1]
@@ -1054,23 +1076,28 @@ Respond ONLY with valid JSON:
                 response = self._generate_no_slots_message(candidate.name or candidate.email, job.title)
                 conversation.conversation_state = "rescheduling"
         else:
-            # Create a real Google Meet link (via Calendar API) for the confirmed interview
-            meeting_link = calendar_service.generate_google_meet_link(
-                booked_slot,
-                candidate_email=candidate.email,
-                candidate_name=candidate.name,
-                job_title=job.title,
-            )
-            if not meeting_link:
-                # Meet link creation failed - fall back to a placeholder note so the
-                # candidate still gets confirmation; recruiter can send a link manually.
-                logger.error(
-                    f"Could not create Meet link for candidate {candidate.id}; "
-                    "sending confirmation without a link."
+            # Reuse an existing meeting link if this slot was already booked (idempotent
+            # re-accept) - otherwise create a real Google Meet link via the Calendar API.
+            # Without this guard, a repeated "yes/ok" would create a duplicate calendar event.
+            if booked_slot.meeting_link:
+                meeting_link = booked_slot.meeting_link
+            else:
+                meeting_link = calendar_service.generate_google_meet_link(
+                    booked_slot,
+                    candidate_email=candidate.email,
+                    candidate_name=candidate.name,
+                    job_title=job.title,
                 )
-                meeting_link = "A meeting link will follow shortly."
-            booked_slot.meeting_link = meeting_link
-            await db.commit()
+                if not meeting_link:
+                    # Meet link creation failed - fall back to a placeholder note so the
+                    # candidate still gets confirmation; recruiter can send a link manually.
+                    logger.error(
+                        f"Could not create Meet link for candidate {candidate.id}; "
+                        "sending confirmation without a link."
+                    )
+                    meeting_link = "A meeting link will follow shortly."
+                booked_slot.meeting_link = meeting_link
+                await db.commit()
 
             # Get candidate timezone for display
             candidate_timezone = candidate.timezone or "UTC"
@@ -1148,114 +1175,71 @@ Respond ONLY with valid JSON:
             reply_text or "", company_timezone=candidate_timezone
         )
 
-        # If this is a reschedule from an already-confirmed interview, release the
-        # previously booked slot so it becomes available again.
-        if conversation.confirmed_slot_id:
-            await calendar_service.cancel_slot(db, conversation.confirmed_slot_id)
-            conversation.confirmed_slot_id = None
+        # Fetch the slots we ACTUALLY offered this candidate, in the order shown.
+        # The candidate may ONLY choose from these times - we never create a slot at
+        # an arbitrary time they invent (e.g. "Friday at 5 PM" when that was never
+        # offered). If their suggestion matches one of the offered slots, book it;
+        # otherwise re-present the same offered slots and ask them to pick one.
+        shown_slots = await self._fetch_ordered_slots(db, conversation.proposed_slots)
 
-        # Release previously proposed slots
-        await calendar_service.release_proposed_slots(db, candidate.id)
-
-        # Check if suggested time is within working hours
-        can_accommodate = False
-        if suggested_time:
-            is_within_hours = calendar_service.is_within_working_hours(
-                suggested_time["start_time"],
-                suggested_time["end_time"],
-                "UTC"  # Company works in UTC
-            )
-
-            if is_within_hours:
-                # Try to create a slot at candidate's suggested time
-                # First check if slot is available
-                available = await calendar_service.get_available_slots(db, job.id, limit=10)
-
-                # Check if any slot matches the suggested time
-                for slot in available:
-                    if (abs((slot.start_time - suggested_time["start_time"]).total_seconds()) < 3600):
-                        # Within 1 hour of suggested time - good enough
-                        can_accommodate = True
-                        break
-
-                if not can_accommodate:
-                    # Create a new slot at candidate's suggested time
-                    new_slot = InterviewSlot(
-                        company_id=conversation.company_id,
-                        job_id=job.id,
-                        start_time=suggested_time["start_time"],
-                        end_time=suggested_time["end_time"],
-                        status="proposed",
-                        timezone="UTC",
-                        candidate_id=candidate.id,
-                        interviewer_name="Hiring Manager"
+        # If the candidate's suggested time coincides with one of the offered slots,
+        # treat it as an acceptance of that slot (they typed the time instead of the
+        # option number). _handle_slot_acceptance handles releasing any previously
+        # confirmed slot, booking, the Meet link, and the confirmation email.
+        if suggested_time and shown_slots:
+            for idx, slot in enumerate(shown_slots, 1):
+                # Match within 15 minutes of an offered slot's start time (both UTC).
+                if abs((slot.start_time - suggested_time["start_time"]).total_seconds()) < 900:
+                    logger.info(
+                        f"Candidate {candidate.id} suggested a time matching offered "
+                        f"slot {slot.id} (option {idx}); booking it."
                     )
-                    db.add(new_slot)
-                    await db.commit()
-                    await db.refresh(new_slot)
-
-                    # Propose this slot to candidate
-                    await calendar_service.propose_slots(db, [new_slot.id], candidate.id)
-
-                    # Generate response: Yes we can accommodate!
-                    response = await self._generate_accommodate_request_email(
-                        candidate.name or candidate.email,
-                        job.title,
-                        [new_slot],
-                        candidate_timezone,
-                        suggested_time
+                    intent["slot_number"] = idx
+                    await self._handle_slot_acceptance(
+                        db, conversation, candidate, job, intent, reply_message_id
                     )
-
-                    # Update conversation
-                    conversation.proposed_slots = [new_slot.id]
-                    conversation.conversation_state = "proposing_times"
-
-                    # Send and return
-                    in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
-                    gmail_msg_id, thread_id = gmail_service.send_email(
-                        to=candidate.email,
-                        subject=f"Interview Invitation - {job.title}",
-                        body=response,
-                        in_reply_to=in_reply_to,
-                        references=references
-                    )
-
-                    conversation.conversation_history.append({
-                        "role": "assistant",
-                        "content": response,
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "message_id": _ensure_msg_id_format(gmail_msg_id)
-                    })
-                    conversation.last_message_id = _ensure_msg_id_format(gmail_msg_id)
-                    await db.commit()
-
-                    logger.info(f"Accommodated candidate's preferred time for {candidate.id}")
                     return
 
-        # If we reach here, either no suggestion or can't accommodate exactly
-        # Get available slots
-        available_slots = await calendar_service.get_available_slots(db, job.id, limit=5)
+        # The requested time is NOT one of the offered slots. Do NOT accept or
+        # fabricate it. Re-present the offered slots and ask them to choose one.
+        # We deliberately leave any existing confirmed_slot_id booking intact so the
+        # candidate doesn't lose a confirmed interview by asking about an unavailable time.
+        if shown_slots:
+            # Keep the offered slots reserved for this candidate (re-propose any that
+            # were released; already-proposed/booked ones are left untouched).
+            reservable_ids = [s.id for s in shown_slots if s.status == "available"]
+            if reservable_ids:
+                await calendar_service.propose_slots(db, reservable_ids, candidate.id)
 
-        if not available_slots:
-            response = self._generate_no_slots_message(candidate.name or candidate.email, job.title)
-        else:
-            # Propose new slots
-            slot_ids = [slot.id for slot in available_slots]
-            proposed_slots = await calendar_service.propose_slots(db, slot_ids, candidate.id)
-
-            # Generate response: apologetic but showing alternatives
             response = await self._generate_alternative_slots_email(
                 candidate.name or candidate.email,
                 job.title,
-                proposed_slots,
+                shown_slots,
                 intent.get("reason"),
                 candidate_timezone,
                 suggested_time
             )
 
-            # Update conversation
-            conversation.proposed_slots = slot_ids
+            conversation.proposed_slots = [s.id for s in shown_slots]
             conversation.conversation_state = "proposing_times"
+        else:
+            # No record of previously offered slots - fall back to current availability.
+            available_slots = await calendar_service.get_available_slots(db, job.id, limit=5)
+            if not available_slots:
+                response = self._generate_no_slots_message(candidate.name or candidate.email, job.title)
+            else:
+                slot_ids = [slot.id for slot in available_slots]
+                proposed_slots = await calendar_service.propose_slots(db, slot_ids, candidate.id)
+                response = await self._generate_alternative_slots_email(
+                    candidate.name or candidate.email,
+                    job.title,
+                    proposed_slots,
+                    intent.get("reason"),
+                    candidate_timezone,
+                    suggested_time
+                )
+                conversation.proposed_slots = slot_ids
+                conversation.conversation_state = "proposing_times"
 
         # Send email with threading
         in_reply_to, references = self._build_threading_headers(conversation, reply_message_id)
@@ -1276,7 +1260,7 @@ Respond ONLY with valid JSON:
         conversation.last_message_id = _ensure_msg_id_format(gmail_msg_id)
         await db.commit()
 
-        logger.info(f"Offered alternative slots to candidate {candidate.id}")
+        logger.info(f"Offered alternative slots to candidate {candidate.id} (suggested time not in offered slots)")
 
     async def _handle_question(
         self,
@@ -1471,21 +1455,22 @@ Keep it concise. Sign as "AI Recruiting Assistant"."""
             local_time = suggested_time["start_time"].astimezone(tz)
             suggestion_text = f"\n\nYou requested: {local_time.strftime('%A, %B %d at %I:%M %p')} {local_time.tzname()}"
 
-        prompt = f"""Generate a friendly email offering alternative interview times.
+        prompt = f"""Generate a polite email explaining that the candidate's requested time is not available, and asking them to pick from our offered interview times.
 
 Candidate: {candidate_name}
 Job: {job_title}
 {suggestion_text}
-Reason for alternatives: {reason or "Previous times didn't work"}
 
-Our Available Times (shown in your timezone):
+Our Available Interview Times (shown in your timezone):
 {slots_text}
 
-Be understanding and flexible. Thank them for suggesting their preference.
-CRITICAL: List the time slots in the EXACT SAME ORDER and with the EXACT SAME NUMBERS as shown above. Do NOT reorder, sort, or renumber them.
-Politely let them know our available hours are {slots[0].start_time.astimezone(pytz.timezone(candidate_timezone)).strftime('%I:%M %p')} to {slots[-1].start_time.astimezone(pytz.timezone(candidate_timezone)).strftime('%I:%M %p')} in their timezone.
-Ask them to choose from the options above or suggest another time.
-Sign as "AI Recruiting Assistant"."""
+Guidelines:
+- Warmly thank them for their response{" and acknowledge the time they requested" if suggested_time else ""}.
+- Clearly but politely explain that the requested time is unfortunately NOT available, and that interviews can only be scheduled at one of the specific times listed above.
+- Ask them to reply with the OPTION NUMBER of whichever listed time works best for them.
+- Do NOT invite them to propose a different/custom time, and do NOT imply we can create a new time outside the list.
+- CRITICAL: List the time slots in the EXACT SAME ORDER and with the EXACT SAME NUMBERS as shown above. Do NOT reorder, sort, or renumber them.
+- Sign as "AI Recruiting Assistant"."""
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -1595,10 +1580,10 @@ Candidate: {candidate_name}
 Job: {job_title}
 
 Politely ask them to:
-- Choose one of the numbered time slots
-- Or suggest an alternative time
+- Choose one of the numbered time slots by its option number
 - Or let you know if they have questions
 
+Note: interviews can only be booked at one of the listed times, so do NOT invite them to propose a different/custom time.
 Be friendly and helpful. Sign as "AI Recruiting Assistant"."""
 
         response = self.client.chat.completions.create(

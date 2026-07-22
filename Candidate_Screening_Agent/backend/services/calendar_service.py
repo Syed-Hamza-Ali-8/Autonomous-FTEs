@@ -268,7 +268,10 @@ class CalendarService:
         query = select(InterviewSlot).where(
             and_(
                 InterviewSlot.id == slot_id,
-                InterviewSlot.status.in_(["available", "proposed"]),
+                # "booked" is included so re-accepting the SAME already-confirmed slot
+                # is idempotent (e.g. candidate replies "yes/ok" again after confirming).
+                # The candidate_id guard below prevents booking someone else's slot.
+                InterviewSlot.status.in_(["available", "proposed", "booked"]),
                 or_(
                     InterviewSlot.candidate_id == candidate_id,
                     InterviewSlot.candidate_id.is_(None)
@@ -282,6 +285,10 @@ class CalendarService:
             logger.warning(f"Slot {slot_id} not available for booking")
             return None
 
+        already_booked_by_candidate = (
+            slot.status == "booked" and slot.candidate_id == candidate_id
+        )
+
         slot.status = "booked"
         slot.candidate_id = candidate_id
         if meeting_link:
@@ -291,7 +298,10 @@ class CalendarService:
         await self.release_proposed_slots(db, candidate_id, exclude_slot_id=slot_id)
 
         await db.commit()
-        logger.info(f"Booked slot {slot_id} for candidate {candidate_id}")
+        if already_booked_by_candidate:
+            logger.info(f"Slot {slot_id} already booked by candidate {candidate_id} (idempotent re-accept)")
+        else:
+            logger.info(f"Booked slot {slot_id} for candidate {candidate_id}")
         return slot
 
     async def release_proposed_slots(
