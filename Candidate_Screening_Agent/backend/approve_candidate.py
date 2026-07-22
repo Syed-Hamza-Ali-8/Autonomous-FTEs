@@ -15,6 +15,8 @@ from services.scheduling_agent import scheduling_agent
 from services import calendar_service
 from db.models import SchedulingConversation
 from dotenv import load_dotenv
+from datetime import datetime
+import pytz
 import logging
 
 load_dotenv()
@@ -80,33 +82,31 @@ async def approve_and_invite(email: str):
             slot_ids = [slot.id for slot in available_slots]
             proposed_slots = await calendar_service.propose_slots(db, slot_ids, candidate.id)
 
+            # Store slot IDs in conversation for later use
+            conversation_slot_ids = slot_ids
+
             # Create scheduling conversation
             conversation = SchedulingConversation(
                 candidate_id=candidate.id,
                 job_id=job.id,
                 company_id=candidate.company_id,
-                conversation_state="awaiting_questions_reply",
+                conversation_state="awaiting_timezone",  # NEW: First ask for timezone
                 proposed_slots=slot_ids,
                 conversation_history=[]
             )
             db.add(conversation)
+
+            # Don't detect timezone from email - ask candidate directly
+            # Default to UTC for now
+            candidate.timezone = "UTC"
             await db.commit()
-            print("✅ Created scheduling conversation")
+            print("✅ Created scheduling conversation (awaiting timezone)")
 
-            # Format slots for email
-            formatted_slots = []
-            for i, slot in enumerate(available_slots, 1):
-                slot_info = calendar_service.format_slot_for_display(slot, display_timezone="UTC")
-                formatted_slots.append(f"{i}. {slot_info['date']} at {slot_info['time']} {slot_info['timezone']}")
-
-            slots_text = "\n".join(formatted_slots)
-
-            # Generate email with interview invitation + screening questions
-            email_body = await scheduling_agent._generate_approval_email_with_questions(
+            # Generate email asking for timezone + include screening questions
+            email_body = await scheduling_agent._generate_timezone_request_email(
                 candidate_name=candidate.name or candidate.email,
                 job_title=job.title,
-                questions=questions,
-                slots_text=slots_text
+                questions=questions
             )
 
             # Send email
@@ -116,11 +116,20 @@ async def approve_and_invite(email: str):
                 body=email_body
             )
 
+            # Add message to conversation history for threading
+            conversation.conversation_history.append({
+                "role": "assistant",
+                "content": email_body[:500],  # Store first 500 chars
+                "timestamp": datetime.utcnow().isoformat(),
+                "message_id": message_id
+            })
+            conversation.last_message_id = message_id
             candidate.gmail_message_id = message_id
             await db.commit()
 
-            print(f"\n✅ SUCCESS! Interview invitation sent to {candidate.email}")
+            print(f"\n✅ SUCCESS! Timezone request sent to {candidate.email}")
             print(f"   Message ID: {message_id}")
+            print("   Next: Wait for candidate to reply with their timezone")
             return True
 
         except Exception as e:

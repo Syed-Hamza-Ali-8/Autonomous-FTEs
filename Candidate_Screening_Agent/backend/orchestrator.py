@@ -301,7 +301,9 @@ async def run_orchestrator():
                         )
 
             except Exception as e:
+                import traceback
                 logger.error(f"Error in scheduling reply queue consumer: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 await asyncio.sleep(1)
 
     async def consume_rejection_reply_queue():

@@ -175,7 +175,22 @@ Respond in JSON format:
         )
 
         import json
-        intent = json.loads(response.choices[0].message.content)
+        content = (response.choices[0].message.content or "").strip()
+        try:
+            intent = json.loads(content)
+        except (json.JSONDecodeError, ValueError):
+            # LLM returned empty/non-JSON content. Fall back to a safe neutral intent
+            # so the reply is still handled instead of crashing the queue consumer.
+            logger.error(
+                f"Rejection reply intent analysis returned unparseable content "
+                f"(len={len(content)}): {content[:300]!r}. Using neutral fallback."
+            )
+            intent = {
+                "type": "other",
+                "tone": "neutral",
+                "key_points": [],
+                "requires_empathy": True,
+            }
         return intent
 
     async def _generate_response(

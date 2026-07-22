@@ -64,20 +64,6 @@ class ReplyWatcher(BaseWatcher):
         r = await self._get_redis()
         await r.sadd("processed_emails", msg_id)
 
-        # Gmail OAuth2 setup
-        self.credentials = Credentials(
-            token=None,
-            refresh_token=os.getenv("GMAIL_REFRESH_TOKEN"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=os.getenv("GMAIL_CLIENT_ID"),
-            client_secret=os.getenv("GMAIL_CLIENT_SECRET"),
-        )
-        self.service = build("gmail", "v1", credentials=self.credentials)
-
-        # Redis connection
-        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        self.redis = None
-
     async def check_for_updates(self) -> list:
         """
         Check Gmail for candidate replies.
@@ -91,7 +77,7 @@ class ReplyWatcher(BaseWatcher):
                 # Get candidates in active scheduling conversations
                 scheduling_query = select(SchedulingConversation).where(
                     SchedulingConversation.conversation_state.in_([
-                        "proposing_times", "awaiting_confirmation", "awaiting_questions_reply", "rescheduling", "confirmed"
+                        "proposing_times", "awaiting_confirmation", "awaiting_questions_reply", "awaiting_timezone", "rescheduling", "confirmed"
                     ])
                 )
                 result = await db.execute(scheduling_query)
@@ -180,35 +166,65 @@ class ReplyWatcher(BaseWatcher):
             return []
 
     def _extract_body(self, message) -> str:
-        """Extract plain text body from Gmail message."""
+        """Extract plain text body from Gmail message (quoted history stripped)."""
+        raw = ""
         try:
             if 'parts' in message['payload']:
                 for part in message['payload']['parts']:
                     if part['mimeType'] == 'text/plain' and 'data' in part.get('body', {}):
-                        return base64.urlsafe_b64decode(part['body']['data']).decode('utf-8')
+                        raw = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8')
+                        break
             elif 'body' in message['payload'] and 'data' in message['payload']['body']:
-                return base64.urlsafe_b64decode(message['payload']['body']['data']).decode('utf-8')
+                raw = base64.urlsafe_b64decode(message['payload']['body']['data']).decode('utf-8')
         except Exception:
             pass
-        return ""
+        return self._strip_quoted(raw)
+
+    @staticmethod
+    def _strip_quoted(text: str) -> str:
+        """Remove quoted reply history so only the candidate's new message is analyzed.
+
+        Gmail replies embed the prior thread ("On <date> <name> wrote:" followed by
+        '>'-quoted lines). Those contain dates/times/keywords that were mis-parsed as
+        the candidate's own input (e.g. a quote header "at 2:20 AM" booked 2:20 AM).
+        """
+        import re
+        if not text:
+            return ""
+        lines = text.splitlines()
+        kept = []
+        # Matches "On Wed, Jul 22, 2026 at 2:20 AM Hacher <..> wrote:" (incl. NBSP)
+        on_wrote = re.compile(r"^\s*On .+wrote:\s*$")
+        for line in lines:
+            stripped = line.strip()
+            if on_wrote.match(stripped):
+                break
+            if stripped.startswith(">"):
+                break
+            # Common client separators
+            if stripped in ("--", "----------") or stripped.startswith("-----Original Message"):
+                break
+            kept.append(line)
+        cleaned = "\n".join(kept).strip()
+        # Fall back to the raw text if stripping removed everything.
+        return cleaned or text.strip()
 
     async def handle_item(self, item) -> None:
         """Process a reply and push to the appropriate Redis queue."""
         message_id, candidate_id, reply_text, reply_type = item
 
         try:
-            if not self.redis:
-                self.redis = redis.from_url(self.redis_url)
+            r = await self._get_redis()
 
             if reply_type == "screening":
-                await self.redis.lpush("reply_queue", json.dumps({
+                await r.lpush("reply_queue", json.dumps({
                     "candidate_id": candidate_id,
                     "reply_text": reply_text,
                     "message_id": message_id,
                 }))
                 self.logger.info(f"Pushed screening reply for candidate {candidate_id}")
             elif reply_type == "scheduling":
-                await self.redis.lpush("scheduling_reply_queue", json.dumps({
+                await r.lpush("scheduling_reply_queue", json.dumps({
                     "candidate_id": candidate_id,
                     "reply_text": reply_text,
                     "reply_message_id": message_id,

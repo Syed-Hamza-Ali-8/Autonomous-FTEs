@@ -2,6 +2,7 @@ import os
 import base64
 import uuid
 import logging
+import requests
 from email.mime.text import MIMEText
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -34,6 +35,38 @@ class GmailService:
         # Build Gmail service
         self.service = build("gmail", "v1", credentials=self.credentials)
 
+        # Fetch the Google account's profile name so outgoing emails can show it
+        # in the From header (matching the calendar organizer name). Falls back to
+        # SENDER_NAME env var, then a bare address if the profile scope is absent.
+        self.sender_name = os.getenv("SENDER_NAME") or self._fetch_profile_name()
+
+    def _fetch_profile_name(self) -> str:
+        """Read the Google account display name via the userinfo endpoint.
+
+        Returns an empty string if the profile scope isn't granted, in which case
+        emails fall back to a bare From address.
+        """
+        try:
+            if not self.credentials.valid:
+                self.credentials.refresh(Request())
+            resp = requests.get(
+                "https://www.googleapis.com/oauth2/v1/userinfo",
+                headers={"Authorization": f"Bearer {self.credentials.token}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                name = resp.json().get("name", "").strip()
+                if name:
+                    logger.info(f"Using Google profile name for sender: {name!r}")
+                    return name
+            logger.warning(
+                f"Could not fetch Google profile name (status {resp.status_code}); "
+                "emails will use a bare From address."
+            )
+        except Exception as e:
+            logger.warning(f"Failed to fetch Google profile name: {e}")
+        return ""
+
     def _create_message(self, to: str, subject: str, body: str,
                          in_reply_to: str = None, references: str = None) -> tuple[dict, str]:
         """Create email message in Gmail API format with optional threading headers.
@@ -51,7 +84,12 @@ class GmailService:
         headers.append("MIME-Version: 1.0")
         headers.append('Content-Type: text/html; charset="utf-8"')
         headers.append(f"To: {to}")
-        headers.append(f"From: {self.jobs_inbox_email}")
+        # Include the Google profile name in the From header when available so the
+        # recipient sees a name instead of a bare address.
+        if getattr(self, "sender_name", ""):
+            headers.append(f'From: "{self.sender_name}" <{self.jobs_inbox_email}>')
+        else:
+            headers.append(f"From: {self.jobs_inbox_email}")
         headers.append(f"Subject: {subject}")
         headers.append(f"Message-ID: {message_id}")
 

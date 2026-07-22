@@ -61,12 +61,8 @@ async def approve_candidate(
     await crud.approve_candidate(db, approval_id, user.email)
 
     try:
-        # Generate screening questions
-        from screening_agent import generate_screening_questions
+        # Interview invitation is sent WITHOUT screening questions.
         from services.scheduling_agent import scheduling_agent
-
-        questions = await generate_screening_questions(candidate.cv_text or "", job.rubric_path or "")
-        await crud.update_candidate_questions(db, candidate.id, questions)
 
         # Create scheduling conversation
         from services.calendar_service import calendar_service
@@ -94,11 +90,10 @@ async def approve_candidate(
             slot_info = calendar_service.format_slot_for_display(slot, display_timezone="UTC")
             formatted_slots.append(f"{i}. {slot_info['date']} at {slot_info['time']} {slot_info['timezone']}")
 
-        # Generate email with interview invitation + screening questions
-        email_body = await scheduling_agent._generate_approval_email_with_questions(
+        # Generate interview invitation email (time slots only, no screening questions)
+        email_body = await scheduling_agent._generate_approval_email_no_questions(
             candidate_name=candidate.name or candidate.email,
             job_title=job.title,
-            questions=questions,
             slots_text="\n".join(formatted_slots)
         )
 
@@ -121,7 +116,7 @@ async def approve_candidate(
         candidate.gmail_message_id = gmail_message_id
         await db.commit()
 
-        success_message = f"Approved! Interview invitation with screening questions sent to {candidate.email}"
+        success_message = f"Approved! Interview invitation sent to {candidate.email}"
 
     except Exception as e:
         await audit_service.log_action(

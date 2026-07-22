@@ -19,11 +19,18 @@ import webbrowser
 
 load_dotenv()
 
-# Gmail API scopes
+# Gmail + Calendar + profile API scopes
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/gmail.modify'
+    'https://www.googleapis.com/auth/gmail.modify',
+    # Calendar events scope: required to create real Google Meet links via
+    # Calendar events.insert with conferenceData.
+    'https://www.googleapis.com/auth/calendar.events',
+    # Profile scope: lets us read the Google account's display name so outgoing
+    # emails show it in the From header (matching the calendar organizer name).
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.profile'
 ]
 
 def authenticate():

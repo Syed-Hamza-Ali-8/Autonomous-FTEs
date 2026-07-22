@@ -8,7 +8,9 @@ interface JobCardProps {
     description: string
     rubric_path: string
     hiring_manager_email?: string
+    company_name?: string
     total_candidates: number
+    candidate_count?: number
     status_counts: Record<string, number>
     created_at: string
   }

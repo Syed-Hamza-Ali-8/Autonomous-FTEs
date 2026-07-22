@@ -101,6 +101,7 @@ class Candidate(Base):
     job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
     email = Column(String(200), nullable=False, index=True)
     name = Column(String(200))
+    timezone = Column(String(50), nullable=True)  # Candidate's timezone (e.g., "Asia/Kolkata")
     cv_text = Column(Text)
     status = Column(String(50), nullable=False, default="queued")
     total_score = Column(Float)
@@ -263,7 +264,7 @@ class SchedulingConversation(Base):
     __table_args__ = (
         CheckConstraint(
             "conversation_state IN ('initiated', 'proposing_times', 'awaiting_confirmation', "
-            "'awaiting_questions_reply', 'confirmed', 'rescheduling', 'cancelled')",
+            "'awaiting_questions_reply', 'awaiting_timezone', 'confirmed', 'rescheduling', 'cancelled')",
             name="check_conversation_state"
         ),
         Index("idx_scheduling_company", "company_id"),

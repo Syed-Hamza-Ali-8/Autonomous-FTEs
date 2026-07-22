@@ -19,6 +19,9 @@ dist/
 build/
 *.sqlite
 token.json
+token.json*
+*.bak
 credentials.json
 *.pem
 uv.lock
+tsconfig.tsbuildinfo

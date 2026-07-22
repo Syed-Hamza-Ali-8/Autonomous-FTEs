@@ -53,6 +53,9 @@ class BaseWatcher(ABC):
 
         while True:
             try:
+                # DEBUG: Log each poll cycle to prove active polling
+                self.logger.info(f"[DEBUG] {self.__class__.__name__} polling for updates...")
+
                 # Check for new items
                 items = await self.check_for_updates()
 
