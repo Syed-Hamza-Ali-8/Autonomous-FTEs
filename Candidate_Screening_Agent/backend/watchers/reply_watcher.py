@@ -25,7 +25,7 @@ class ReplyWatcher(BaseWatcher):
     """
 
     def __init__(self):
-        super().__init__(check_interval=60)
+        super().__init__(check_interval=30)
 
         # Gmail OAuth2 setup
         self.credentials = Credentials(

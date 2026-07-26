@@ -23,7 +23,7 @@ class GmailApplicationWatcher(BaseWatcher):
     """
 
     def __init__(self):
-        super().__init__(check_interval=120)  # 2 minutes
+        super().__init__(check_interval=30)  # 30 seconds
 
         # Gmail OAuth2 setup
         self.credentials = Credentials(

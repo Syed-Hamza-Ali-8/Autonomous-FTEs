@@ -58,6 +58,11 @@ export const getCandidateBrief = async (id: number) => {
   return response.data
 }
 
+export const getCandidateInterview = async (id: number) => {
+  const response = await api.get(`/api/candidates/${id}/interview`)
+  return response.data
+}
+
 // Approvals
 export const getPendingApprovals = async () => {
   try {

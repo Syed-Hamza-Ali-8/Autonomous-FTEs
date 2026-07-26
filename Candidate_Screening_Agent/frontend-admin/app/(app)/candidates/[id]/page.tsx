@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { getCandidate, getCandidateBrief, getPendingApprovals } from '@/lib/api'
+import { getCandidate, getCandidateBrief, getPendingApprovals, getCandidateInterview } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
 
 // Format date - show "Today" for same day, otherwise show date
@@ -13,6 +13,36 @@ function formatAppliedDate(dateStr: string): string {
     return 'Today'
   }
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// Short timezone label (e.g. "PKT", "GMT+5") for an IANA zone at a given instant
+function tzShortLabel(timeZone: string, atIso: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, timeZoneName: 'short',
+    }).formatToParts(new Date(atIso))
+    return parts.find((p) => p.type === 'timeZoneName')?.value ?? timeZone
+  } catch {
+    return timeZone
+  }
+}
+
+// Format a UTC ISO time in a specific timezone, e.g. "Tue, Jul 28 · 08:00 PM – 08:45 PM"
+function formatSlotInTz(startIso: string, endIso: string, timeZone: string): string {
+  try {
+    const dateOpts: Intl.DateTimeFormatOptions = {
+      weekday: 'short', month: 'short', day: 'numeric', timeZone,
+    }
+    const timeOpts: Intl.DateTimeFormatOptions = {
+      hour: '2-digit', minute: '2-digit', timeZone,
+    }
+    const day = new Date(startIso).toLocaleDateString('en-US', dateOpts)
+    const start = new Date(startIso).toLocaleTimeString('en-US', timeOpts)
+    const end = new Date(endIso).toLocaleTimeString('en-US', timeOpts)
+    return `${day} · ${start} – ${end}`
+  } catch {
+    return ''
+  }
 }
 import Link from 'next/link'
 import ScoreBar from '@/components/ScoreBar'
@@ -25,6 +55,7 @@ export default function CandidateDetailPage() {
   const [candidate, setCandidate] = useState<any>(null)
   const [brief, setBrief] = useState<any>(null)
   const [pendingApproval, setPendingApproval] = useState<any>(null)
+  const [interview, setInterview] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -32,14 +63,16 @@ export default function CandidateDetailPage() {
     try {
       setLoading(true)
       setError(null)
-      const [candidateData, briefData, approvalsData] = await Promise.all([
+      const [candidateData, briefData, approvalsData, interviewData] = await Promise.all([
         getCandidate(candidateId),
         getCandidateBrief(candidateId).catch(() => null),
         getPendingApprovals(),
+        getCandidateInterview(candidateId).catch(() => null),
       ])
       setCandidate(candidateData)
       setBrief(briefData)
       setPendingApproval(approvalsData.find((a: any) => a.candidate_id === candidateId) ?? null)
+      setInterview(interviewData)
     } catch (err: any) {
       setError(err.message || 'Failed to load candidate details')
     } finally {
@@ -164,6 +197,81 @@ export default function CandidateDetailPage() {
         {/* Divider */}
         <div className="h-px mt-8" style={{ background: 'var(--warm-gray)' }} />
       </div>
+
+      {/* Confirmed Interview Slot */}
+      {interview && interview.slot_id && (
+        <div className="mb-10">
+          <h2 className="font-display text-2xl mb-6" style={{ color: 'var(--navy-deep)' }}>
+            Confirmed Interview
+          </h2>
+          <div
+            className="p-8 rounded-2xl"
+            style={{ background: 'rgba(78, 205, 196, 0.05)', border: '1px solid rgba(78, 205, 196, 0.25)' }}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-6">
+              <div className="space-y-4">
+                <div>
+                  <p className="font-mono text-xs uppercase tracking-wider mb-2" style={{ color: 'var(--navy-mid)' }}>
+                    Date &amp; Time
+                  </p>
+                  {/* Company standard time (UTC) */}
+                  <div className="mb-3">
+                    <p className="font-mono text-[11px] uppercase tracking-wider mb-1" style={{ color: 'var(--navy-light)' }}>
+                      Company standard · UTC
+                    </p>
+                    <p className="font-display text-xl leading-snug" style={{ color: 'var(--navy-deep)' }}>
+                      {formatSlotInTz(interview.start_time, interview.end_time, 'UTC')} UTC
+                    </p>
+                  </div>
+                  {/* Candidate's local time, if we captured one */}
+                  {interview.candidate_timezone && (
+                    <div>
+                      <p className="font-mono text-[11px] uppercase tracking-wider mb-1" style={{ color: 'var(--navy-light)' }}>
+                        Candidate local · {tzShortLabel(interview.candidate_timezone, interview.start_time)}
+                      </p>
+                      <p className="font-display text-xl leading-snug" style={{ color: 'var(--navy-deep)' }}>
+                        {formatSlotInTz(interview.start_time, interview.end_time, interview.candidate_timezone)}
+                        {' '}
+                        {tzShortLabel(interview.candidate_timezone, interview.start_time)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="font-mono text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--navy-mid)' }}>
+                    Status
+                  </p>
+                  <span
+                    className="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono uppercase tracking-wider"
+                    style={{
+                      background: interview.status === 'booked'
+                        ? 'rgba(78, 205, 196, 0.15)' : 'rgba(255, 191, 0, 0.15)',
+                      color: interview.status === 'booked'
+                        ? 'var(--sage-green)' : '#B8860B',
+                    }}
+                  >
+                    {interview.status}
+                  </span>
+                </div>
+              </div>
+              {interview.meeting_link && (
+                <a
+                  href={interview.meeting_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-mono text-sm uppercase tracking-wider transition-opacity hover:opacity-80"
+                  style={{ background: 'var(--sage-green)', color: 'var(--navy-deep)' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+                  </svg>
+                  Join Meet
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pending Approval */}
       {pendingApproval && (

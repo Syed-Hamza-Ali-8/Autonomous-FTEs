@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_db
 from db import crud
+from db.models import SchedulingConversation, InterviewSlot
 from auth import get_current_user, TokenPayload
 from typing import List, Optional
 
@@ -103,6 +105,43 @@ async def get_candidates_by_status(
         }
         for c in candidates
     ]
+
+
+@router.get("/{candidate_id}/interview")
+async def get_candidate_interview(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Return confirmed interview slot for a candidate (current company only)."""
+    candidate = await crud.get_candidate(db, candidate_id, company_id=user.company_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    conv = (await db.execute(
+        select(SchedulingConversation).where(SchedulingConversation.candidate_id == candidate_id)
+    )).scalar_one_or_none()
+
+    if not conv or not conv.confirmed_slot_id:
+        return None
+
+    slot = (await db.execute(
+        select(InterviewSlot).where(InterviewSlot.id == conv.confirmed_slot_id)
+    )).scalar_one_or_none()
+
+    if not slot:
+        return None
+
+    return {
+        "conversation_state": conv.conversation_state,
+        "slot_id": slot.id,
+        "start_time": slot.start_time.isoformat(),
+        "end_time": slot.end_time.isoformat(),
+        "timezone": slot.timezone,
+        "candidate_timezone": candidate.timezone,
+        "status": slot.status,
+        "meeting_link": slot.meeting_link,
+    }
 
 
 @router.get("/{candidate_id}/brief")
