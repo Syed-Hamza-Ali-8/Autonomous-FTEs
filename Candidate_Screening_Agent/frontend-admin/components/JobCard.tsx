@@ -8,6 +8,7 @@ interface JobCardProps {
     description: string
     rubric_path: string
     hiring_manager_email?: string
+    status?: string
     total_candidates: number
     candidate_count?: number
     status_counts: Record<string, number>
@@ -33,10 +34,22 @@ export default function JobCard({ job, isAdmin = false }: JobCardProps) {
          }}>
       {/* Header */}
       <div className="mb-6">
-        <h3 className="font-display text-2xl mb-3 transition-colors group-hover:opacity-80"
-            style={{ color: 'var(--navy-deep)' }}>
-          {job.title}
-        </h3>
+        <div className="flex items-center gap-3 mb-3">
+          <h3 className="font-display text-2xl transition-colors group-hover:opacity-80"
+              style={{ color: 'var(--navy-deep)' }}>
+            {job.title}
+          </h3>
+          {job.status && job.status !== 'open' && (
+            <span className="px-2 py-0.5 font-mono text-xs uppercase tracking-wider border"
+              style={{
+                background: job.status === 'paused' ? 'rgba(255,107,107,0.08)' : 'rgba(197,201,208,0.2)',
+                color: job.status === 'paused' ? 'var(--coral-warm)' : 'var(--navy-mid)',
+                borderColor: job.status === 'paused' ? 'var(--coral-warm)' : 'var(--cool-gray)',
+              }}>
+              {job.status}
+            </span>
+          )}
+        </div>
         <p className="text-base leading-relaxed line-clamp-2"
            style={{ color: 'var(--navy-light)' }}>
           {job.description}

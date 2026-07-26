@@ -9,6 +9,7 @@ interface JobCardProps {
     rubric_path: string
     hiring_manager_email?: string
     company_name?: string
+    status?: string
     total_candidates: number
     candidate_count?: number
     status_counts: Record<string, number>
@@ -175,16 +176,23 @@ export default function JobCard({ job, isAdmin = false }: JobCardProps) {
           </>
         ) : (
           <>
-            <Link
-              href={`/apply/${job.id}`}
-              className="flex-1 px-6 py-3 font-medium text-center transition-all hover:opacity-90"
-              style={{
-                background: 'var(--navy-deep)',
-                color: 'var(--off-white)'
-              }}
-            >
-              Apply Now
-            </Link>
+            {job.status === 'paused' ? (
+              <div className="flex-1 px-6 py-3 font-medium text-center"
+                style={{ background: 'rgba(220, 38, 38, 0.06)', color: '#DC2626', border: '1px solid rgba(220, 38, 38, 0.2)' }}>
+                Applications Paused
+              </div>
+            ) : (
+              <Link
+                href={`/apply/${job.id}`}
+                className="flex-1 px-6 py-3 font-medium text-center transition-all hover:opacity-90"
+                style={{
+                  background: 'var(--navy-deep)',
+                  color: 'var(--off-white)'
+                }}
+              >
+                Apply Now
+              </Link>
+            )}
             <Link
               href={`/jobs/${job.id}`}
               className="flex-1 px-6 py-3 font-medium text-center border transition-all hover:opacity-70"

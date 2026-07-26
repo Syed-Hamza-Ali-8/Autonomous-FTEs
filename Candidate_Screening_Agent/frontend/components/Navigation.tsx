@@ -3,213 +3,98 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { useSession, signOut } from 'next-auth/react'
 
 export default function Navigation() {
   const pathname = usePathname()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const { data: session, status } = useSession()
+  const [open, setOpen] = useState(false)
 
-  const publicNavigation = [
-    { name: 'Home', href: '/' },
-    { name: 'Jobs', href: '/jobs' },
+  const isHome = pathname === '/'
+  const dark = isHome
+
+  const links = [
+    { name: 'Find Jobs', href: '/jobs' },
   ]
 
-  const adminNavigation = [
-    { name: 'Dashboard', href: '/dashboard' },
-    { name: 'Pending Approvals', href: '/approvals' },
-    { name: 'All Candidates', href: '/candidates' },
-    { name: 'Jobs', href: '/jobs' },
-  ]
-
-  // Determine if we're on an admin route
-  const isAdminRoute = pathname.startsWith('/dashboard') ||
-                       pathname.startsWith('/approvals') ||
-                       pathname.startsWith('/candidates')
-
-  // Show admin navigation only on admin routes when logged in
-  // Show public navigation on public routes (even if logged in)
-  const navigation = (session && isAdminRoute) ? adminNavigation : publicNavigation
-
-  const isActive = (href: string) => {
-    if (href === '/') {
-      return pathname === '/'
-    }
-    return pathname.startsWith(href)
-  }
+  const active = (href: string) =>
+    href === '/' ? pathname === '/' : pathname.startsWith(href)
 
   return (
-    <nav className="relative border-b"
-         style={{
-           background: 'var(--off-white)',
-           borderColor: 'var(--warm-gray)'
-         }}>
-      <div className="max-w-7xl mx-auto px-6 lg:px-12">
-        <div className="flex justify-between h-20">
-          {/* Logo & Nav */}
-          <div className="flex items-center gap-12">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-3 group">
-              <div className="relative w-10 h-10 flex items-center justify-center"
-                   style={{ background: 'var(--navy-deep)' }}>
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                     style={{ background: 'var(--cyan-electric)' }} />
-                <span className="relative z-10 font-display text-xl"
-                      style={{ color: 'var(--off-white)' }}>
-                  C
-                </span>
-              </div>
-              <div className="hidden sm:block">
-                <div className="font-display text-lg leading-none"
-                     style={{ color: 'var(--navy-deep)' }}>
-                  HireAI
-                </div>
-                <div className="font-mono text-xs uppercase tracking-wider"
-                     style={{ color: 'var(--navy-mid)' }}>
-                  Jobs Portal
-                </div>
-              </div>
-            </Link>
-
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-1">
-              {navigation.map((item) => (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className="relative px-4 py-2 font-medium text-sm transition-colors"
-                  style={{
-                    color: isActive(item.href) ? 'var(--navy-deep)' : 'var(--navy-mid)'
-                  }}
-                >
-                  {item.name}
-                  {isActive(item.href) && (
-                    <div className="absolute bottom-0 left-4 right-4 h-0.5"
-                         style={{ background: 'var(--cyan-electric)' }} />
-                  )}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Right side - Auth (only when authenticated) */}
-          <div className="hidden md:flex items-center gap-4">
-            {session && (
-              <>
-                {/* Show Admin Panel link when on public pages */}
-                {!isAdminRoute && (
-                  <Link
-                    href="/dashboard"
-                    className="px-4 py-2 font-medium text-sm transition-all hover:opacity-80"
-                    style={{
-                      background: 'var(--navy-deep)',
-                      color: 'var(--off-white)'
-                    }}
-                  >
-                    Admin Panel
-                  </Link>
-                )}
-                <div className="flex items-center gap-3 px-4 py-2 rounded-full"
-                     style={{
-                       background: 'rgba(10, 22, 40, 0.05)',
-                       border: '1px solid var(--warm-gray)'
-                     }}>
-                  <div className="w-2 h-2 rounded-full"
-                       style={{ background: 'var(--sage-green)' }} />
-                  <span className="font-mono text-xs"
-                        style={{ color: 'var(--navy-mid)' }}>
-                    {session.user?.email}
-                  </span>
-                </div>
-                <button
-                  onClick={() => signOut({ callbackUrl: '/' })}
-                  className="px-4 py-2 font-medium text-sm transition-colors hover:opacity-70"
-                  style={{ color: 'var(--navy-mid)' }}
-                >
-                  Logout
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Mobile menu button */}
-          <div className="flex items-center md:hidden">
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 transition-colors"
-              style={{ color: 'var(--navy-mid)' }}
+    <nav
+      className="sticky top-0 z-50 border-b backdrop-blur-md"
+      style={{
+        background: dark ? 'rgba(10,22,40,0.92)' : 'rgba(255,255,255,0.92)',
+        borderColor: dark ? 'rgba(255,255,255,0.06)' : '#E5E7EB',
+      }}
+    >
+      <div className="max-w-6xl mx-auto px-6 flex items-center justify-between h-14">
+        {/* Left: Logo + nav */}
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <span
+              className="w-7 h-7 flex items-center justify-center text-xs font-bold rounded transition-transform group-hover:scale-105"
+              style={{
+                background: dark ? '#00E5FF' : '#0F172A',
+                color: dark ? '#0A1628' : '#FFFFFF',
+              }}
             >
-              <span className="sr-only">Open menu</span>
-              {!mobileMenuOpen ? (
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile menu */}
-      {mobileMenuOpen && (
-        <div className="md:hidden border-t"
-             style={{
-               background: 'white',
-               borderColor: 'var(--warm-gray)'
-             }}>
-          <div className="px-6 py-4 space-y-1">
-            {navigation.map((item) => (
+              H
+            </span>
+            <span className="text-sm font-semibold tracking-tight"
+                  style={{ color: dark ? '#FFFFFF' : '#0F172A' }}>
+              HireAI
+            </span>
+          </Link>
+          <div className="hidden sm:flex items-center gap-1">
+            {links.map(l => (
               <Link
-                key={item.name}
-                href={item.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className="block px-4 py-3 font-medium transition-colors"
+                key={l.href}
+                href={l.href}
+                className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
                 style={{
-                  color: isActive(item.href) ? 'var(--navy-deep)' : 'var(--navy-mid)',
-                  background: isActive(item.href) ? 'var(--off-white)' : 'transparent'
+                  color: active(l.href)
+                    ? (dark ? '#FFFFFF' : '#0F172A')
+                    : (dark ? 'rgba(255,255,255,0.55)' : '#64748B'),
+                  background: active(l.href)
+                    ? (dark ? 'rgba(255,255,255,0.08)' : '#F1F5F9')
+                    : 'transparent',
                 }}
               >
-                {item.name}
+                {l.name}
               </Link>
             ))}
           </div>
-          {session && (
-            <div className="px-6 py-4 border-t space-y-3"
-                 style={{ borderColor: 'var(--warm-gray)' }}>
-              {/* Show Admin Panel link when on public pages */}
-              {!isAdminRoute && (
-                <Link
-                  href="/dashboard"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-4 py-3 font-medium text-center transition-all"
-                  style={{
-                    background: 'var(--navy-deep)',
-                    color: 'var(--off-white)'
-                  }}
-                >
-                  Admin Panel
-                </Link>
-              )}
-              <p className="font-mono text-xs px-4"
-                 style={{ color: 'var(--navy-mid)' }}>
-                {session.user?.email}
-              </p>
-              <button
-                onClick={() => signOut({ callbackUrl: '/' })}
-                className="w-full text-left px-4 py-3 font-medium transition-colors"
-                style={{ color: 'var(--navy-mid)' }}
-              >
-                Logout
-              </button>
-            </div>
+        </div>
+
+        {/* Right: placeholder for future auth */}
+        <div className="hidden sm:block" />
+
+        {/* Mobile toggle */}
+        <button onClick={() => setOpen(!open)} className="sm:hidden p-1.5"
+                style={{ color: dark ? 'rgba(255,255,255,0.6)' : '#64748B' }}>
+          {open ? (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
           )}
+        </button>
+      </div>
+
+      {/* Mobile menu */}
+      {open && (
+        <div className="sm:hidden border-t px-6 py-3 space-y-1"
+             style={{
+               background: dark ? 'rgba(10,22,40,0.97)' : '#FFFFFF',
+               borderColor: dark ? 'rgba(255,255,255,0.06)' : '#E5E7EB'
+             }}>
+          <Link href="/jobs" onClick={() => setOpen(false)}
+                className="block py-2.5 text-sm font-medium"
+                style={{ color: dark ? 'rgba(255,255,255,0.7)' : '#64748B' }}>
+            Find Jobs
+          </Link>
         </div>
       )}
     </nav>

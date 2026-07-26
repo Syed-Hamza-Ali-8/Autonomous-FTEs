@@ -389,6 +389,48 @@ async def get_all_jobs(
     return result.scalars().all()
 
 
+async def update_job(
+    db: AsyncSession,
+    job_id: int,
+    company_id: int,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    rubric_path: Optional[str] = None,
+    hiring_manager_email: Optional[str] = None,
+) -> Job | None:
+    """Update job fields. Only updates provided (non-None) fields."""
+    job = await get_job(db, job_id, company_id=company_id)
+    if not job:
+        return None
+    if title is not None:
+        job.title = title
+    if description is not None:
+        job.description = description
+    if rubric_path is not None:
+        job.rubric_path = rubric_path
+    if hiring_manager_email is not None:
+        job.hiring_manager_email = hiring_manager_email
+    await db.commit()
+    await db.refresh(job)
+    return job
+
+
+async def update_job_status(
+    db: AsyncSession,
+    job_id: int,
+    company_id: int,
+    status: str,
+) -> Job | None:
+    """Update job status (open/closed/paused)."""
+    job = await get_job(db, job_id, company_id=company_id)
+    if not job:
+        return None
+    job.status = status
+    await db.commit()
+    await db.refresh(job)
+    return job
+
+
 # ============================================================================
 # Audit Log CRUD Operations
 # ============================================================================

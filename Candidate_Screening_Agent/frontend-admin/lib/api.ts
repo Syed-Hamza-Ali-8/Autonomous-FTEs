@@ -108,4 +108,19 @@ export const createJob = async (jobData: {
   return response.data
 }
 
+export const updateJob = async (id: number, jobData: {
+  title?: string
+  description?: string
+  rubric_path?: string
+  hiring_manager_email?: string
+}) => {
+  const response = await api.put(`/api/jobs/${id}`, jobData)
+  return response.data
+}
+
+export const updateJobStatus = async (id: number, status: string) => {
+  const response = await api.patch(`/api/jobs/${id}/status`, { status })
+  return response.data
+}
+
 export default api

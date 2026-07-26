@@ -95,11 +95,31 @@ export default function JobDetailPage() {
           </svg>
           Back to Jobs
         </button>
-        <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
+          {job.status === 'paused' && (
+            <span className="px-2.5 py-1 text-xs font-semibold rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>PAUSED</span>
+          )}
+        </div>
         <p className="mt-2 text-gray-600">
           Posted on {new Date(job.created_at).toLocaleDateString()}
         </p>
       </div>
+
+      {/* Paused Banner */}
+      {job.status === 'paused' && (
+        <div className="mb-6 px-4 py-4 rounded-lg border-l-4" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 flex-shrink-0" style={{ color: '#DC2626' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <p className="font-medium text-sm" style={{ color: '#991B1B' }}>Applications Paused</p>
+              <p className="text-xs mt-0.5" style={{ color: '#B91C1C' }}>This position is temporarily not accepting applications. Check back later.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Job Details */}
       <div className="bg-white shadow rounded-lg overflow-hidden mb-6">
