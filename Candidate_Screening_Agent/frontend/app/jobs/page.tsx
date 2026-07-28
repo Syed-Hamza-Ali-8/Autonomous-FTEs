@@ -11,6 +11,7 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const { data: session } = useSession()
   const hasLoadedRef = useRef(false)
 
@@ -219,8 +220,40 @@ export default function JobsPage() {
         <div className="h-px" style={{ background: 'var(--warm-gray)' }} />
       </div>
 
+      {/* Search Bar */}
+      <div className="mb-10">
+        <div className="relative max-w-md">
+          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none"
+               style={{ color: 'var(--navy-mid)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search jobs by title, company, description..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 border-2 text-sm font-medium transition-all focus:outline-none"
+            style={{
+              borderColor: 'var(--warm-gray)',
+              color: 'var(--navy-deep)',
+              background: 'white'
+            }}
+            onFocus={(e) => e.target.style.borderColor = 'var(--cyan-electric)'}
+            onBlur={(e) => e.target.style.borderColor = 'var(--warm-gray)'}
+          />
+        </div>
+      </div>
+
       {/* Jobs Grid */}
-      {jobs.length === 0 ? (
+      {(() => {
+        const filtered = searchQuery.trim()
+          ? jobs.filter(j =>
+              j.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              j.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              j.company_name?.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+          : jobs
+        return filtered.length === 0 ? (
         <div className="text-center py-24">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-6"
                style={{ background: 'var(--off-white)' }}>
@@ -233,16 +266,25 @@ export default function JobsPage() {
           </div>
           <h3 className="font-display text-2xl mb-3"
               style={{ color: 'var(--navy-deep)' }}>
-            No Open Positions
+            No {searchQuery ? 'Matching' : 'Open'} Positions
           </h3>
           <p className="text-lg max-w-md mx-auto"
              style={{ color: 'var(--navy-light)' }}>
-            We don't have any openings at the moment, but check back soon.
+            {searchQuery
+              ? `No positions match "${searchQuery}". Try a different search term.`
+              : "We don't have any openings at the moment, but check back soon."}
           </p>
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')}
+                    className="mt-4 px-5 py-2 text-sm font-medium transition-colors hover:opacity-80"
+                    style={{ background: 'var(--cyan-electric)', color: 'var(--navy-deep)' }}>
+              Clear Search
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {jobs.map((job, index) => (
+          {filtered.map((job, index) => (
             <div key={job.id}
                  className="reveal-up"
                  style={{ animationDelay: `${index * 0.1}s` }}>
@@ -250,7 +292,8 @@ export default function JobsPage() {
             </div>
           ))}
         </div>
-      )}
+      )
+      })()}
 
       {/* Create Job Modal - Only for Admins */}
       {session && isCreateModalOpen && (

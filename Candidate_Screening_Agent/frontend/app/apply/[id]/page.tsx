@@ -239,8 +239,7 @@ export default function JobApplicationPage() {
           </button>
         </div>
       ) : (
-
-      {/* Application Form */}
+      <>
       <div className="grid lg:grid-cols-12 gap-12">
         {/* Form - Main Column */}
         <div className="lg:col-span-7">
@@ -462,6 +461,7 @@ export default function JobApplicationPage() {
           </div>
         </div>
       </div>
+      </>
       )}
     </div>
   )
