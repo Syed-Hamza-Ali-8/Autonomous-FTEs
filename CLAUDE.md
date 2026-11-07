@@ -5,13 +5,13 @@
 **Core principle: the model *proposes* actions; deterministic code *decides* them.**
 
 **Source of truth:** `TOLLGATE_BUILD_SPEC.md`. Before each phase, re-read Section 10 for that phase plus every section it touches. This file is the short manual; the spec is the reference.
-**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, T1). They override spec defaults where they differ. Never change one without owner approval.
+**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I8, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
 - **Phase:** 3 (Write actions and the Action Gateway), started 2026-11-07
 - **Last completed gate:** Phase 2 (approved 2026-11-07)
-- **Next step:** draft `eval/adversarial_tools.jsonl` + pass criteria + mutation table; STOP for owner review; no write-action code before approval
-- **Waiting on owner:** probe-set review; demo passwords; cloud project + signing method
+- **Next step:** probe set approved and committed (DECISIONS I1–I8). Build in order: migrations, policy engine, gateway, executors, idempotency; then run `eval/adversarial_tools.jsonl` and report against its criteria
+- **Waiting on owner:** demo passwords; cloud project + signing method
 - **Runs:** pytest/offline smoke change nothing; real-model runs may only grow F6 tables. Time pinned to `fixture_now` (G1). Eval runs are throttled to 8k tokens/min; a full 45-scenario run (~198k) needs `--resume` across two days
 - **Notes:** npm audit findings are dev tooling only, left as is. Input borders fixed (zinc-500, >= 3:1 both themes).
 
@@ -42,7 +42,7 @@
 2. No tool accepts `customer_id`; identity comes only from the authenticated context.
 3. Every data access is filtered by owner in SQL. Never fetch then check in Python.
 4. Money amounts are recomputed from the database; model-supplied amounts are upper bounds only.
-5. Every write passes the Action Gateway: validate → ownership → recompute → policy → idempotency → route → audit.
+5. Every write passes the Action Gateway: validate → ownership → recompute → idempotency → policy → route → audit (DECISIONS I5).
 6. Executors are reachable only from the Action Gateway and the approval service.
 7. No agent can approve, reject or modify an approval.
 8. A refused or missing resource is indistinguishable from a nonexistent one.

@@ -362,6 +362,7 @@ def build(rng: random.Random) -> dict[str, Any]:
 #   3rd refund in 90 days -> approval    CUS-041: ORD-1151, 1152, 1153    CUS-044: ORD-1156, 1157, 1158
 #   split refunds cross the 90-day cap   CUS-043: ORD-1155                CUS-042: ORD-1154
 #   cancel a PAID order (refund = total) CUS-045: ORD-1159                CUS-046: ORD-1160 (> approval max)
+#   USD approval-max boundary ($500)      CUS-047: ORD-1161 (one line of $658.00)
 #
 # The two earlier refunds of each "3rd refund" customer stay well below the amount cap, so the
 # refund-count rule is the only one that can trigger.
@@ -373,6 +374,7 @@ ANCHOR_CUSTOMERS = [
     ("CUS-044", "Kiran Javed", "kiran.javed@post.example", "PKR"),
     ("CUS-045", "Leah Brennan", "leah.brennan@mail.example", "USD"),
     ("CUS-046", "Farah Siddiq", "farah.siddiq@inbox.example", "PKR"),
+    ("CUS-047", "Marcus Hale", "marcus.hale@post.example", "USD"),
 ]
 
 # (order id, customer, status, [(product name, qty)], delivered_days_ago, [(refunded product, days_ago)])
@@ -416,6 +418,8 @@ ANCHOR_ORDERS = [
     # paid, not yet packed: cancelling refunds exactly the captured total (DECISIONS H2)
     ("ORD-1159", "CUS-045", "paid", [("Smart Watch", 1), ("Desk Lamp", 1)], None, []),
     ("ORD-1160", "CUS-046", "paid", [("4K Monitor 27in", 2)], None, []),  # above the PKR approval max
+    # delivered, one USD line above $500: the only way to probe the USD approval-max boundary (Phase 3)
+    ("ORD-1161", "CUS-047", "delivered", [("4K Monitor 27in", 2)], 3, []),
 ]
 
 
@@ -516,6 +520,7 @@ def add_anchors(data: dict[str, Any]) -> None:
         "third_refund_in_90_days": {"USD": ["CUS-041", "ORD-1153"], "PKR": ["CUS-044", "ORD-1158"]},
         "split_refunds_cross_cap": {"USD": ["CUS-043", "ORD-1155"], "PKR": ["CUS-042", "ORD-1154"]},
         "cancel_paid_order": {"USD": ["CUS-045", "ORD-1159"], "PKR": ["CUS-046", "ORD-1160"]},
+        "usd_approval_max_boundary": {"USD": ["CUS-047", "ORD-1161"]},
     }
 
 

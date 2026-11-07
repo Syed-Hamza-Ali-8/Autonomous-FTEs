@@ -163,6 +163,8 @@ def decide(store: Store, customer: str, req: dict[str, Any], earlier: list[Earli
     ccy = order["currency"]
     lines = store.lines(order["id"], req["items"])
     amount = sum(i["unit_price_cents"] * i["quantity"] for i in lines)
+    if req.get("amount_cents") is not None:  # B4: the model's amount is only an upper bound
+        amount = min(amount, req["amount_cents"])
     if order["status"] not in pol["refundable_statuses"] or not lines:
         return "DENY", amount
     if order["delivered_at"] < store.now - timedelta(days=pol["return_window_days"]):

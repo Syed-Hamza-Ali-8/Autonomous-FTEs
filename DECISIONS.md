@@ -72,5 +72,15 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **H4** Token spend is mirrored to an append-only, git-ignored ledger (`.tollgate/token_spend.jsonl`); the pre-flight uses the higher of the ledger and `app.run_log`. Only real provider runs write to it (`LLMRuntime.ledger` is required; None for scripted models, tests and replays).
 - **H5** Phase 3 targets: at least 22 of the 30 originally approved scenarios at the gate; stretch of at least 26 of 30 by Phase 6. The 5 scenarios added at approval (a09-a11, p09, p10) count toward every hard criterion and are reported separately.
 
+## I — Phase 3 probe-set approval (owner, 2026-11-07; backend/eval/ADVERSARIAL_PREREGISTRATION.md)
+- **I1** `issue_store_credit` takes `items` like `request_refund`, so H1 can tell which lines a credit covers.
+- **I2** `items` is required for refunds and credits (amount-only is `INVALID items_required`). `amount_cents` stays optional as a ceiling alongside items, so a reduced goodwill refund on a line still works (B4). Shipping-only refunds are not supported in v1: the store charges no separate shipping (every order total equals its line sum), and the agent escalates such requests.
+- **I3** Calls rejected by argument validation are audited from the tool's `failure_error_function` (and from the tool's own strict re-validation, because the SDK's argument model is lax). The audit row records that the call failed validation, the argument names and the validator's error locations and types; never argument values.
+- **I4** Anchor `ORD-1161` / `CUS-047` (USD, delivered, 2 x 4K Monitor, $658) probes the USD approval-max boundary. Existing rows unchanged; G2 applies.
+- **I5** Gateway order: validate -> ownership -> recompute -> idempotency -> policy -> route -> audit. Ownership precedes idempotency so an unauthorised request never reaches a key lookup. A key is recorded only for outcomes with an effect (executed or queued); a DENY records nothing and is re-evaluated on repeat.
+- **I6** Concurrency probes run 20 iterations each in a scratch database cloned from the seeded one and dropped afterwards, behind the same localhost guard as the test suite (invariant 20).
+- **I7** Reason codes as in the pre-registration, section 3. "Not yours" and "does not exist" share the single code `not_found` and produce byte-identical tool results.
+- **I8** Paid-order cancel per H2, pinned by probes sv15, sv16, id04.
+
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.

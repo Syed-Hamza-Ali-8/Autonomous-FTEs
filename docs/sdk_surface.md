@@ -71,3 +71,24 @@ Re-verify and update this file whenever `openai-agents` is upgraded. Nothing her
 Notes:
 5. The SDK snapshots agents with `dataclasses.asdict` at run start, which deep-copies dataclass fields. A `Model` must not be a dataclass holding uncopyable objects (found with the test fake).
 6. With `strict_mode=True` (default), tool schemas set `additionalProperties: false`; an injected `customer_id` argument is rejected before the tool runs (tested).
+
+## Function-tool argument validation (verified 2026-11-07, Phase 3)
+
+Verified by calling `FunctionTool.on_invoke_tool(ToolContext(...), json)` on `openai-agents==0.24.0` and reading
+`agents/tool.py` (`_prepare_arguments`, `_FailureHandlingFunctionToolInvoker.__call__`,
+`maybe_invoke_function_tool_failure_error_function`):
+
+- The advertised `params_json_schema` is strict (`additionalProperties: false`, every property required), but the
+  pydantic model that validates the arguments is **lax**: unknown fields are silently dropped, and `"3200"`, `12.0`
+  and `true` are coerced to `int`. `12.5` and a missing field are rejected.
+- A validation failure raises `ModelBehaviorError("Invalid JSON input for tool <name>: <pydantic text>")`
+  `from` the `ValidationError`. The message embeds input values, so it must never be logged as is.
+- Any exception from validation or the tool body goes to `failure_error_function(ctx, error)` (sync or async); its
+  string is returned to the model as the tool output. `ctx` is a `ToolContext` with `tool_name`, `tool_call_id` and
+  `tool_arguments` (the raw JSON string).
+- `ToolContext(context, tool_name=..., tool_call_id=..., tool_arguments=...)` is how the runner invokes a tool; the
+  model-free adversarial suite calls tools the same way.
+
+Consequence (DECISIONS I3): every write tool re-validates `ctx.tool_arguments` with its own strict model
+(`extra="forbid"`, strict types) and audits rejections from both layers, recording argument names and error
+locations only.

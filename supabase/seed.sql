@@ -50,7 +50,8 @@ INSERT INTO app.customers (id, email, name, tier, created_at) VALUES
   ('CUS-043', 'owen.pritchard@inbox.example', 'Owen Pritchard', 'standard', '2026-11-07T12:00:00+00:00'::timestamptz - interval '200 days'),
   ('CUS-044', 'kiran.javed@post.example', 'Kiran Javed', 'standard', '2026-11-07T12:00:00+00:00'::timestamptz - interval '200 days'),
   ('CUS-045', 'leah.brennan@mail.example', 'Leah Brennan', 'standard', '2026-11-07T12:00:00+00:00'::timestamptz - interval '200 days'),
-  ('CUS-046', 'farah.siddiq@inbox.example', 'Farah Siddiq', 'standard', '2026-11-07T12:00:00+00:00'::timestamptz - interval '200 days');
+  ('CUS-046', 'farah.siddiq@inbox.example', 'Farah Siddiq', 'standard', '2026-11-07T12:00:00+00:00'::timestamptz - interval '200 days'),
+  ('CUS-047', 'marcus.hale@post.example', 'Marcus Hale', 'standard', '2026-11-07T12:00:00+00:00'::timestamptz - interval '200 days');
 
 INSERT INTO app.products (id, name, category, final_sale, digital, currency, price_cents) VALUES
   ('PRD-001', 'Electric Kettle 1.7L', 'home', false, false, 'USD', 3200),
@@ -246,7 +247,8 @@ INSERT INTO app.orders (id, customer_id, status, currency, total_cents, shipping
   ('ORD-1157', 'CUS-044', 'partially_refunded', 'PKR', 1698000, '{"city": "Karachi", "country": "PK", "line1": "12 Lake Road", "name": "Kiran Javed", "postal_code": "75500"}'::jsonb, NULL, '2026-11-07T12:00:00+00:00'::timestamptz - interval '35 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '35 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '34 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '31 days'),
   ('ORD-1158', 'CUS-044', 'delivered', 'PKR', 1099000, '{"city": "Karachi", "country": "PK", "line1": "12 Lake Road", "name": "Kiran Javed", "postal_code": "75500"}'::jsonb, NULL, '2026-11-07T12:00:00+00:00'::timestamptz - interval '9 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '9 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '8 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '5 days'),
   ('ORD-1159', 'CUS-045', 'paid', 'USD', 21300, '{"city": "Riverton", "country": "US", "line1": "12 Lake Road", "name": "Leah Brennan", "postal_code": "82501"}'::jsonb, NULL, '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days', NULL, NULL),
-  ('ORD-1160', 'CUS-046', 'paid', 'PKR', 18398000, '{"city": "Karachi", "country": "PK", "line1": "12 Lake Road", "name": "Farah Siddiq", "postal_code": "75500"}'::jsonb, NULL, '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days', NULL, NULL);
+  ('ORD-1160', 'CUS-046', 'paid', 'PKR', 18398000, '{"city": "Karachi", "country": "PK", "line1": "12 Lake Road", "name": "Farah Siddiq", "postal_code": "75500"}'::jsonb, NULL, '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days', NULL, NULL),
+  ('ORD-1161', 'CUS-047', 'delivered', 'USD', 65800, '{"city": "Riverton", "country": "US", "line1": "12 Lake Road", "name": "Marcus Hale", "postal_code": "82501"}'::jsonb, NULL, '2026-11-07T12:00:00+00:00'::timestamptz - interval '7 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '7 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '6 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '3 days');
 
 INSERT INTO app.order_items (order_id, product_id, currency, quantity, unit_price_cents, downloaded_at) VALUES
   ('ORD-1001', 'PRD-112', 'PKR', 1, 2749000, NULL),
@@ -564,7 +566,8 @@ INSERT INTO app.order_items (order_id, product_id, currency, quantity, unit_pric
   ('ORD-1158', 'PRD-110', 'PKR', 1, 1099000, NULL),
   ('ORD-1159', 'PRD-004', 'USD', 1, 18900, NULL),
   ('ORD-1159', 'PRD-009', 'USD', 1, 2400, NULL),
-  ('ORD-1160', 'PRD-105', 'PKR', 2, 9199000, NULL);
+  ('ORD-1160', 'PRD-105', 'PKR', 2, 9199000, NULL),
+  ('ORD-1161', 'PRD-005', 'USD', 2, 32900, NULL);
 
 INSERT INTO app.payments (id, order_id, currency, amount_cents, captured_at) VALUES
   ('PAY-0001', 'ORD-1002', 'PKR', 8697000, '2026-11-07T12:00:00+00:00'::timestamptz - interval '68 days'),
@@ -703,7 +706,8 @@ INSERT INTO app.payments (id, order_id, currency, amount_cents, captured_at) VAL
   ('PAY-0134', 'ORD-1157', 'PKR', 1698000, '2026-11-07T12:00:00+00:00'::timestamptz - interval '35 days'),
   ('PAY-0135', 'ORD-1158', 'PKR', 1099000, '2026-11-07T12:00:00+00:00'::timestamptz - interval '9 days'),
   ('PAY-0136', 'ORD-1159', 'USD', 21300, '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days'),
-  ('PAY-0137', 'ORD-1160', 'PKR', 18398000, '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days');
+  ('PAY-0137', 'ORD-1160', 'PKR', 18398000, '2026-11-07T12:00:00+00:00'::timestamptz - interval '2 days'),
+  ('PAY-0138', 'ORD-1161', 'USD', 65800, '2026-11-07T12:00:00+00:00'::timestamptz - interval '7 days');
 
 INSERT INTO app.shipments (id, order_id, carrier, tracking_number, status, events, shipped_at, delivered_at) VALUES
   ('SHP-0001', 'ORD-1002', 'MetroPost', 'NW8438003547', 'in_transit', jsonb_build_array(jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '67 days', 'description', 'Picked up by carrier')), '2026-11-07T12:00:00+00:00'::timestamptz - interval '67 days', NULL),
@@ -816,7 +820,8 @@ INSERT INTO app.shipments (id, order_id, carrier, tracking_number, status, event
   ('SHP-0108', 'ORD-1155', 'Parcelway', 'NW9000000108', 'delivered', jsonb_build_array(jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '6 days', 'description', 'Picked up by carrier'), jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '3 days', 'description', 'Delivered')), '2026-11-07T12:00:00+00:00'::timestamptz - interval '6 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '3 days'),
   ('SHP-0109', 'ORD-1156', 'Indus Courier', 'NW9000000109', 'delivered', jsonb_build_array(jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '53 days', 'description', 'Picked up by carrier'), jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '50 days', 'description', 'Delivered')), '2026-11-07T12:00:00+00:00'::timestamptz - interval '53 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '50 days'),
   ('SHP-0110', 'ORD-1157', 'Indus Courier', 'NW9000000110', 'delivered', jsonb_build_array(jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '34 days', 'description', 'Picked up by carrier'), jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '31 days', 'description', 'Delivered')), '2026-11-07T12:00:00+00:00'::timestamptz - interval '34 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '31 days'),
-  ('SHP-0111', 'ORD-1158', 'Indus Courier', 'NW9000000111', 'delivered', jsonb_build_array(jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '8 days', 'description', 'Picked up by carrier'), jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '5 days', 'description', 'Delivered')), '2026-11-07T12:00:00+00:00'::timestamptz - interval '8 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '5 days');
+  ('SHP-0111', 'ORD-1158', 'Indus Courier', 'NW9000000111', 'delivered', jsonb_build_array(jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '8 days', 'description', 'Picked up by carrier'), jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '5 days', 'description', 'Delivered')), '2026-11-07T12:00:00+00:00'::timestamptz - interval '8 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '5 days'),
+  ('SHP-0112', 'ORD-1161', 'Parcelway', 'NW9000000112', 'delivered', jsonb_build_array(jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '6 days', 'description', 'Picked up by carrier'), jsonb_build_object('at', '2026-11-07T12:00:00+00:00'::timestamptz - interval '3 days', 'description', 'Delivered')), '2026-11-07T12:00:00+00:00'::timestamptz - interval '6 days', '2026-11-07T12:00:00+00:00'::timestamptz - interval '3 days');
 
 INSERT INTO app.refunds (id, order_id, currency, amount_cents, status, source, reason, created_at) VALUES
   ('REF-0001', 'ORD-1005', 'USD', 17080, 'succeeded', 'historical', 'Wrong size', '2026-11-07T12:00:00+00:00'::timestamptz - interval '25 days'),

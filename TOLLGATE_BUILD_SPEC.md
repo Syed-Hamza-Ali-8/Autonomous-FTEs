@@ -78,7 +78,7 @@ Customer message
    ├─▶ [2] INPUT GUARD     cheap heuristics flag injection attempts (signal only, never the guarantee)
    ├─▶ [3] AGENTS          Triage → Orders | Refunds | Knowledge | Escalation  (OpenAI Agents SDK)
    ├─▶ [4] TOOLS           read tools and write tools, all bound to AuthContext
-   ├─▶ [5] ACTION GATEWAY  ownership check → policy engine → idempotency → execute | queue for approval | deny
+   ├─▶ [5] ACTION GATEWAY  ownership check → idempotency → policy engine → execute | queue for approval | deny
    ├─▶ [6] APPROVALS       human staff approve or reject queued actions in a staff console
    ├─▶ [7] CLAIM CHECK     the final reply may only claim actions that the action log shows succeeded this turn
    └─▶ AUDIT               every tool call, decision, approval and outcome is logged
@@ -428,9 +428,11 @@ submit(action, args, ctx)
                 not found → indistinguishable "not found" response (never reveal it exists for someone else)
   3. RECOMPUTE  money amounts are recomputed from DB rows (items × price, refundable remainder);
                 a model-supplied amount is only an upper bound request, never trusted
-  4. POLICY     engine.evaluate(...) → ALLOW | NEEDS_APPROVAL | DENY, with machine-readable reasons
-  5. IDEMPOTENCY key = hash(customer, action, target, normalized args, conversation turn);
+  4. IDEMPOTENCY key = hash(customer, action, target, normalized args, conversation turn);
                 a repeat returns the original result, never a second execution
+                (owner, DECISIONS I5: after ownership, so an unauthorised request never reaches a key
+                lookup; a key is recorded only for executed or queued outcomes, a DENY is re-evaluated)
+  5. POLICY     engine.evaluate(...) → ALLOW | NEEDS_APPROVAL | DENY, with machine-readable reasons
   6. ROUTE      ALLOW → executors.run(...)  | NEEDS_APPROVAL → approvals.create(...) | DENY → no side effect
   7. AUDIT      one audit row per submission with decision, reasons, outcome, prompt version, turn id
   8. RETURN     a structured result the model can explain: {status, reference, customer_message_hint}
