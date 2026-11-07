@@ -1,0 +1,59 @@
+{
+  "provider": "groq",
+  "base_url": "https://api.groq.com/openai/v1",
+  "agents_sdk": "see docs/sdk_surface.md",
+  "results": {
+    "openai/gpt-oss-20b": {
+      "raw": {
+        "passed": true,
+        "tool_calls": [
+          {
+            "name": "get_order_status",
+            "args": {
+              "order_id": "ORD-1042"
+            }
+          }
+        ],
+        "text": null,
+        "total_tokens": 219,
+        "latency_ms": 615
+      },
+      "sdk": {
+        "passed": true,
+        "tool_args_seen": [
+          "ORD-1042"
+        ],
+        "final_output": "Your order **ORD-1042** has been **shipped**. If you need any further assistance, just let me know!",
+        "total_tokens": 486,
+        "latency_ms": 857
+      },
+      "usable": true
+    },
+    "openai/gpt-oss-120b": {
+      "raw": {
+        "passed": true,
+        "tool_calls": [
+          {
+            "name": "get_order_status",
+            "args": {
+              "order_id": "ORD-1042"
+            }
+          }
+        ],
+        "text": null,
+        "total_tokens": 224,
+        "latency_ms": 423
+      },
+      "sdk": {
+        "passed": true,
+        "tool_args_seen": [
+          "ORD-1042"
+        ],
+        "final_output": "Your order **ORD-1042** has been **shipped**. Let me know if you need any more details or assistance!",
+        "total_tokens": 492,
+        "latency_ms": 1025
+      },
+      "usable": true
+    }
+  }
+}
