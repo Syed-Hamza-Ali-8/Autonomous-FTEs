@@ -105,9 +105,15 @@ async def history(
     rows = await conn.fetch(
         """
         SELECT id, role, content, created_at FROM (
-          SELECT id, role, content, created_at FROM app.messages
-           WHERE conversation_id = $1 AND turn_id <> $2 AND role IN ('customer', 'assistant')
-           ORDER BY id DESC LIMIT $3
+          SELECT m.id, m.role, m.content, m.created_at FROM app.messages m
+           WHERE m.conversation_id = $1 AND m.turn_id <> $2 AND m.role IN ('customer', 'assistant')
+             -- Skip customer messages whose turn never got a reply (failed, rate-limited or stopped):
+             -- when the customer re-sends, the model must see that request once, not twice.
+             AND (m.role = 'assistant' OR EXISTS (
+                   SELECT 1 FROM app.messages a
+                    WHERE a.conversation_id = m.conversation_id AND a.turn_id = m.turn_id
+                      AND a.role = 'assistant'))
+           ORDER BY m.id DESC LIMIT $3
         ) recent ORDER BY id
         """,
         conversation_id,

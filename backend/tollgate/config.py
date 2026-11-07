@@ -36,6 +36,13 @@ class LLMSettings(BaseSettings):
     llm_turn_token_estimate: int = 8_000
     # Append-only spend ledger outside the DB (survives `supabase db reset`); git-ignored.
     llm_budget_ledger: Path = REPO_ROOT / ".tollgate" / "token_spend.jsonl"
+    # Groq's docs (rate-limits page, checked 2026-11-07) do not say whether a 429-rejected request
+    # consumes tokens. Unknown -> over-count: the ledger charges each rejected request this much
+    # (largest observed call: 2,062 tokens). run_log keeps only what the provider reported.
+    llm_rejected_request_tokens: int = 2_500
+    # Provider limits used by the eval throttle (Groq rate-limits page, verified 2026-11-07).
+    llm_tokens_per_minute: int = 8_000
+    llm_requests_per_minute: int = 30
 
     @field_validator("groq_api_key", "gemini_api_key", "model_fast", "model_strong", mode="before")
     @classmethod

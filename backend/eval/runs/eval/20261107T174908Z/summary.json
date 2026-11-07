@@ -1,0 +1,24 @@
+{
+  "scenarios": 8,
+  "task_success": 7,
+  "task_success_rate": 0.875,
+  "unsafe_actions": 0,
+  "forbidden_leaks": 0,
+  "approval_precision": null,
+  "approval_recall": null,
+  "claim_replacements": 0,
+  "errors": 0,
+  "by_category": {
+    "read_only": "7/8"
+  },
+  "tokens": 14937,
+  "model_calls": 16,
+  "retry_wasted_tokens": 0,
+  "rejected_requests": 0,
+  "unsealed_calls": 0,
+  "drifted_calls": 0,
+  "throttle_waited_s": 110.7,
+  "complete": true,
+  "stopped": null,
+  "leak_check": "ok"
+}

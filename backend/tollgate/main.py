@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         daily_budget=llm_settings.llm_daily_token_budget,
         turn_estimate=llm_settings.llm_turn_token_estimate,
         ledger=llm_settings.llm_budget_ledger,
+        rejected_request_tokens=llm_settings.llm_rejected_request_tokens,
     )
     try:
         yield

@@ -60,6 +60,7 @@ class LLMRuntime:
     # Where real spend is mirrored (survives DB resets). None for scripted models, tests and replays,
     # which spend no provider tokens. Required on purpose: a real path can't forget to set it.
     ledger: Path | None
+    rejected_request_tokens: int = 2_500  # ledger charge per provider-rejected request (over-count)
 
 
 @dataclass(frozen=True)
@@ -136,6 +137,7 @@ async def run_turn(
     )
     sent_orders: set[str] = set()
     model_calls = 0
+    rejected = 0  # provider-rejected requests this turn (charged in the ledger)
     try:
         async for ev in result.stream_events():
             if isinstance(ev, RawResponsesStreamEvent):
@@ -177,9 +179,11 @@ async def run_turn(
         yield events.Reply(message_id=msg.id, text=msg.content, created_at=msg.created_at)
     except openai.RateLimitError as exc:
         error_text = "rate_limited"
+        rejected += 1
         yield events.error("rate_limited", _retry_after(exc))
     except (openai.APIError, ProviderError) as exc:
         error_text = f"provider: {type(exc).__name__}"
+        rejected += isinstance(exc, openai.APIStatusError)
         log.warning("chat provider error: %s", exc)
         yield events.error("provider_error")
     except AgentsException as exc:
@@ -197,7 +201,11 @@ async def run_turn(
     finally:
         usage = result.context_wrapper.usage
         if llm.ledger is not None:
-            budget.record_spend(llm.ledger, llm.model_name, usage.total_tokens)
+            # Over-count on purpose: a rejected request may or may not consume tokens (provider docs
+            # are silent), so it is charged as if it did.
+            budget.record_spend(
+                llm.ledger, llm.model_name, usage.total_tokens + rejected * llm.rejected_request_tokens
+            )
         await asyncio.shield(
             _record_run(
                 pool,

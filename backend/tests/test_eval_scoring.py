@@ -208,3 +208,139 @@ async def test_scored_results_do_not_depend_on_run_order(txpool: TxPool) -> None
     backward = [await one("r07", r07()), await one("r01", r01_model())]
     assert forward == backward[::-1]
     assert all(r["task_success"] for r in forward)
+
+
+async def test_rate_limited_attempt_is_not_recorded(txpool: TxPool, tmp_path: Path) -> None:
+    # A turn that hits a per-minute limit is retried; only the successful attempt may be recorded,
+    # or a later replay would serve the failed attempt's stale call first (found in the baseline run).
+    import httpx
+    import openai
+
+    from tests.fakes import Fail
+
+    req = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    resp = httpx.Response(429, request=req, headers={"retry-after": "0"})
+    limited = openai.RateLimitError("rate limited", response=resp, body=None)
+    inner = ScriptedModel(
+        [
+            CallTool("get_order", {"order_id": "ORD-1042"}),  # attempt 1: a tool call, then a 429
+            Fail(limited),
+            CallTool("get_order", {"order_id": "ORD-1042"}),  # attempt 2 succeeds
+            Say("ORD-1042 was delivered on 2 Nov 2026."),
+        ]
+    )
+    sink = tmp_path / "r01.jsonl"
+    recorded = await run_r01(txpool, RecordingModel(inner, sink))
+    assert recorded["task_success"] is True
+    assert len(sink.read_text().splitlines()) == 2  # the failed attempt's call was discarded
+    replayed = await run_r01(txpool, ReplayModel(sink))
+    assert replayed == recorded
+
+
+async def test_replay_divergence_stops_the_run_instead_of_scoring_an_error(
+    txpool: TxPool, tmp_path: Path
+) -> None:
+    from eval.run_eval import StopRun
+
+    (tmp_path / "r01.jsonl").write_text("")  # nothing recorded for this scenario
+    with pytest.raises(StopRun, match="replay diverged"):
+        await run_r01(txpool, ReplayModel(tmp_path / "r01.jsonl"))
+
+
+# --- token accounting for rejected requests (Phase 2 gate item 2) -----------------------------------
+
+
+async def test_rejected_request_is_charged_in_the_ledger(txpool: TxPool, tmp_path: Path) -> None:
+    # Provider docs don't say whether a 429 consumes tokens: the ledger over-counts by design.
+    import httpx
+    import openai
+
+    from tests.fakes import Fail
+
+    req = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    resp = httpx.Response(429, request=req, headers={"retry-after": "0"})
+    model = ScriptedModel(
+        [
+            Fail(openai.RateLimitError("limited", response=resp, body=None)),
+            CallTool("get_order", {"order_id": "ORD-1042"}),
+            Say("ORD-1042 was delivered on 2 Nov 2026."),
+        ]
+    )
+    ledger = tmp_path / "spend.jsonl"
+    clock = fixture_clock(FIX)
+    llm = LLMRuntime(model, "scripted", 10**9, 1, ledger, rejected_request_tokens=2_500)
+    result, meta = await run_scenario(
+        cast(asyncpg.Pool, txpool), llm, SCENARIOS["r01"], clock, Store.load(FIX, clock)
+    )
+    charged = [json.loads(line)["tokens"] for line in ledger.read_text().splitlines()]
+    assert charged == [2_500]  # the rejected request (scripted usage is 0 otherwise)
+    assert (meta["rejected_requests"], meta["retry_wasted_tokens"]) == (1, 2_500)
+    assert result.task_success
+
+
+# --- token-aware throttle (item 3) ---------------------------------------------------------------------
+
+
+async def test_throttle_waits_for_token_headroom_instead_of_retrying() -> None:
+    from eval.throttle import TokenThrottle
+
+    now = [0.0]
+    slept: list[float] = []
+
+    async def fake_sleep(s: float) -> None:
+        slept.append(s)
+        now[0] += s
+
+    t = TokenThrottle(tokens_per_minute=8_000, requests_per_minute=30, now=lambda: now[0], sleep=fake_sleep)
+    for _ in range(3):
+        e = await t.acquire()
+        t.settle(e, 2_400)  # 7,200 used within the window
+        now[0] += 1.0
+    assert slept == []
+    e = await t.acquire()  # 7,200 + 2,500 > 8,000: must wait for the first call to leave the window
+    assert slept and abs(sum(slept) - 57.0) < 0.01 and t.waited_s == sum(slept)
+
+
+async def test_throttle_respects_requests_per_minute() -> None:
+    from eval.throttle import TokenThrottle
+
+    now = [0.0]
+
+    async def fake_sleep(s: float) -> None:
+        now[0] += s
+
+    t = TokenThrottle(tokens_per_minute=10**9, requests_per_minute=2, now=lambda: now[0], sleep=fake_sleep)
+    for _ in range(2):
+        t.settle(await t.acquire(), 10)
+    await t.acquire()
+    assert now[0] >= 60.0
+
+
+# --- harness mutation checks (item 4): a tampered recording must not pass -----------------------------
+
+
+async def test_altered_recorded_reply_stops_replay(txpool: TxPool, tmp_path: Path) -> None:
+    from eval.run_eval import StopRun
+
+    sink = tmp_path / "r01.jsonl"
+    await run_r01(txpool, RecordingModel(r01_model(), sink))
+    lines = sink.read_text().splitlines()
+    tampered = lines[-1].replace("2 Nov 2026", "3 Nov 2026")
+    assert tampered != lines[-1]
+    sink.write_text("\n".join([*lines[:-1], tampered]) + "\n")
+    with pytest.raises(StopRun, match="recording altered"):
+        await run_r01(txpool, ReplayModel(sink))
+
+
+async def test_changed_input_stops_replay_unless_drift_is_allowed(txpool: TxPool, tmp_path: Path) -> None:
+    from eval.run_eval import StopRun
+
+    sink = tmp_path / "r01.jsonl"
+    await run_r01(txpool, RecordingModel(r01_model(), sink))
+    # Change what the tool returns (inside this test's savepoint): the model's 2nd call sees new input.
+    await txpool.connection.execute("UPDATE app.orders SET status = 'shipped' WHERE id = 'ORD-1042'")
+    with pytest.raises(StopRun, match="input drift"):
+        await run_r01(txpool, ReplayModel(sink))
+    drifted = ReplayModel(sink, allow_drift=True)
+    await run_r01(txpool, drifted)
+    assert drifted.drifted == 1

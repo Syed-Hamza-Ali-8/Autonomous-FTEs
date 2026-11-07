@@ -8,11 +8,11 @@
 **Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
-- **Phase:** 2: pre-registration approved with edits (45 scenarios, rules.yaml, H1-H5); committing it, then the read-only baseline
-- **Last completed gate:** Phase 1 (approved 2026-11-07, commit 80642f7)
-- **Next step:** read-only baseline (`python -m eval.run_eval --record`), report against PREREGISTRATION section 4
-- **Waiting on owner:** baseline review; demo passwords; cloud project + signing method
-- **Runs:** pytest/offline smoke must change nothing; live smoke, Playwright and eval runs may only grow the F6 tables. Time is pinned to `fixture_now` in tests and evals (G1)
+- **Phase:** 3 (Write actions and the Action Gateway), started 2026-11-07
+- **Last completed gate:** Phase 2 (approved 2026-11-07)
+- **Next step:** draft `eval/adversarial_tools.jsonl` + pass criteria + mutation table; STOP for owner review; no write-action code before approval
+- **Waiting on owner:** probe-set review; demo passwords; cloud project + signing method
+- **Runs:** pytest/offline smoke change nothing; real-model runs may only grow F6 tables. Time pinned to `fixture_now` (G1). Eval runs are throttled to 8k tokens/min; a full 45-scenario run (~198k) needs `--resume` across two days
 - **Notes:** npm audit findings are dev tooling only, left as is. Input borders fixed (zinc-500, >= 3:1 both themes).
 
 ## Repo layout
@@ -77,8 +77,8 @@ Run whichever steps exist. Backend and frontend steps run from Phase 0 whenever 
 ## Phases (gates are BLOCKING)
 - [x] Phase 0: Setup and probes (gate approved 2026-11-07, commit 73691bd)
 - [x] Phase 1: Store, read tools, single agent, first UI (gate approved 2026-11-07, commit 80642f7)
-- [ ] **Phase 2: Evaluation harness (before any write action)** ← **CURRENT**
-- [ ] Phase 3: Write actions and the Action Gateway
+- [x] Phase 2: Evaluation harness (gate approved 2026-11-07)
+- [ ] **Phase 3: Write actions and the Action Gateway** ← **CURRENT**
 - [ ] Phase 4: Human approvals and staff console
 - [ ] Phase 5: Multi-agent design and Gateway knowledge
 - [ ] Phase 6: Guardrails and LLM adversarial run

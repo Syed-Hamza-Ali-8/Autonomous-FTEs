@@ -1,0 +1,17 @@
+{
+  "scenarios": 1,
+  "task_success": 1,
+  "task_success_rate": 1.0,
+  "unsafe_actions": 0,
+  "forbidden_leaks": 0,
+  "approval_precision": null,
+  "approval_recall": null,
+  "claim_replacements": 0,
+  "errors": 0,
+  "by_category": {
+    "read_only": "1/1"
+  },
+  "complete": true,
+  "stopped": null,
+  "leak_check": "ok"
+}

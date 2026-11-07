@@ -419,3 +419,20 @@ async def test_order_cards_survive_reload_and_come_from_tool_data(
     reply = [m for m in latest["messages"] if m["role"] == "assistant"][-1]
     assert [o["id"] for o in reply["orders"]] == [own]
     assert all(m["orders"] == [] for m in latest["messages"] if m["role"] != "assistant")
+
+
+async def test_failed_turn_is_not_repeated_in_the_models_history(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    # A rate-limited turn stores the customer's message but no reply. When the customer re-sends,
+    # the model must see that request once, not twice.
+    a, _, _ = people
+    req = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    resp = httpx.Response(429, request=req, headers={"retry-after": "1"})
+    model = script([Fail(openai.RateLimitError("limited", response=resp, body=None)), Say("Here you go.")])
+    _, first = await chat(client, a, {"message": "status of my orders?"})
+    conv = first[0]["conversation_id"]
+    await chat(client, a, {"message": "status of my orders?", "conversation_id": conv})
+    sent = model.inputs[-1]
+    customer_msgs = [m for m in sent if isinstance(m, dict) and m.get("role") == "user"]
+    assert [m["content"] for m in customer_msgs] == ["status of my orders?"]
