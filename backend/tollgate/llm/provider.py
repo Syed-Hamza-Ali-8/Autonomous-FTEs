@@ -46,4 +46,3 @@ def translate_api_error(exc: openai.APIStatusError) -> ProviderError:
         retry_after = float(header) if header is not None else None
         return RateLimitError(f"rate limited: {exc.message}", retry_after)
     return ProviderError(f"provider HTTP {exc.status_code}: {exc.message}")
-

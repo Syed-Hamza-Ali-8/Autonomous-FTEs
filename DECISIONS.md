@@ -47,5 +47,18 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **D10** Cap handoffs at 3 per turn, then escalate.
 - **D11** PKR store-credit thresholds: auto ≤ Rs 30,000; approval ≤ Rs 150,000; DENY above. Stored in paisa. Store credit shares the rolling-window caps with refunds (A6).
 
+## E — Phase 1 schema decisions (owner, 2026-11-07)
+- **E1** `app.refunds` and the over-refund trigger move to Phase 1's store migration, with `source` (`historical` | `action`); `action_request_id` may be NULL only when `source='historical'` (CHECK). Phase 3 adds `action_requests` and the FK.
+- **E2** Products are per-currency rows (regional SKUs). Composite FKs force order items and payments to match the order's currency in the DB. `order_items.unit_price_cents` is the price paid and the recompute source.
+- **E3** Phase 1 seeds the two demo customers only; the support lead's Auth user and `staff_users` row are created together in Phase 4.
+
+## F — Owner UI review, Phase 1 (2026-11-07)
+- **F1** Money display: USD always shows cents; PKR drops ".00" when the paisa are zero. One formatter in `frontend/src/lib/format.ts` (unit-tested), mirrored by `backend/tollgate/domain/money.py` for the model's `display` strings.
+- **F2** Dates display as "21 Aug 2026" in UTC on both sides; read tools return `<field>_display` so the model never formats dates.
+- **F3** Order status pills are neutral; decision colours appear only as decision pills (refund status now, ActionCards from Phase 3). Only a success state may use a check icon.
+- **F4** No floating chat launcher below 768px, and none on `/support` or order detail.
+- **F5** Tests write through `tests/txpool.py` (rolled back); a row-count guard fails any pytest run that leaves rows behind. Live smoke and Playwright runs commit, because the token budget counts their `run_log` rows.
+- **F6** Leak check (`backend/tests/leakcheck.py`): pytest and offline smoke allow no change. Real-model runs (live smoke, Playwright) may only grow `app.run_log`, `app.tool_calls`, `app.conversations`, `app.messages` (the real turn's trace; owner chose to keep it). Test logins use `tollgate-test+<purpose>-<hex>@example.test` and are purged at the start of every run.
+
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.

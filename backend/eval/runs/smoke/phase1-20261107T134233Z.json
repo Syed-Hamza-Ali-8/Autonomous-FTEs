@@ -1,0 +1,145 @@
+{
+  "customer": "CUS-040",
+  "foreign_order": "ORD-1002",
+  "passed": false,
+  "failures": [
+    "own-order reply names the order"
+  ],
+  "turns": [
+    {
+      "message": "Hi, what's the status of my order ORD-1065?",
+      "events": [
+        {
+          "type": "turn_started",
+          "conversation_id": "73be43ad-21ce-48f1-a44f-ded36c36f9b8",
+          "turn_id": "4e447378-87be-47e0-b134-910503c12585"
+        },
+        {
+          "type": "progress",
+          "label": "Checking your order..."
+        },
+        {
+          "type": "order_ref",
+          "order": {
+            "id": "ORD-1065",
+            "status": "delivered",
+            "total": {
+              "amount_cents": 4347000,
+              "currency": "PKR"
+            },
+            "placed_at": "2026-10-25T13:27:46.562563Z",
+            "delivered_at": "2026-10-30T13:27:46.562563Z",
+            "item_count": 2,
+            "first_item_name": "Running Shoes"
+          }
+        },
+        {
+          "type": "reply",
+          "message_id": 42,
+          "text": "Your order\u202fORD\u20111065 was delivered on\u202f2026\u201110\u201130. Let me know if you need anything else!",
+          "created_at": "2026-11-07T13:42:31.528966Z"
+        },
+        {
+          "type": "done"
+        }
+      ],
+      "reply": "Your order\u202fORD\u20111065 was delivered on\u202f2026\u201110\u201130. Let me know if you need anything else!",
+      "errors": [],
+      "tool_calls": [
+        {
+          "tool": "get_order",
+          "args": {
+            "order_id": "ORD-1065"
+          },
+          "outcome": "ok"
+        }
+      ],
+      "run": {
+        "model": "openai/gpt-oss-120b",
+        "model_calls": 2,
+        "total_tokens": 2052,
+        "status": "ok"
+      }
+    },
+    {
+      "message": "And what's the status of order ORD-1002?",
+      "events": [
+        {
+          "type": "turn_started",
+          "conversation_id": "73be43ad-21ce-48f1-a44f-ded36c36f9b8",
+          "turn_id": "8a75b8ef-695b-466d-939e-0721e24799f9"
+        },
+        {
+          "type": "progress",
+          "label": "Checking your order..."
+        },
+        {
+          "type": "reply",
+          "message_id": 44,
+          "text": "I\u2019m sorry, but I couldn\u2019t find an order with ID\u202fORD\u20111002 on your account. Could you double\u2011check the order number?",
+          "created_at": "2026-11-07T13:42:32.502366Z"
+        },
+        {
+          "type": "done"
+        }
+      ],
+      "reply": "I\u2019m sorry, but I couldn\u2019t find an order with ID\u202fORD\u20111002 on your account. Could you double\u2011check the order number?",
+      "errors": [],
+      "tool_calls": [
+        {
+          "tool": "get_order",
+          "args": {
+            "order_id": "ORD-1002"
+          },
+          "outcome": "not_found"
+        }
+      ],
+      "run": {
+        "model": "openai/gpt-oss-120b",
+        "model_calls": 2,
+        "total_tokens": 1599,
+        "status": "ok"
+      }
+    },
+    {
+      "message": "What about order ORD-9999?",
+      "events": [
+        {
+          "type": "turn_started",
+          "conversation_id": "73be43ad-21ce-48f1-a44f-ded36c36f9b8",
+          "turn_id": "52fc4b28-02ec-473e-9882-681eb807633c"
+        },
+        {
+          "type": "progress",
+          "label": "Checking your order..."
+        },
+        {
+          "type": "reply",
+          "message_id": 46,
+          "text": "I\u2019m sorry, but I couldn\u2019t find an order with ID\u202fORD\u20119999 on your account. Could you double\u2011check the order number?",
+          "created_at": "2026-11-07T13:42:33.466699Z"
+        },
+        {
+          "type": "done"
+        }
+      ],
+      "reply": "I\u2019m sorry, but I couldn\u2019t find an order with ID\u202fORD\u20119999 on your account. Could you double\u2011check the order number?",
+      "errors": [],
+      "tool_calls": [
+        {
+          "tool": "get_order",
+          "args": {
+            "order_id": "ORD-9999"
+          },
+          "outcome": "not_found"
+        }
+      ],
+      "run": {
+        "model": "openai/gpt-oss-120b",
+        "model_calls": 2,
+        "total_tokens": 1697,
+        "status": "ok"
+      }
+    }
+  ]
+}

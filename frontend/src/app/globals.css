@@ -108,7 +108,7 @@
   --accent: oklch(96.7% 0.001 286.375); /* shadcn hover surface, not the brand accent */
   --accent-foreground: oklch(21% 0.006 285.885);
   --border: oklch(92% 0.004 286.32); /* zinc-200 */
-  --input: oklch(87.1% 0.006 286.286); /* zinc-300 */
+  --input: oklch(55.2% 0.016 285.938); /* zinc-500: control borders >= 3:1 (4.83 on white, 4.39 on muted) */
 
   /* brand accent: deep teal (teal-700); white on teal-700 = 5.39 */
   --primary: oklch(51.1% 0.096 186.391);
@@ -166,7 +166,7 @@
   --accent: oklch(27.4% 0.006 286.033);
   --accent-foreground: oklch(98.5% 0 0);
   --border: oklch(100% 0 0 / 10%);
-  --input: oklch(100% 0 0 / 15%);
+  --input: oklch(55.2% 0.016 285.938); /* zinc-500: 4.12 on zinc-950, 3.67 on zinc-900 */
 
   /* teal-500 with teal-950 text = 5.97; teal-500 as text on zinc-950 = 8.21 */
   --primary: oklch(70.4% 0.14 182.503);

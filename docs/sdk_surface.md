@@ -53,3 +53,21 @@ Re-verify and update this file whenever `openai-agents` is upgraded. Nothing her
 2. The claim check (Section 9.5, DECISIONS C1, C8) must run on the buffered final text before release. Whether it is implemented as an SDK `output_guardrail` or directly in `runner.py` gets decided in Phase 6, after reading the guardrail source. Either way the check itself is deterministic Python.
 3. `max_turns` defaults to 10 on `Runner.run` / `run_streamed`. Set it explicitly. The handoff cap (DECISIONS D10) is enforced separately in the runner.
 4. `RunConfig.tool_not_found_behavior` defaults to `'raise_error'`. Keep it (no silent fallbacks).
+
+## Added in Phase 1 (verified 2026-11-07 against openai-agents 0.24.0)
+
+| Symbol | Verified detail | Tollgate use |
+|---|---|---|
+| `RunItemStreamEvent.name` | `Literal["message_output_created", "handoff_requested", "handoff_occured", "tool_called", "tool_search_called", "tool_search_output_created", "tool_output", "reasoning_item_created", "mcp_approval_requested", "mcp_approval_response", "mcp_list_tools"]` | `tool_called` -> progress event; `tool_output` -> order_ref events |
+| `RawResponsesStreamEvent.data` | Responses stream event; `type == "response.completed"` once per model call | Model calls counted here, independent of provider usage |
+| `ToolCallItem.raw_item` | `ResponseFunctionToolCall` (has `.name`) or dict | Tool name for progress labels |
+| `RunResultStreaming` | public: `final_output`, `context_wrapper` (`.usage`), `cancel(mode='immediate'\|'after_turn')` | Buffered reply; token accounting; Stop button |
+| `Agent.instructions` | `str \| Callable[[RunContextWrapper, Agent], MaybeAwaitable[str]]` | Adds "opened from order X" context |
+| `ModelSettings.include_usage` | Sent as `stream_options={"include_usage": ...}` by `OpenAIChatCompletionsModel` (`chatcmpl_helpers.get_stream_options_param`) | **Required**: streamed Chat Completions report no tokens otherwise (budget accounting) |
+| `FunctionTool.on_invoke_tool` | `(ctx: ToolContext[Any], input: str) -> Any` | Tests invoke tools exactly as the SDK does |
+| `agents.tool_context.ToolContext` | `(context, usage=..., tool_name=..., tool_call_id=..., tool_arguments=..., ...)` | Same |
+| `Model` (abstract) | `get_response(...)`, `stream_response(...) -> AsyncIterator[TResponseStreamEvent]`; the run loop needs a `ResponseCompletedEvent` | `tests/fakes.py` ScriptedModel |
+
+Notes:
+5. The SDK snapshots agents with `dataclasses.asdict` at run start, which deep-copies dataclass fields. A `Model` must not be a dataclass holding uncopyable objects (found with the test fake).
+6. With `strict_mode=True` (default), tool schemas set `additionalProperties: false`; an injected `customer_id` argument is rejected before the tool runs (tested).

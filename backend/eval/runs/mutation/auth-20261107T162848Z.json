@@ -1,0 +1,87 @@
+{
+  "suite": "tests/test_auth_tokens.py",
+  "baseline_before": {
+    "passed": true,
+    "tail": ".................................                                        [100%]leak check: nothing left behind (16 counts compared)\n\n33 passed in 0.52s"
+  },
+  "baseline_after": {
+    "passed": true,
+    "tail": ".................................                                        [100%]leak check: nothing left behind (16 counts compared)\n\n33 passed in 0.54s"
+  },
+  "mutations": [
+    {
+      "mutation": "no_alg_allowlist",
+      "removes": "header alg checked against the allowlist",
+      "targets": [
+        "tests/test_auth_tokens.py::test_alg_none_is_rejected",
+        "tests/test_auth_tokens.py::test_hs256_with_any_secret_is_rejected",
+        "tests/test_auth_tokens.py::test_anon_key_presented_as_token_is_rejected"
+      ],
+      "target_failed": true,
+      "tail": "FAILED tests/test_auth_tokens.py::test_hs256_with_any_secret_is_rejected - As...\nFAILED tests/test_auth_tokens.py::test_anon_key_presented_as_token_is_rejected\n3 failed in 0.15s"
+    },
+    {
+      "mutation": "no_required_claims",
+      "removes": "exp/iat/sub/aud/iss must be present",
+      "targets": [
+        "tests/test_auth_tokens.py::test_token_missing_required_claim_is_rejected"
+      ],
+      "target_failed": true,
+      "tail": "FAILED tests/test_auth_tokens.py::test_token_missing_required_claim_is_rejected[iat]\nFAILED tests/test_auth_tokens.py::test_token_missing_required_claim_is_rejected[sub]\n3 failed, 2 passed in 0.26s"
+    },
+    {
+      "mutation": "no_expiry_check",
+      "removes": "exp is verified",
+      "targets": [
+        "tests/test_auth_tokens.py::test_expired_token_is_rejected"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_auth_tokens.py::test_expired_token_is_rejected - Failed: DI...\n1 failed in 0.14s"
+    },
+    {
+      "mutation": "no_audience_check",
+      "removes": "aud must be 'authenticated'",
+      "targets": [
+        "tests/test_auth_tokens.py::test_wrong_audience_is_rejected"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_auth_tokens.py::test_wrong_audience_is_rejected - Failed: D...\n1 failed in 0.15s"
+    },
+    {
+      "mutation": "no_issuer_check",
+      "removes": "iss must be this project's Auth URL",
+      "targets": [
+        "tests/test_auth_tokens.py::test_wrong_issuer_is_rejected"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_auth_tokens.py::test_wrong_issuer_is_rejected - Failed: DID...\n1 failed in 0.16s"
+    },
+    {
+      "mutation": "no_kid_alg_binding",
+      "removes": "a kid's algorithm must match the token's alg",
+      "targets": [
+        "tests/test_auth_tokens.py::test_kid_algorithm_mismatch_is_rejected"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_auth_tokens.py::test_kid_algorithm_mismatch_is_rejected - A...\n1 failed in 0.27s"
+    },
+    {
+      "mutation": "no_uuid_subject",
+      "removes": "sub must be a UUID",
+      "targets": [
+        "tests/test_auth_tokens.py::test_non_uuid_subject_is_rejected"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_auth_tokens.py::test_non_uuid_subject_is_rejected - Failed:...\n1 failed in 0.16s"
+    },
+    {
+      "mutation": "jwks_fail_open",
+      "removes": "an unreachable JWKS fails closed",
+      "targets": [
+        "tests/test_auth_tokens.py::test_unreachable_jwks_fails_closed"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_auth_tokens.py::test_unreachable_jwks_fails_closed - tollga...\n1 failed in 0.18s"
+    }
+  ]
+}

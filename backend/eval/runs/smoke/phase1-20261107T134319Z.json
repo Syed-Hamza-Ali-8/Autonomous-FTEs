@@ -1,0 +1,143 @@
+{
+  "customer": "CUS-040",
+  "foreign_order": "ORD-1002",
+  "passed": true,
+  "failures": [],
+  "turns": [
+    {
+      "message": "Hi, what's the status of my order ORD-1065?",
+      "events": [
+        {
+          "type": "turn_started",
+          "conversation_id": "c70f4733-32ac-4643-8bc5-1128af421dcf",
+          "turn_id": "a662f6e9-2a78-4224-a799-852814c0f5c4"
+        },
+        {
+          "type": "progress",
+          "label": "Checking your order..."
+        },
+        {
+          "type": "order_ref",
+          "order": {
+            "id": "ORD-1065",
+            "status": "delivered",
+            "total": {
+              "amount_cents": 4347000,
+              "currency": "PKR"
+            },
+            "placed_at": "2026-10-25T13:27:46.562563Z",
+            "delivered_at": "2026-10-30T13:27:46.562563Z",
+            "item_count": 2,
+            "first_item_name": "Running Shoes"
+          }
+        },
+        {
+          "type": "reply",
+          "message_id": 48,
+          "text": "Your order ORD-1065 was delivered on 2026-10-30. Let me know if you need anything else!",
+          "created_at": "2026-11-07T13:43:17.172185Z"
+        },
+        {
+          "type": "done"
+        }
+      ],
+      "reply": "Your order ORD-1065 was delivered on 2026-10-30. Let me know if you need anything else!",
+      "errors": [],
+      "tool_calls": [
+        {
+          "tool": "get_order",
+          "args": {
+            "order_id": "ORD-1065"
+          },
+          "outcome": "ok"
+        }
+      ],
+      "run": {
+        "model": "openai/gpt-oss-120b",
+        "model_calls": 2,
+        "total_tokens": 2052,
+        "status": "ok"
+      }
+    },
+    {
+      "message": "And what's the status of order ORD-1002?",
+      "events": [
+        {
+          "type": "turn_started",
+          "conversation_id": "c70f4733-32ac-4643-8bc5-1128af421dcf",
+          "turn_id": "0fd04133-35c2-47a6-826f-4ab21b423536"
+        },
+        {
+          "type": "progress",
+          "label": "Checking your order..."
+        },
+        {
+          "type": "reply",
+          "message_id": 50,
+          "text": "I'm sorry, but I couldn't find an order with the ID ORD-1002 on your account. Could you double-check the order number?",
+          "created_at": "2026-11-07T13:43:18.593579Z"
+        },
+        {
+          "type": "done"
+        }
+      ],
+      "reply": "I'm sorry, but I couldn't find an order with the ID ORD-1002 on your account. Could you double-check the order number?",
+      "errors": [],
+      "tool_calls": [
+        {
+          "tool": "get_order",
+          "args": {
+            "order_id": "ORD-1002"
+          },
+          "outcome": "not_found"
+        }
+      ],
+      "run": {
+        "model": "openai/gpt-oss-120b",
+        "model_calls": 2,
+        "total_tokens": 1600,
+        "status": "ok"
+      }
+    },
+    {
+      "message": "What about order ORD-9999?",
+      "events": [
+        {
+          "type": "turn_started",
+          "conversation_id": "c70f4733-32ac-4643-8bc5-1128af421dcf",
+          "turn_id": "76c29a97-4b4e-4183-bc41-fee68783364d"
+        },
+        {
+          "type": "progress",
+          "label": "Checking your order..."
+        },
+        {
+          "type": "reply",
+          "message_id": 52,
+          "text": "I'm sorry, but I couldn't find an order with the ID ORD-9999 on your account. Could you double-check the order number?",
+          "created_at": "2026-11-07T13:43:19.876056Z"
+        },
+        {
+          "type": "done"
+        }
+      ],
+      "reply": "I'm sorry, but I couldn't find an order with the ID ORD-9999 on your account. Could you double-check the order number?",
+      "errors": [],
+      "tool_calls": [
+        {
+          "tool": "get_order",
+          "args": {
+            "order_id": "ORD-9999"
+          },
+          "outcome": "not_found"
+        }
+      ],
+      "run": {
+        "model": "openai/gpt-oss-120b",
+        "model_calls": 2,
+        "total_tokens": 1696,
+        "status": "ok"
+      }
+    }
+  ]
+}

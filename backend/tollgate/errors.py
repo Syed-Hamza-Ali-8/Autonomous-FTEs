@@ -23,3 +23,30 @@ class RateLimitError(ProviderError):
 
 class ModelNotAvailableError(ProviderError):
     """A configured model ID is not served by the provider's /models endpoint."""
+
+
+class AuthError(TollgateError):
+    """A credential was missing, malformed, expired, or failed verification (HTTP 401).
+
+    `reason` is for logs only; clients always get the same generic message.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class AuthUnavailableError(TollgateError):
+    """The signing keys could not be fetched, so no token can be verified (HTTP 503, never a pass)."""
+
+
+class ForbiddenError(TollgateError):
+    """A verified identity has no role for this resource (HTTP 403)."""
+
+
+class BudgetExceededError(TollgateError):
+    """A model's rolling 24h token budget would be exceeded; the request is refused, never degraded."""
+
+
+class NotFoundError(TollgateError):
+    """The resource does not exist or is not the caller's. Deliberately one error for both (invariant 8)."""

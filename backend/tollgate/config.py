@@ -6,7 +6,7 @@ Settings are split by concern so a script only requires the variables it actuall
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -27,6 +27,11 @@ class LLMSettings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     model_fast: str | None = None
     model_strong: str | None = None
+    # 90% of Groq's published 200K tokens/day per model (rate-limits page, verified 2026-11-07).
+    llm_daily_token_budget: int = 180_000
+    llm_turn_token_estimate: int = (
+        8_000  # pre-flight reserve for one chat turn (Section 2.3: 2-6 calls x 2-4k)
+    )
 
     @field_validator("groq_api_key", "gemini_api_key", "model_fast", "model_strong", mode="before")
     @classmethod
@@ -50,3 +55,55 @@ class SupabaseSettings(BaseSettings):
     supabase_url: str
     supabase_anon_key: SecretStr
     supabase_service_role_key: SecretStr | None = None
+
+
+ASYMMETRIC_ALGS = frozenset({"ES256", "RS256"})
+SYMMETRIC_ALGS = frozenset({"HS256"})
+
+
+class AuthSettings(BaseSettings):
+    """How Supabase access tokens are verified (spec Section 2.4; DECISIONS C4).
+
+    jwks mode (local stack, observed 2026-11-07: ES256): keys from
+    <SUPABASE_URL>/auth/v1/.well-known/jwks.json.
+    secret mode (legacy projects): HS256 with AUTH_JWT_SECRET. The two modes never share algorithms,
+    which rules out algorithm-confusion forgeries.
+    """
+
+    model_config = _COMMON
+
+    supabase_url: str
+    auth_jwt_mode: Literal["jwks", "secret"] = "jwks"
+    auth_jwt_algorithms: list[str] = ["ES256"]
+    auth_jwt_secret: SecretStr | None = None
+    auth_audience: str = "authenticated"
+
+    @model_validator(mode="after")
+    def _check_mode(self) -> "AuthSettings":
+        algs = set(self.auth_jwt_algorithms)
+        if not algs:
+            raise ValueError("AUTH_JWT_ALGORITHMS must not be empty")
+        if self.auth_jwt_mode == "jwks" and not algs <= ASYMMETRIC_ALGS:
+            raise ValueError(f"jwks mode allows only {sorted(ASYMMETRIC_ALGS)}")
+        if self.auth_jwt_mode == "secret":
+            if not algs <= SYMMETRIC_ALGS:
+                raise ValueError(f"secret mode allows only {sorted(SYMMETRIC_ALGS)}")
+            if self.auth_jwt_secret is None or len(self.auth_jwt_secret.get_secret_value()) < 32:
+                raise ValueError("secret mode needs AUTH_JWT_SECRET (>= 32 chars)")
+        return self
+
+    @property
+    def issuer(self) -> str:
+        return f"{self.supabase_url.rstrip('/')}/auth/v1"
+
+    @property
+    def jwks_url(self) -> str:
+        return f"{self.issuer}/.well-known/jwks.json"
+
+
+class AppSettings(BaseSettings):
+    """API process settings."""
+
+    model_config = _COMMON
+
+    frontend_origin: str = "http://localhost:3000"

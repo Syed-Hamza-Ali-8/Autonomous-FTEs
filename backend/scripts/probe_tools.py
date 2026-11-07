@@ -73,7 +73,8 @@ async def probe_raw(client: AsyncOpenAI, model: str) -> dict[str, Any]:
     except openai.APIStatusError as exc:
         raise translate_api_error(exc) from exc
     calls = [
-        c for c in (resp.choices[0].message.tool_calls or [])
+        c
+        for c in (resp.choices[0].message.tool_calls or [])
         if isinstance(c, ChatCompletionMessageFunctionToolCall)
     ]
     args: list[Any] = []
@@ -83,9 +84,7 @@ async def probe_raw(client: AsyncOpenAI, model: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             args.append({"_unparseable": call.function.arguments})
     passed = (
-        len(calls) == 1
-        and calls[0].function.name == "get_order_status"
-        and args[0] == {"order_id": ORDER_ID}
+        len(calls) == 1 and calls[0].function.name == "get_order_status" and args[0] == {"order_id": ORDER_ID}
     )
     return {
         "passed": passed,
@@ -118,9 +117,7 @@ async def probe_sdk(client: AsyncOpenAI, model: str) -> dict[str, Any]:
     )
     started = time.perf_counter()
     try:
-        result = await Runner.run(
-            agent, QUESTION, max_turns=3, run_config=RunConfig(tracing_disabled=True)
-        )
+        result = await Runner.run(agent, QUESTION, max_turns=3, run_config=RunConfig(tracing_disabled=True))
     except openai.APIStatusError as exc:
         raise translate_api_error(exc) from exc
     final = str(result.final_output or "")
@@ -151,14 +148,17 @@ async def main() -> int:
                 entry[name] = {"passed": False, "error": f"{type(exc).__name__}: {exc}"}
         entry["usable"] = all(entry[n]["passed"] for n in ("raw", "sdk"))
         results[model] = entry
-        print(f"{model}: raw={entry['raw']['passed']} sdk={entry['sdk']['passed']} "
-              f"usable={entry['usable']}")
+        print(f"{model}: raw={entry['raw']['passed']} sdk={entry['sdk']['passed']} usable={entry['usable']}")
 
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     out = RUNS_DIR / f"{stamp}.json"
-    record = {"provider": settings.llm_provider, "base_url": settings.base_url(),
-              "agents_sdk": "see docs/sdk_surface.md", "results": results}
+    record = {
+        "provider": settings.llm_provider,
+        "base_url": settings.base_url(),
+        "agents_sdk": "see docs/sdk_surface.md",
+        "results": results,
+    }
     out.write_text(json.dumps(record, indent=2) + "\n")
     print(f"recorded: {out.relative_to(RUNS_DIR.parents[2])}")
     return 0 if any(r["usable"] for r in results.values()) else 1

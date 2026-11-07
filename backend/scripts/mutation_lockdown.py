@@ -142,8 +142,10 @@ async def main() -> int:
                 await conn.execute(m.revert_sql)
                 await asyncio.sleep(1.0)
             caught = bool(entry["target_failed"])
-            print(f"{m.name}: {'CAUGHT' if caught else 'NOT CAUGHT'}  ({m.must_fail})"
-                  + (f"  error={entry['error']}" if "error" in entry else ""))
+            print(
+                f"{m.name}: {'CAUGHT' if caught else 'NOT CAUGHT'}  ({m.must_fail})"
+                + (f"  error={entry['error']}" if "error" in entry else "")
+            )
             results.append(entry)
     finally:
         await conn.close()
