@@ -7,6 +7,9 @@
 --      (default privileges below cover objects created by future migrations).
 --   3. Every table in `app` has RLS enabled with no policies. Each later migration enables RLS on
 --      its tables in the same file; the test fails if any table in `app` lacks it.
+--   4. Every table migration also revokes the table's implicit row type from PUBLIC (owner decision,
+--      strict handling): `REVOKE ALL ON TYPE app.<table> FROM PUBLIC;` next to ENABLE ROW LEVEL SECURITY.
+--      Postgres grants USAGE on a new table's row type to PUBLIC and default privileges don't cover it.
 -- The backend reaches `app` only through asyncpg as a database owner role, never through the Data API.
 
 CREATE SCHEMA IF NOT EXISTS app;

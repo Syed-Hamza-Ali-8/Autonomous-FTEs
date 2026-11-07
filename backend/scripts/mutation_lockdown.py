@@ -58,6 +58,16 @@ MUTATIONS = (
         must_fail="test_api_roles_have_no_privileges_in_app",
     ),
     Mutation(
+        name="app_table_row_type_not_revoked",
+        removes="every app table revokes its row type from PUBLIC",
+        apply_sql="""
+            CREATE TABLE app.mutation_rowtype (id int PRIMARY KEY);
+            ALTER TABLE app.mutation_rowtype ENABLE ROW LEVEL SECURITY;
+        """,
+        revert_sql="DROP TABLE IF EXISTS app.mutation_rowtype;",
+        must_fail="test_api_roles_have_no_privileges_in_app",
+    ),
+    Mutation(
         name="app_table_without_rls",
         removes="RLS enabled on every app table",
         apply_sql="CREATE TABLE app.mutation_no_rls (id int PRIMARY KEY);",

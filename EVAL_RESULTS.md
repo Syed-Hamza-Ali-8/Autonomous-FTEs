@@ -49,7 +49,7 @@ Local stack: Supabase CLI 3.0.0, Postgres 17, PostgREST v16.5, gotrue v2.197.0. 
 Findings recorded honestly:
 - **Gap found and fixed during Phase 0.** Postgres's built-in global defaults grant EXECUTE on new functions and USAGE on new types to PUBLIC, and the per-schema `REVOKE` could not remove them: a new `app` function was executable by anon. The migration now revokes both globally for objects created by `postgres`. The `public_execute_on_new_functions` mutation proves the test catches a regression.
 - **Defence in depth, observed by hand.** With `app` exposed AND SELECT granted to anon, RLS with no policies still returned `200 []`. Only with RLS also disabled did the row leak. After revert: `406 PGRST106`.
-- **Scope note.** The privilege test excludes the implicit row type of a table or view: USAGE on it grants no data access, and the table itself is checked. Standalone types are checked.
+- ~~**Scope note.** The privilege test excludes the implicit row type of a table or view: USAGE on it grants no data access, and the table itself is checked. Standalone types are checked.~~ Superseded below.
 
 ## Phase 0 — Local token signing method (2026-11-07)
 
@@ -58,3 +58,7 @@ Observed against the local stack with a throwaway user (created via `POST /auth/
 - The legacy anon / service_role **API keys are HS256**. They are project keys, not user tokens; the backend must reject them as user credentials (Phase 1 test).
 - Tokens carry a `role` claim; per invariant 22 it is ignored. Roles come from `app` tables.
 - The cloud project's method is still to be reported by the owner (DECISIONS C4).
+
+### Update 2026-11-07: strict row-type handling (owner decision)
+
+The row-type exclusion was removed from `test_api_roles_have_no_privileges_in_app`. Every table migration now revokes its implicit row type from PUBLIC (`REVOKE ALL ON TYPE app.<table> FROM PUBLIC;`), as the probe table does. Mutation re-run (`mutation/lockdown-20261107T131233Z.json`): baseline 7/7 before and after; **5/5 mutations caught**, including the new `app_table_row_type_not_revoked` (an RLS-enabled table without the row-type revoke), which fails `test_api_roles_have_no_privileges_in_app`.

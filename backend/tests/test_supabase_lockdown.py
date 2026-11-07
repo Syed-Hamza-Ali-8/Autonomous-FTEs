@@ -36,6 +36,7 @@ async def probe_tables(db: asyncpg.Connection) -> AsyncIterator[None]:
         """
         CREATE TABLE app.lockdown_probe (id int PRIMARY KEY, marker text NOT NULL);
         ALTER TABLE app.lockdown_probe ENABLE ROW LEVEL SECURITY;
+        REVOKE ALL ON TYPE app.lockdown_probe FROM PUBLIC;
         INSERT INTO app.lockdown_probe VALUES (1, 'tollgate-lockdown-marker-7f3a');
         CREATE SEQUENCE app.lockdown_probe_seq;
         CREATE FUNCTION app.lockdown_probe_fn() RETURNS int LANGUAGE sql AS 'SELECT 1';
@@ -138,9 +139,6 @@ async def test_api_roles_have_no_privileges_in_app(db: asyncpg.Connection) -> No
           FROM unnest($1::text[]) AS r(role)
           CROSS JOIN pg_type t
          WHERE t.typnamespace = 'app'::regnamespace AND t.typtype IN ('e', 'd', 'c', 'r', 'm')
-           -- A table/view's implicit row type is excluded: USAGE on it grants no data access, and the
-           -- table itself is checked above. Standalone composites (relkind 'c') are still checked.
-           AND (t.typrelid = 0 OR (SELECT relkind FROM pg_class WHERE oid = t.typrelid) = 'c')
            AND has_type_privilege(r.role, t.oid, 'USAGE')
         """,
         list(API_ROLES),

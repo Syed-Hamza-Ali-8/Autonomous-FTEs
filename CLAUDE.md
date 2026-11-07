@@ -8,10 +8,11 @@
 **Owner decisions:** `DECISIONS.md` (IDs A1–D11, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
-- **Phase:** 0 (Setup and probes): all gate items pass; **awaiting owner gate approval**. Tool probes pass for 3 Groq models; lockdown suite 7/7 + 4/4 mutations caught; local tokens are ES256/JWKS (`EVAL_RESULTS.md`)
-- **Last completed gate:** none (CLAUDE.md + DECISIONS.md approved 2026-11-07)
-- **Next step:** after approval, commit Phase 0, then start Phase 1 (re-read spec Sections 4, 10, 13.3)
-- **Waiting on owner:** Phase 0 gate approval; cloud project + its signing method (not blocking Phase 1 local work)
+- **Phase:** 1 (Store, read tools, single agent, first UI), started 2026-11-07
+- **Last completed gate:** Phase 0 (approved 2026-11-07). Follow-up: strict row-type revokes (5/5 mutations caught)
+- **Next step:** store/support/audit migrations, deterministic seed, token verification, read tools
+- **Waiting on owner:** cloud project + its signing method (not blocking Phase 1 local work)
+- **Phase 1 gate extras (owner):** input border >= 3:1; two-customer isolation incl. TanStack cache after sign-out; anon-key / expired / forged-alg tokens rejected; stop for screenshot review before the gate
 - **Notes:** npm audit: 13 low/moderate, dev tooling only (shadcn CLI, eslint), "fixes" are major downgrades, left as is. Light `--input` border is 1.48:1 (below 3:1 non-text); review in Phase 1 UI pass.
 
 ## Repo layout
@@ -74,14 +75,15 @@ npm run lint && npm run typecheck && npm run build
 Run whichever steps exist. Backend and frontend steps run from Phase 0 whenever the relevant files exist (the Phase 0 gate needs `test_supabase_lockdown.py` green; DECISIONS C7). Report failures with their output; never claim green without running the steps.
 
 ## Phases (gates are BLOCKING)
-- [ ] **Phase 0: Setup and probes** ← **CURRENT**
-- [ ] Phase 1: Store, read tools, single agent, first UI
+- [x] Phase 0: Setup and probes (gate approved 2026-11-07, commit 73691bd)
+- [ ] **Phase 1: Store, read tools, single agent, first UI** ← **CURRENT**
 - [ ] Phase 2: Evaluation harness (before any write action)
 - [ ] Phase 3: Write actions and the Action Gateway
 - [ ] Phase 4: Human approvals and staff console
 - [ ] Phase 5: Multi-agent design and Gateway knowledge
 - [ ] Phase 6: Guardrails and LLM adversarial run
 - [ ] Phase 7: Packaging and demo
+  - After linking the cloud project: verify migrations apply cleanly there, and confirm the lockdown with a read-only check script. Never run the test suite against the cloud (invariant 20).
 
 Do not start phase N+1 until every gate item of phase N passes **and the owner approves**. Gate items are in spec Section 10. Record results and pre-registrations in `EVAL_RESULTS.md`. Update the CURRENT marker only after approval.
 
