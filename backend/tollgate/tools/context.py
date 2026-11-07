@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import asyncpg
 
 from tollgate.auth.deps import CustomerContext
+from tollgate.clock import Clock, SystemClock
 from tollgate.domain.models import OrderSummary
 
 
@@ -19,3 +20,4 @@ class TurnContext:
     # Orders the customer's own tool results referred to this turn, for inline order cards (13.3).
     referenced_orders: dict[str, OrderSummary] = field(default_factory=dict)
     tool_calls: int = 0
+    clock: Clock = field(default_factory=SystemClock)  # injected; Phase 3 policy reads time here

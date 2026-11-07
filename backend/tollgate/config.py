@@ -3,11 +3,14 @@
 Settings are split by concern so a script only requires the variables it actually uses.
 """
 
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from tollgate.clock import Clock, FixedClock, SystemClock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
@@ -29,9 +32,10 @@ class LLMSettings(BaseSettings):
     model_strong: str | None = None
     # 90% of Groq's published 200K tokens/day per model (rate-limits page, verified 2026-11-07).
     llm_daily_token_budget: int = 180_000
-    llm_turn_token_estimate: int = (
-        8_000  # pre-flight reserve for one chat turn (Section 2.3: 2-6 calls x 2-4k)
-    )
+    # Pre-flight reserve for one chat turn (Section 2.3: 2-6 calls x 2-4k tokens).
+    llm_turn_token_estimate: int = 8_000
+    # Append-only spend ledger outside the DB (survives `supabase db reset`); git-ignored.
+    llm_budget_ledger: Path = REPO_ROOT / ".tollgate" / "token_spend.jsonl"
 
     @field_validator("groq_api_key", "gemini_api_key", "model_fast", "model_strong", mode="before")
     @classmethod
@@ -107,3 +111,8 @@ class AppSettings(BaseSettings):
     model_config = _COMMON
 
     frontend_origin: str = "http://localhost:3000"
+    # Pin the decision clock (tests, eval runs, a reproducible local demo). Unset = real clock.
+    clock_fixed_at: datetime | None = None
+
+    def clock(self) -> "Clock":
+        return FixedClock(self.clock_fixed_at) if self.clock_fixed_at else SystemClock()

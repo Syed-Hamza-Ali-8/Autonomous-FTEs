@@ -60,5 +60,17 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **F5** Tests write through `tests/txpool.py` (rolled back); a row-count guard fails any pytest run that leaves rows behind. Live smoke and Playwright runs commit, because the token budget counts their `run_log` rows.
 - **F6** Leak check (`backend/tests/leakcheck.py`): pytest and offline smoke allow no change. Real-model runs (live smoke, Playwright) may only grow `app.run_log`, `app.tool_calls`, `app.conversations`, `app.messages` (the real turn's trace; owner chose to keep it). Test logins use `tollgate-test+<purpose>-<hex>@example.test` and are purged at the start of every run.
 
+## G — Phase 2 (owner, 2026-11-07)
+- **G1** Decisions read time only from an injected `Clock` (`backend/tollgate/clock.py`). Fixture dates are offsets from a fixed `fixture_now` (2026-11-07T12:00:00Z) and `seed.sql` resolves them against it; tests and eval runs pin the clock there. The live demo uses the real clock (`seed_store.py apply --relative-dates`). Sanctioned wall-clock reads are listed with reasons in `tests/test_clock.py`.
+- **G2** Evaluation anchors `ORD-1151`-`ORD-1158` (customers `CUS-041`-`CUS-044`) are appended to the fixture, labelled, with existing rows unchanged. They cover the 3rd-refund-in-90-days and split-refunds-cross-the-cap rules in USD and PKR. No application code may reference them (`tests/test_no_anchor_special_cases.py`); the Phase 3 model-free suite uses the same anchors.
+- **G3** Read-only scenarios are scored by plain-text required facts plus forbidden facts (other customers' order IDs, tracking numbers, names); no LLM judge.
+
+## H — Pre-registration approval (owner, 2026-11-07)
+- **H1** No double compensation: a refund or credit for an order line that already has one pending or succeeded is DENY, and pending requests count against the order's refundable remainder. Switching a pending refund to store credit is therefore refused until staff decide.
+- **H2** Cancelling a PAID order is one atomic action with its refund: exactly the captured total, recomputed from the DB, never partial, never model-supplied; auto-approved at any amount. Reasoning: nothing has shipped and the money returns to the original payment method, so there is no goods-for-money risk to gate. It does NOT count toward the 90-day cap, because that cap limits returns (goods kept, money back) and a pre-shipment cancellation is not a return. Above the refund approval max it is flagged in the audit for visibility, not gated.
+- **H3** Suspected fraud: escalate, never cancel; the agent never makes a fraud determination.
+- **H4** Token spend is mirrored to an append-only, git-ignored ledger (`.tollgate/token_spend.jsonl`); the pre-flight uses the higher of the ledger and `app.run_log`. Only real provider runs write to it (`LLMRuntime.ledger` is required; None for scripted models, tests and replays).
+- **H5** Phase 3 targets: at least 22 of the 30 originally approved scenarios at the gate; stretch of at least 26 of 30 by Phase 6. The 5 scenarios added at approval (a09-a11, p09, p10) count toward every hard criterion and are reported separately.
+
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.

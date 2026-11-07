@@ -1,0 +1,35 @@
+# Tollgate policy: the single source of truth for every refund, credit, cancellation and address
+# decision (spec 6.3). Values approved by the owner on 2026-11-07 in eval/PREREGISTRATION.md;
+# tests/test_policy_rules.py fails if this file and that pre-registration ever disagree.
+#
+# Money is in integer minor units of the ORDER's currency (USD cents, PKR paisa), set per currency
+# with no exchange-rate conversion (DECISIONS A1, A2). Limits are inclusive (A5).
+
+return_window_days: 30        # counted from delivered_at, against the injected clock (G1)
+rolling_window_days: 90       # counts succeeded + pending_approval refunds and credits (A7)
+max_refunds_in_window_before_approval: 2   # the 3rd refund or credit in the window needs approval
+
+refund:
+  auto_max: {USD: 5000, PKR: 1500000}          # $50 / Rs 15,000 -> ALLOW
+  approval_max: {USD: 50000, PKR: 15000000}    # $500 / Rs 150,000 -> NEEDS_APPROVAL; above -> DENY (B5)
+
+store_credit:
+  # Deliberately higher auto limit than refunds ($100 / Rs 30,000 vs $50 / Rs 15,000): store credit
+  # stays with the business, so the risk of a mistaken credit is lower than of money leaving. It still
+  # shares the 90-day count and amount caps with refunds (A6), so switching to credit can't dodge them.
+  auto_max: {USD: 10000, PKR: 3000000}
+  approval_max: {USD: 50000, PKR: 15000000}
+
+window_amount_cap: {USD: 10000, PKR: 3000000}  # refunds + credits per currency over the rolling window (A3, A6)
+
+refundable_statuses: [delivered, partially_refunded]   # B3
+cancel_allowed_statuses: [pending, paid]
+address_change_allowed_statuses: [pending, paid, packed]
+
+cancellation:
+  # Cancelling a PAID order is one atomic action with its refund (DECISIONS H2): the refund is exactly
+  # the captured total, recomputed from the database, never partial and never model-supplied.
+  refund_captured_total: true
+  auto_approve_any_amount: true      # nothing has shipped; money returns to the original payment method
+  counts_toward_window: false        # the 90-day cap governs returns, not pre-shipment cancellations
+  audit_flag_above: {USD: 50000, PKR: 15000000}   # high-value cancellations are flagged, not gated

@@ -53,7 +53,7 @@ async def chat(
     request: Request, turn: Annotated[ChatTurn, Depends(prepared_turn)], pool: Pool
 ) -> AsyncIterator[ChatEvent]:
     llm: LLMRuntime = request.app.state.llm
-    async for event in run_turn(pool, llm, turn):
+    async for event in run_turn(pool, llm, turn, request.app.state.clock):
         yield event  # type: ignore[misc]  # runner yields ChatEvent members
 
 

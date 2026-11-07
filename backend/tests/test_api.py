@@ -129,7 +129,9 @@ async def client(txpool: TxPool) -> AsyncIterator[httpx.AsyncClient]:
 
 def script(steps: list[Any], daily_budget: int = 10_000_000) -> ScriptedModel:
     model = ScriptedModel(steps=steps)
-    app.state.llm = LLMRuntime(model=model, model_name="scripted", daily_budget=daily_budget, turn_estimate=1)
+    app.state.llm = LLMRuntime(
+        model=model, model_name="scripted", daily_budget=daily_budget, turn_estimate=1, ledger=None
+    )
     return model
 
 

@@ -117,7 +117,7 @@ async def _run(live: bool) -> int:
                 from tollgate.agents_def.runner import LLMRuntime
 
                 app.state.llm = LLMRuntime(
-                    ScriptedModel([Say("Hello from the scripted model.")]), "scripted", 10**9, 1
+                    ScriptedModel([Say("Hello from the scripted model.")]), "scripted", 10**9, 1, None
                 )
             headers = {"Authorization": f"Bearer {token}"}
             async with httpx.AsyncClient(

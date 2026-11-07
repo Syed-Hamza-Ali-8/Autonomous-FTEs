@@ -14,6 +14,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import asyncpg
@@ -32,6 +33,7 @@ from pydantic import BaseModel
 from tollgate.agents_def import events
 from tollgate.agents_def.support import AGENT_NAME, PROMPT_VERSION, build_support_agent
 from tollgate.auth.deps import CustomerContext
+from tollgate.clock import Clock
 from tollgate.domain import conversations as conv
 from tollgate.errors import BudgetExceededError, ProviderError
 from tollgate.guardrails.claims import check_reply
@@ -55,6 +57,9 @@ class LLMRuntime:
     model_name: str
     daily_budget: int
     turn_estimate: int
+    # Where real spend is mirrored (survives DB resets). None for scripted models, tests and replays,
+    # which spend no provider tokens. Required on purpose: a real path can't forget to set it.
+    ledger: Path | None
 
 
 @dataclass(frozen=True)
@@ -78,7 +83,9 @@ def _retry_after(exc: openai.APIStatusError) -> float | None:
         return None
 
 
-async def run_turn(pool: asyncpg.Pool, llm: LLMRuntime, turn: ChatTurn) -> AsyncIterator[BaseModel]:
+async def run_turn(
+    pool: asyncpg.Pool, llm: LLMRuntime, turn: ChatTurn, clock: Clock
+) -> AsyncIterator[BaseModel]:
     conv_id = turn.conversation.id
     turn_id = uuid.uuid4()
 
@@ -95,7 +102,7 @@ async def run_turn(pool: asyncpg.Pool, llm: LLMRuntime, turn: ChatTurn) -> Async
             return
         past = await conv.history(conn, conv_id, before_turn=turn_id)
         try:
-            await budget.preflight(conn, llm.model_name, llm.daily_budget, llm.turn_estimate)
+            await budget.preflight(conn, llm.model_name, llm.daily_budget, llm.turn_estimate, llm.ledger)
         except BudgetExceededError as exc:
             log.warning("chat refused by budget pre-flight: %s", exc)
             yield events.TurnStarted(conversation_id=conv_id, turn_id=turn_id)
@@ -111,6 +118,7 @@ async def run_turn(pool: asyncpg.Pool, llm: LLMRuntime, turn: ChatTurn) -> Async
         conversation_id=conv_id,
         turn_id=turn_id,
         order_id=turn.conversation.order_id,
+        clock=clock,
     )
     inputs: list[TResponseInputItem] = [
         {"role": "user" if m.role == "customer" else "assistant", "content": m.content} for m in past
@@ -188,6 +196,8 @@ async def run_turn(pool: asyncpg.Pool, llm: LLMRuntime, turn: ChatTurn) -> Async
         yield events.error("server_error")
     finally:
         usage = result.context_wrapper.usage
+        if llm.ledger is not None:
+            budget.record_spend(llm.ledger, llm.model_name, usage.total_tokens)
         await asyncio.shield(
             _record_run(
                 pool,

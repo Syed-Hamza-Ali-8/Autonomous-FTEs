@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     http = httpx.AsyncClient(timeout=10)
     app.state.pool = await create_pool(SupabaseSettings())
     app.state.verifier = TokenVerifier(AuthSettings(), http=http)
+    app.state.clock = AppSettings().clock()  # decisions read time only from here
     app.state.llm = LLMRuntime(
         model=OpenAIChatCompletionsModel(
             model=llm_settings.model_strong, openai_client=make_client(llm_settings)
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model_name=llm_settings.model_strong,
         daily_budget=llm_settings.llm_daily_token_budget,
         turn_estimate=llm_settings.llm_turn_token_estimate,
+        ledger=llm_settings.llm_budget_ledger,
     )
     try:
         yield

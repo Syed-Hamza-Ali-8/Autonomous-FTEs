@@ -5,14 +5,14 @@
 **Core principle: the model *proposes* actions; deterministic code *decides* them.**
 
 **Source of truth:** `TOLLGATE_BUILD_SPEC.md`. Before each phase, re-read Section 10 for that phase plus every section it touches. This file is the short manual; the spec is the reference.
-**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, T1). They override spec defaults where they differ. Never change one without owner approval.
+**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
-- **Phase:** 2 (Evaluation harness), started 2026-11-07
-- **Last completed gate:** Phase 1 (approved 2026-11-07; gate report in EVAL_RESULTS.md)
-- **Next step:** re-read spec 2.3, 9, 10; write `scenarios.jsonl` + Phase 3 pre-registrations and commit them BEFORE any write-action code
-- **Waiting on owner:** demo passwords in `.env`; cloud project + signing method (neither blocks Phase 2)
-- **Runs:** pytest/offline smoke must change nothing; live smoke and Playwright may only grow the F6 tables. Screenshots: fresh `supabase db reset`, then `npx playwright test` in frontend/
+- **Phase:** 2: pre-registration approved with edits (45 scenarios, rules.yaml, H1-H5); committing it, then the read-only baseline
+- **Last completed gate:** Phase 1 (approved 2026-11-07, commit 80642f7)
+- **Next step:** read-only baseline (`python -m eval.run_eval --record`), report against PREREGISTRATION section 4
+- **Waiting on owner:** baseline review; demo passwords; cloud project + signing method
+- **Runs:** pytest/offline smoke must change nothing; live smoke, Playwright and eval runs may only grow the F6 tables. Time is pinned to `fixture_now` in tests and evals (G1)
 - **Notes:** npm audit findings are dev tooling only, left as is. Input borders fixed (zinc-500, >= 3:1 both themes).
 
 ## Repo layout
@@ -76,7 +76,7 @@ Run whichever steps exist. Backend and frontend steps run from Phase 0 whenever 
 
 ## Phases (gates are BLOCKING)
 - [x] Phase 0: Setup and probes (gate approved 2026-11-07, commit 73691bd)
-- [x] Phase 1: Store, read tools, single agent, first UI (gate approved 2026-11-07)
+- [x] Phase 1: Store, read tools, single agent, first UI (gate approved 2026-11-07, commit 80642f7)
 - [ ] **Phase 2: Evaluation harness (before any write action)** ← **CURRENT**
 - [ ] Phase 3: Write actions and the Action Gateway
 - [ ] Phase 4: Human approvals and staff console
@@ -110,6 +110,7 @@ Do not start phase N+1 until every gate item of phase N passes **and the owner a
 - Every eval run does a budget **pre-flight** against rolling 24h per-model usage, supports **`--resume`**, and supports **`--record` / `--replay`**, so logic changes are re-scored without new tokens.
 - On a 429, honor `retry-after`. On a per-day limit, abort and resume after the window rolls.
 - **Never rotate multiple free accounts** to dodge limits. Stay at $0 (DECISIONS D3).
+- Spend is also kept in `.tollgate/token_spend.jsonl` (H4); pre-flight takes the higher of it and `run_log`. Per machine only: spend from elsewhere is invisible. Never delete it to free budget.
 - No detached background scheduling (`nohup`, `sleep` chains). Long runs happen in-session with resume.
 
 ## UI rule

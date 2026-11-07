@@ -43,3 +43,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Local token-spend ledger (budget durability across `supabase db reset`); per machine, never committed
+.tollgate/
