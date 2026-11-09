@@ -30,22 +30,22 @@ export default defineConfig({
     { name: "isolation", testMatch: /isolation\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
     {
       name: "desktop-light",
-      testMatch: /screenshots\.spec\.ts/,
+      testMatch: /(screenshots|action-cards)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, colorScheme: "light" },
     },
     {
       name: "desktop-dark",
-      testMatch: /screenshots\.spec\.ts/,
+      testMatch: /(screenshots|action-cards)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, colorScheme: "dark" },
     },
     {
       name: "mobile-light",
-      testMatch: /screenshots\.spec\.ts/,
+      testMatch: /(screenshots|action-cards)\.spec\.ts/,
       use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 }, colorScheme: "light" },
     },
     {
       name: "mobile-dark",
-      testMatch: /screenshots\.spec\.ts/,
+      testMatch: /(screenshots|action-cards)\.spec\.ts/,
       use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 }, colorScheme: "dark" },
     },
   ],

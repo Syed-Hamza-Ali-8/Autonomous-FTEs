@@ -24,8 +24,9 @@ from tests.auth_users import test_email
 from tests.fakes import CallTool, Fail, Say, ScriptedModel
 from tests.txpool import TxPool, rolled_back
 from tollgate.agents_def.runner import LLMRuntime
+from tollgate.agents_def.support import PROMPT_VERSION
 from tollgate.config import SupabaseSettings
-from tollgate.guardrails.claims import CORRECTION
+from tollgate.guardrails.claims import CORRECTION, CORRECTION_WITH_ACTIONS
 from tollgate.main import app
 
 
@@ -270,7 +271,7 @@ async def test_chat_answers_own_order_with_buffered_reply(
     assert run is not None and (run["status"], run["model_calls"], run["prompt_version"]) == (
         "ok",
         2,
-        "support-v1",
+        PROMPT_VERSION,
     )
 
 
@@ -436,3 +437,52 @@ async def test_failed_turn_is_not_repeated_in_the_models_history(
     sent = model.inputs[-1]
     customer_msgs = [m for m in sent if isinstance(m, dict) and m.get("role") == "user"]
     assert [m["content"] for m in customer_msgs] == ["status of my orders?"]
+
+
+async def test_chat_streams_an_action_card_and_replaces_a_false_claim(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    """The card comes from the gateway's outcome; the model's "I've cancelled it" is caught (invariant 10)."""
+    a, _, _ = people
+    oid = await db.fetchval(
+        "SELECT id FROM app.orders WHERE customer_id = $1 AND status NOT IN ('pending', 'paid')"
+        " ORDER BY id LIMIT 1",
+        a.customer_id,
+    )
+    script(
+        [
+            CallTool("cancel_order", {"order_id": oid, "reason": "changed my mind"}),
+            Say("I've cancelled your order."),
+        ]
+    )
+    status, events = await chat(client, a, {"message": f"Cancel {oid}"})
+    assert status == 200
+    types = [e["type"] for e in events]
+    assert types.index("action") < types.index("reply")
+    cards = [e["card"] for e in events if e["type"] == "action"]
+    assert len(cards) == 1
+    assert (cards[0]["action"], cards[0]["state"], cards[0]["order_id"]) == (
+        "cancel_order",
+        "not_allowed",
+        oid,
+    )
+    reply = next(e for e in events if e["type"] == "reply")
+    assert reply["text"] == CORRECTION_WITH_ACTIONS
+    latest = (await client.get("/v1/conversations/latest", headers=a.headers)).json()
+    assert [m for m in latest["messages"] if m["role"] == "assistant"][-1]["actions"] == cards
+
+
+async def test_chat_true_claim_backed_by_a_completed_action_passes(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, _, _ = people
+    summary = "My parcel arrived damaged and I'd like someone to call me."
+    script([
+        CallTool("create_ticket", {"summary": summary, "category": "delivery"}),
+        Say("I've submitted a ticket for you; our team will reply by email."),
+    ])  # fmt: skip
+    status, events = await chat(client, a, {"message": summary})
+    assert status == 200
+    cards = [e["card"] for e in events if e["type"] == "action"]
+    assert [(c["action"], c["state"]) for c in cards] == [("create_ticket", "completed")]
+    assert next(e for e in events if e["type"] == "reply")["text"].startswith("I've submitted a ticket")

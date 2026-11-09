@@ -12,5 +12,9 @@ def test_support_agent_tools_match_its_registry_row() -> None:
     assert held <= set(REGISTRY)
 
 
-def test_phase1_support_agent_holds_only_read_tools() -> None:
-    assert {REGISTRY[name].tier for name in allowed_tools(AGENT_NAME)} == {"read"}
+def test_phase3_support_agent_holds_read_and_write_tools() -> None:
+    tiers = {REGISTRY[name].tier for name in allowed_tools(AGENT_NAME)}
+    assert tiers == {"read", "low", "money"}
+    assert {"request_refund", "issue_store_credit"} == {
+        n for n in allowed_tools(AGENT_NAME) if REGISTRY[n].tier == "money"
+    }

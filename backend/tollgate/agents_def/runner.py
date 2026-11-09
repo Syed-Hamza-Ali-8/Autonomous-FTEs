@@ -48,6 +48,12 @@ LABELS = {
     "get_order": "Checking your order...",
     "get_shipment": "Checking tracking...",
     "get_refund_history": "Checking refund history...",
+    "request_refund": "Checking the refund...",
+    "issue_store_credit": "Checking the store credit...",
+    "cancel_order": "Checking the cancellation...",
+    "update_shipping_address": "Checking the address change...",
+    "create_ticket": "Opening a ticket...",
+    "escalate_to_human": "Passing this to our team...",
 }
 
 
@@ -120,6 +126,7 @@ async def run_turn(
         turn_id=turn_id,
         order_id=turn.conversation.order_id,
         clock=clock,
+        prompt_version=PROMPT_VERSION,
     )
     inputs: list[TResponseInputItem] = [
         {"role": "user" if m.role == "customer" else "assistant", "content": m.content} for m in past
@@ -137,6 +144,7 @@ async def run_turn(
     )
     sent_orders: set[str] = set()
     model_calls = 0
+    sent_actions = 0
     rejected = 0  # provider-rejected requests this turn (charged in the ledger)
     try:
         async for ev in result.stream_events():
@@ -155,11 +163,15 @@ async def run_turn(
                     if oid not in sent_orders:
                         sent_orders.add(oid)
                         yield events.OrderRef(order=summary)
+                # ActionCards come from the gateway's own outcomes, so they may stream live (C1).
+                for card in ctx.actions[sent_actions:]:
+                    yield events.Action(card=card)
+                sent_actions = len(ctx.actions)
 
         text = result.final_output if isinstance(result.final_output, str) else ""
         if not text.strip():
             raise ProviderError("model returned no reply text")
-        checked = check_reply(text, succeeded_actions_this_turn=0)
+        checked = check_reply(text, ctx.actions)
         async with pool.acquire() as conn:
             if not checked.passed:
                 await conn.execute(
@@ -173,7 +185,7 @@ async def run_turn(
                     json.dumps({"matched": (checked.matched or "")[:200]}),
                 )
             msg = await conv.add_assistant_message(
-                conn, conv_id, turn_id, checked.text, list(ctx.referenced_orders)
+                conn, conv_id, turn_id, checked.text, list(ctx.referenced_orders), ctx.actions
             )
         status, error_text = "ok", ""
         yield events.Reply(message_id=msg.id, text=msg.content, created_at=msg.created_at)

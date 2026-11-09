@@ -93,6 +93,46 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Action */
+        Action: {
+            card: components["schemas"]["ActionCard"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "action";
+        };
+        /**
+         * ActionCard
+         * @description What one Action Gateway submission did, for the chat's ActionCard (spec 13.3).
+         *
+         *     Built by the gateway from its own result, never from the model's text. `explanation` is customer-safe:
+         *     no rule names, thresholds or internal IDs beyond the request reference.
+         */
+        ActionCard: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "request_refund" | "issue_store_credit" | "cancel_order" | "update_shipping_address" | "create_ticket" | "escalate_to_human";
+            amount?: components["schemas"]["Money"] | null;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Explanation */
+            explanation: string;
+            /** Order Id */
+            order_id?: string | null;
+            /** Reference */
+            reference?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "completed" | "waiting_for_approval" | "not_allowed";
+        };
         /** Address */
         Address: {
             /** City */
@@ -173,6 +213,11 @@ export interface components {
         };
         /** MessageOut */
         MessageOut: {
+            /**
+             * Actions
+             * @default []
+             */
+            actions: components["schemas"]["ActionCard"][];
             /** Content */
             content: string;
             /**

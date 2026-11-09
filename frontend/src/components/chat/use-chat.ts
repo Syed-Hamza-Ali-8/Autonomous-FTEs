@@ -2,26 +2,35 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, type ChatEvent, type MessageOut, type OrderSummary } from "@/lib/api";
+import { type ActionCard, ApiError, type ChatEvent, type MessageOut, type OrderSummary } from "@/lib/api";
 import { useSignedIn } from "@/lib/auth";
 import { useLatestConversation } from "@/lib/queries";
 import { streamChat } from "@/lib/sse";
 
 export type ChatItem =
   | { kind: "customer"; key: string; text: string; at: string }
-  | { kind: "assistant"; key: string; text: string; at: string; steps: string[]; orders: OrderSummary[] }
+  | {
+      kind: "assistant";
+      key: string;
+      text: string;
+      at: string;
+      steps: string[];
+      orders: OrderSummary[];
+      actions: ActionCard[];
+    }
   | { kind: "system"; key: string; text: string; at: string };
 
 export type ChatProblem = { message: string; retryText: string | null };
 
-type Pending = { steps: string[]; orders: OrderSummary[] };
+type Pending = { steps: string[]; orders: OrderSummary[]; actions: ActionCard[] };
 
 function fromHistory(m: MessageOut): ChatItem {
   const key = `m${m.id}`;
   if (m.role === "customer") return { kind: "customer", key, text: m.content, at: m.created_at };
   if (m.role === "system") return { kind: "system", key, text: m.content, at: m.created_at };
-  // order cards persisted with the message (built from tool data on the server, never from text)
-  return { kind: "assistant", key, text: m.content, at: m.created_at, steps: [], orders: m.orders ?? [] };
+  // order and action cards persisted with the message (built on the server from tool data and gateway
+  // outcomes, never from the reply text)
+  return { kind: "assistant", key, text: m.content, at: m.created_at, steps: [], orders: m.orders ?? [], actions: m.actions ?? [] };
 }
 
 /**
@@ -61,7 +70,7 @@ export function useChat(orderContext: OrderSummary | null) {
       abort.current = controller;
       setProblem(null);
       setItems((prev) => [...prev, { kind: "customer", key: crypto.randomUUID(), text, at: new Date().toISOString() }]);
-      const live: Pending = { steps: [], orders: [] };
+      const live: Pending = { steps: [], orders: [], actions: [] };
       setPending({ ...live });
       try {
         const body = {
@@ -96,16 +105,21 @@ export function useChat(orderContext: OrderSummary | null) {
             break;
           case "progress":
             acc.steps.push(ev.label);
-            setPending({ steps: [...acc.steps], orders: [...acc.orders] });
+            setPending({ steps: [...acc.steps], orders: [...acc.orders], actions: [...acc.actions] });
             break;
           case "order_ref":
             acc.orders.push(ev.order);
-            setPending({ steps: [...acc.steps], orders: [...acc.orders] });
+            setPending({ steps: [...acc.steps], orders: [...acc.orders], actions: [...acc.actions] });
+            break;
+          case "action":
+            // Shown as soon as the gateway decides: it is a fact, not model text (C1).
+            acc.actions.push(ev.card);
+            setPending({ steps: [...acc.steps], orders: [...acc.orders], actions: [...acc.actions] });
             break;
           case "reply":
             setItems((prev) => [
               ...prev,
-              { kind: "assistant", key: `m${ev.message_id}`, text: ev.text, at: ev.created_at, steps: [...acc.steps], orders: [...acc.orders] },
+              { kind: "assistant", key: `m${ev.message_id}`, text: ev.text, at: ev.created_at, steps: [...acc.steps], orders: [...acc.orders], actions: [...acc.actions] },
             ]);
             break;
           case "error":

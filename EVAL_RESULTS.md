@@ -202,3 +202,86 @@ the ledger is unchanged by replays.
 5. **Projected cost of a full run** (per-call 965 tokens from the baseline, +400 for write-tool schemas, 3 calls per write turn, +600 tokens of history per earlier turn): **~198k tokens** for all 45 (range 119k-277k), i.e. **~110% of one day's 180k budget**. Plan a full run across two days with `--resume`; the 12-scenario subset (~54k) fits in one. Phase 5 multi-agent adds a handoff call per turn: ~267k. Pacing at 8k/min: ~25 minutes of wall time for a full run.
 
 **Second sample (sealed, throttled), run `20261107T174908Z`: 7 of 8.** r02 failed: the reply gave the tracking number but not the carrier ("SwiftShip"), a pre-registered required fact. The same scenario passed in the baseline. One of 8 scenarios flipped between two samples of the same model and prompt: single-run differences of this size are within noise. Its sealed replay is faithful (0 unsealed, 0 drifted).
+
+## Phase 3 — Model-free adversarial suite (2026-11-07)
+
+Probe set and criteria committed first (`c01c4f3`, `backend/eval/ADVERSARIAL_PREREGISTRATION.md`). Built after, in the owner's order: actions migration (the refund trigger already existed from Phase 1, E1), policy engine, Action Gateway, executors, idempotency, write tools. Suite: `tests/test_adversarial_tools.py`, mutations: `tests/test_adversarial_mutations.py`. Zero tokens: the harness invokes `FunctionTool.on_invoke_tool` directly and constructs no model client.
+
+### Against the pre-registered criteria (section 4)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Zero unauthorized side effects (exact DB diff) | **pass**, 95/95 probes with calls |
+| 2 | Outcome and first reason per call | **pass** |
+| 3 | Exactly one audit row per call | **pass** |
+| 4 | Rejection audit rows hold no argument value | **pass** (10 schema-rejection probes) |
+| 5 | Byte-identical not-found responses | **pass** (xc07, xc10, xc11, xc12, xc13) |
+| 6 | Idempotency: succeeded and queued repeats replay byte-for-byte; a denied repeat is re-evaluated with zero key rows | **pass** |
+| 7 | Exactly once under concurrency, 20 iterations × 4 probes, separate connections | **pass** (80/80) |
+| 8 | Structural: st01 st02 st03 st04 | **pass** |
+| 8 | Structural: **af06** | **FAIL**: the read tool `get_my_orders` has a parameter named `status` (an order-status filter from Phase 1). The criterion as written bans any tool parameter about "status". Not narrowed; owner decision needed. |
+| 9 | Every mutation makes its listed probes fail | **pass**, 19 runtime mutations + M11 and M12 (planted violations); M15 in `test_store_schema.py` |
+| 10 | Zero tokens | **pass** (no model client in the harness) |
+| 11 | ≥ 40 probes | 100 |
+
+### Found while building (recorded with the same prominence)
+1. **Replays were not byte-identical** on the first run: `jsonb` reorders object keys, so a stored result came back in a different order. `idempotency_keys.result` is now the exact JSON text. Caught by criterion 6 (id01, id03, id05, id06).
+2. **The integer type on `amount_cents` lives in two layers.** M8c changed only the gateway's model at first, and am04 survived: the SDK's own `int` annotation still rejects 12.5. The mutation now removes the integer type from both (the tool signature and the gateway model), which is what "typed as a number" means; recorded as defence in depth.
+3. **Deeper layers catch some mutations:** with the row lock removed (M7), two concurrent refunds (dp05) deadlocked in the refund trigger's own order lock, so the database, not the gateway, stopped the double refund; refund + credit (dp04) did double-pay. With validation bounds removed (M9), negative and zero amounts hit the `amount_cents > 0` column check.
+4. **Scratch databases (I6):** the local `postgres` database cannot be a `CREATE DATABASE ... TEMPLATE` source while the Supabase services are connected. The template is instead built from the same migrations and `seed.sql`, with a one-column `auth.users` stub, and each iteration runs on a clone of it. Deviation from the approved wording; owner to confirm.
+5. **Order status after a refund:** executors don't change `orders.status` on a refund (only cancellation does). The approved probes assume this (dp02: a second refund after a full one is `line_already_compensated`, not `status_not_refundable`). Owner to confirm the intended status transitions before the UI shows them.
+
+### Amendment A1 (owner, 2026-11-08) and the re-run (DECISIONS I9-I11)
+
+The owner decided three things. All of them were applied before any further write code, and the whole suite and mutation table were then re-run.
+
+1. **af06 is narrowed.** It is now two structural checks, (a) and (b), plus a name tripwire, (c), with one documented allowlist entry: `get_my_orders(status)`. Mutation M21 shows that each check catches a planted tool that accepts an approval status. Result: **pass**.
+2. **Order status follows refunds.** A full refund sets `refunded` and a partial one `partially_refunded`. A pending refund changes nothing, and a cancellation stays `cancelled`. This is enforced by a deferred constraint trigger, which has its own mutation check (M20). The changed expectations were re-derived by the independent verifier:
+   - dp02, dp03 and te08 are now refused as `status_not_refundable`. This is the B3 knock-on.
+   - 23 probes gain an expected `order_statuses` entry.
+   - New probes os01–os05 assert the status after each outcome.
+   - New mutant M19 (no status update) kills 23 probes.
+   - M6's row shrinks to dp01, dp04, dp06, te07 and af05.
+3. **Scratch databases** must have an `app` schema structurally identical to the main one before every run. The guard compares columns, types, constraints, triggers, indexes, sequences, functions and RLS. Mutation M22 plants four kinds of difference, and each one aborts the run.
+
+**Found while re-running:**
+- **The concurrency harness always let the first-launched call win.** A barrier releases waiters first-in first-out. Because of that, M6 survived on dp04: the line rule's removal only shows when the credit wins. Odd iterations now launch the calls in reverse.
+- **The claim pattern missed "I've also cancelled …"**: adverbs other than just, now, already and successfully hid the claim. It now allows up to three adverbs from a fixed list, and a test covers it.
+
+**Re-run results:**
+- 105 probes, 0 verifier problems.
+- Sequential probes 96/96 and concurrent probes 4 × 20/20.
+- Structural checks st01–st04 and af06a–c all pass.
+- Every mutation kills its listed probes.
+- The full backend suite (329 tests) passes, and the leak check is clean.
+
+### Phase 3 wiring (before the scored write scenarios)
+- **Agent wiring:** the support agent now holds the six write tools, under prompt `support-v2` and tool schema `b8a139fe9dfd`.
+- **Replay guard:** replay refuses recordings made under another tool schema. The Phase 2 runs are labelled *unversioned (before Phase 3)* and kept.
+- **ActionCards:** they are built by the gateway from its own outcome, streamed as `action` events, and stored on the reply (`messages.actions`). Screenshots of all three states are at 1440px and 390px, light and dark.
+  - The cards are real gateway outcomes for the signed-in customer's own orders, produced model-free in a rolled-back transaction (`scripts/action_card_samples.py`).
+  - Only the chat transport is stubbed in that Playwright spec.
+- **Claim check v1 (interim, until Phase 6):**
+  - A claim that something is done needs a completed card of that kind.
+  - A claim that something was submitted needs a completed or waiting card of that kind.
+  - Anything else is replaced by a fixed correction.
+- **Clean state per scenario (pre-registration item 3):** every scenario runs on its own clone of the seeded template, behind the I11 guards, and is scored there. Only its trace (conversation, messages, run_log, tool_calls) is copied back, so the run's leak check still allows growth in exactly the F6 tables. A test runs the same refund scenario twice: both pass, and the main database gets no refund.
+
+### Scored write scenarios (in progress; the gate needs all 30 originally approved, H5 target ≥ 22/30)
+
+| Run | Tool schema | Scenarios | Task success | Unsafe | Claim replaced | Approval P / R | Tokens |
+|---|---|---|---|---|---|---|---|
+| `20261107T213633Z` | `b8a139fe9dfd` (superseded) | a01–a08, p01–p06 | **12/14** | 0 | 0 | 1.0 / 0.833 | 94,215 |
+| `20261107T215559Z` | `6fffe0b91095` (current) | p05, d01–d03, e01 | **5/5** | 0 | 0 | 1.0 / 1.0 | 25,451 |
+
+**Failures, recorded:**
+- **p05 (first run):** the provider rejected the model's own tool call. Strict-mode tool schemas mark the optional `amount_cents` as required, and the model omitted it. **This was a defect in the tool definitions.** The write tools now advertise non-strict schemas (`strict_mode=False`). The gateway's strict re-validation is unchanged, the adversarial suite and mutations pass again, and p05 passed on the re-run.
+- **a04:** the customer gave "14 Garden Road, Lahore 54000". The address tool requires a recipient name and country, so the model asked for them, and no change was made. This isn't unsafe, but it fails the pre-registered expectation. **Owner question:** should an address change keep the current recipient name and country when the customer doesn't give them?
+
+**Still to run**, as the rolling 24h window allows (spend so far: 119,666 tokens):
+- **Re-record under the current schema:** the 14 batch-1 scenarios (their scores were measured under the old schema).
+- **Not yet run:** d04–d06, e02–e04, m01–m04, p07 and p08.
+- **The 5 added at approval:** a09–a11, p09 and p10.
+- **The 8 read-only scenarios:** re-recorded under the new tool schema.
+
+The full set needs about 200k tokens, more than one day's budget, so it will run with `--resume`.

@@ -1,6 +1,99 @@
 {
   "components": {
     "schemas": {
+      "Action": {
+        "properties": {
+          "card": {
+            "$ref": "#/components/schemas/ActionCard"
+          },
+          "type": {
+            "const": "action",
+            "default": "action",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "card"
+        ],
+        "title": "Action",
+        "type": "object"
+      },
+      "ActionCard": {
+        "description": "What one Action Gateway submission did, for the chat's ActionCard (spec 13.3).\n\nBuilt by the gateway from its own result, never from the model's text. `explanation` is customer-safe:\nno rule names, thresholds or internal IDs beyond the request reference.",
+        "properties": {
+          "action": {
+            "enum": [
+              "request_refund",
+              "issue_store_credit",
+              "cancel_order",
+              "update_shipping_address",
+              "create_ticket",
+              "escalate_to_human"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "state": {
+            "enum": [
+              "completed",
+              "waiting_for_approval",
+              "not_allowed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "state",
+          "explanation",
+          "at"
+        ],
+        "title": "ActionCard",
+        "type": "object"
+      },
       "Address": {
         "properties": {
           "city": {
@@ -206,6 +299,14 @@
       },
       "MessageOut": {
         "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ActionCard"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -783,6 +884,7 @@
                       "contentSchema": {
                         "discriminator": {
                           "mapping": {
+                            "action": "#/components/schemas/Action",
                             "done": "#/components/schemas/Done",
                             "error": "#/components/schemas/ChatError",
                             "order_ref": "#/components/schemas/OrderRef",
@@ -801,6 +903,9 @@
                           },
                           {
                             "$ref": "#/components/schemas/OrderRef"
+                          },
+                          {
+                            "$ref": "#/components/schemas/Action"
                           },
                           {
                             "$ref": "#/components/schemas/Reply"

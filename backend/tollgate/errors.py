@@ -50,3 +50,7 @@ class BudgetExceededError(TollgateError):
 
 class NotFoundError(TollgateError):
     """The resource does not exist or is not the caller's. Deliberately one error for both (invariant 8)."""
+
+
+class ActionFailedError(TollgateError):
+    """An Action Gateway submission failed after validation. Its effect was rolled back and audited."""

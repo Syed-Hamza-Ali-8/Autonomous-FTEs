@@ -21,6 +21,13 @@ REGISTRY: dict[str, ToolSpec] = {
     "get_order": ToolSpec("read", frozenset({"support"})),
     "get_shipment": ToolSpec("read", frozenset({"support"})),
     "get_refund_history": ToolSpec("read", frozenset({"support"})),
+    # Phase 3 write tools: they only propose; the Action Gateway decides (invariant 1).
+    "request_refund": ToolSpec("money", frozenset({"support"})),
+    "issue_store_credit": ToolSpec("money", frozenset({"support"})),
+    "cancel_order": ToolSpec("low", frozenset({"support"})),
+    "update_shipping_address": ToolSpec("low", frozenset({"support"})),
+    "create_ticket": ToolSpec("low", frozenset({"support"})),
+    "escalate_to_human": ToolSpec("low", frozenset({"support"})),
 }
 
 

@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from tollgate.domain.models import OrderSummary
+from tollgate.domain.models import ActionCard, OrderSummary
 
 
 class TurnStarted(BaseModel):
@@ -27,6 +27,11 @@ class Progress(BaseModel):
 class OrderRef(BaseModel):
     type: Literal["order_ref"] = "order_ref"
     order: OrderSummary  # from the customer's own tool results, never parsed from model text
+
+
+class Action(BaseModel):
+    type: Literal["action"] = "action"
+    card: ActionCard  # what a write submission did, from the gateway's own outcome (never model text)
 
 
 class Reply(BaseModel):
@@ -53,7 +58,7 @@ class Done(BaseModel):
 
 
 ChatEvent = Annotated[
-    TurnStarted | Progress | OrderRef | Reply | ChatError | Done, Field(discriminator="type")
+    TurnStarted | Progress | OrderRef | Action | Reply | ChatError | Done, Field(discriminator="type")
 ]
 
 FRIENDLY: dict[ErrorCode, str] = {

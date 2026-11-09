@@ -4,13 +4,14 @@ import { ArrowUp, Check, Headset, RotateCw, Square } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { ActionCard } from "@/components/chat/action-card";
 import { suggestionsFor } from "@/components/chat/suggestions";
 import type { ChatItem, useChat } from "@/components/chat/use-chat";
 import { StatusBadge } from "@/components/store/status";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import type { OrderSummary } from "@/lib/api";
+import type { ActionCard as ActionCardData, OrderSummary } from "@/lib/api";
 import { formatMoney, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +29,7 @@ export function ChatPanel({
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
-  }, [chat.items.length, chat.pending?.steps.length, chat.pending?.orders.length, chat.problem]);
+  }, [chat.items.length, chat.pending?.steps.length, chat.pending?.orders.length, chat.pending?.actions.length, chat.problem]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -58,7 +59,7 @@ export function ChatPanel({
             {chat.items.map((item) => (
               <Message key={item.key} item={item} />
             ))}
-            {chat.pending && <Working steps={chat.pending.steps} orders={chat.pending.orders} />}
+            {chat.pending && <Working steps={chat.pending.steps} orders={chat.pending.orders} actions={chat.pending.actions} />}
           </ol>
         )}
         {chat.problem && (
@@ -83,7 +84,7 @@ function EmptyState({ chips, onPick }: { chips: string[]; onPick: (text: string)
     <div className="flex h-full flex-col justify-end gap-4 pb-2">
       <div className="flex flex-col gap-1">
         <p className="text-base font-medium">How can we help?</p>
-        <p className="text-sm text-muted-foreground">Ask about an order, its delivery or its refunds.</p>
+        <p className="text-sm text-muted-foreground">Ask about an order, its delivery, a refund or a change.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {chips.map((s) => (
@@ -148,6 +149,9 @@ function Message({ item }: { item: ChatItem }) {
       {item.orders.map((o) => (
         <OrderCard key={o.id} order={o} />
       ))}
+      {item.actions.map((a, i) => (
+        <ActionCard key={`${a.reference ?? a.action}-${i}`} card={a} />
+      ))}
       <p tabIndex={0} className="max-w-prose rounded-lg text-sm leading-relaxed whitespace-pre-wrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
         <span className="sr-only">Support: </span>
         {item.text}
@@ -171,7 +175,7 @@ function Checked({ steps }: { steps: string[] }) {
   );
 }
 
-function Working({ steps, orders }: { steps: string[]; orders: OrderSummary[] }) {
+function Working({ steps, orders, actions }: { steps: string[]; orders: OrderSummary[]; actions: ActionCardData[] }) {
   const current = steps.at(-1) ?? "Reading your message...";
   return (
     <li className="flex flex-col items-start gap-2">
@@ -179,6 +183,9 @@ function Working({ steps, orders }: { steps: string[]; orders: OrderSummary[] })
       {steps.length > 1 && <Checked steps={steps.slice(0, -1)} />}
       {orders.map((o) => (
         <OrderCard key={o.id} order={o} />
+      ))}
+      {actions.map((a, i) => (
+        <ActionCard key={`${a.reference ?? a.action}-${i}`} card={a} />
       ))}
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <span aria-hidden="true" className="flex gap-1">

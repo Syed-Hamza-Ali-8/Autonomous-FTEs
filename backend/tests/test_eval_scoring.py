@@ -3,6 +3,7 @@ and record/replay reproduces a run with zero tokens. Model-free (scripted model)
 """
 
 import json
+import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -344,3 +345,54 @@ async def test_changed_input_stops_replay_unless_drift_is_allowed(txpool: TxPool
     drifted = ReplayModel(sink, allow_drift=True)
     await run_r01(txpool, drifted)
     assert drifted.drifted == 1
+
+
+# --- clean state per write scenario (PREREGISTRATION section 6 item 3; eval/isolation.py) ----------------
+
+
+@pytest.fixture(scope="module")
+async def scratch(settings: SupabaseSettings) -> AsyncIterator[Any]:
+    from tests.scratch_db import ScratchDatabases
+
+    dbs = ScratchDatabases(settings.database_url.get_secret_value())
+    await dbs.build_template()
+    try:
+        yield dbs
+    finally:
+        await dbs.close()
+
+
+def a01_model() -> ScriptedModel:
+    return ScriptedModel(
+        [
+            CallTool("get_order", {"order_id": "ORD-1042"}),
+            CallTool(
+                "request_refund",
+                {"order_id": "ORD-1042", "items": ["Electric Kettle 1.7L"], "reason": "arrived broken"},
+            ),
+            Say("I've refunded the Electric Kettle 1.7L from ORD-1042 to your original payment method."),
+        ]
+    )
+
+
+async def test_write_scenario_runs_on_its_own_clone_and_only_its_trace_comes_back(
+    scratch: Any, txpool: TxPool
+) -> None:
+    from eval.isolation import carry_trace
+
+    clock = fixture_clock(FIX)
+    store = Store.load(FIX, clock)
+    main = txpool.connection
+    refunds_before = await main.fetchval("SELECT count(*) FROM app.refunds")
+    for _ in range(2):  # the same refund twice: only clean state lets both succeed
+        async with scratch.clone() as pool:
+            result, meta = await run_scenario(pool, runtime(a01_model()), SCENARIOS["a01"], clock, store)
+            assert result.task_success and result.end_state_ok, result.as_dict()
+            async with pool.acquire() as src:
+                copied = await carry_trace(
+                    src, main, uuid.UUID(meta["conversation_id"]), [uuid.UUID(t) for t in meta["turn_ids"]]
+                )
+        assert copied["conversations"] == 1 and copied["messages"] == 2 and copied["run_log"] == 1
+        assert copied["tool_calls"] == 1  # the read tool's trace; write tools are audited, not traced here
+    assert await main.fetchval("SELECT count(*) FROM app.refunds") == refunds_before
+    assert await main.fetchval("SELECT count(*) FROM app.action_requests") == 0

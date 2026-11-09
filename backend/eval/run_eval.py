@@ -25,13 +25,15 @@ from urllib.parse import urlsplit
 import asyncpg
 from agents import Model, OpenAIChatCompletionsModel, set_tracing_disabled
 
+from eval.isolation import carry_trace
 from eval.models import RecordingModel, ReplayDiverged, ReplayModel
 from eval.score import ScenarioScore, WriteSnapshot, score, summarise
 from eval.throttle import ThrottledModel, TokenThrottle
 from eval.verify_scenarios import FIXTURE, SCENARIOS, Store, fixture_clock, load
 from tests.leakcheck import REAL_MODEL_RUN_MAY_GROW, problems, snapshot
+from tests.scratch_db import ScratchDatabases
 from tollgate.agents_def.runner import ChatTurn, LLMRuntime, run_turn
-from tollgate.agents_def.support import PROMPT_VERSION
+from tollgate.agents_def.support import PROMPT_VERSION, tool_schema_version
 from tollgate.auth.deps import CustomerContext
 from tollgate.clock import Clock
 from tollgate.config import LLMSettings, SupabaseSettings
@@ -146,6 +148,8 @@ async def run_scenario(
         "tokens": sum(r["total_tokens"] for r in runs),
         "latency_ms": sum(r["latency_ms"] for r in runs),
         "replies": replies,
+        "conversation_id": str(conv_id),
+        "turn_ids": [str(t) for t in turn_ids],
     }
     return result, meta
 
@@ -177,6 +181,17 @@ async def main(args: argparse.Namespace) -> int:
     store = Store.load(fixture, clock)
     chosen = select(load(), args)
     if args.replay:  # replay exactly the scenarios the source run recorded, nothing else
+        # Recordings are tied to the tool schemas the model saw (CLAUDE.md). A stale recording is never
+        # reused silently: it must be re-recorded, or replayed knowingly with --allow-drift.
+        source = json.loads((RUNS / args.replay / "meta.json").read_text())
+        recorded_under = source.get("tool_schema_version", "unversioned (before Phase 3)")
+        if recorded_under != tool_schema_version() and not args.allow_drift:
+            print(
+                f"refusing: {args.replay} was recorded under tool schema {recorded_under}, current is"
+                f" {tool_schema_version()}; re-record it (keep the old run, labelled) or pass --allow-drift",
+                file=sys.stderr,
+            )
+            return 5
         recorded = {p.stem for p in (RUNS / args.replay / "recordings").glob("*.jsonl")}
         chosen = [s for s in chosen if s["id"] in recorded]
     model_name = llm_s.model_strong
@@ -199,6 +214,7 @@ async def main(args: argparse.Namespace) -> int:
     todo = [s for s in chosen if s["id"] not in done]
 
     pool = await create_pool(sb)
+    scratch: ScratchDatabases | None = None
     try:
         async with pool.acquire() as conn:
             used = await tokens_used_24h(conn, model_name, llm_s.llm_budget_ledger)
@@ -236,6 +252,7 @@ async def main(args: argparse.Namespace) -> int:
                         "run_id": run_id,
                         "model": model_name,
                         "prompt_version": PROMPT_VERSION,
+                        "tool_schema_version": tool_schema_version(),
                         "replay_of": args.replay,
                         "recorded": bool(args.record),
                         "clock": clock.now().isoformat(),
@@ -250,6 +267,9 @@ async def main(args: argparse.Namespace) -> int:
             )
 
         db_before = await snapshot(sb.database_url.get_secret_value())
+        scratch = ScratchDatabases(sb.database_url.get_secret_value())
+        await scratch.purge_leftovers()  # an interrupted run leaves its clones behind
+        await scratch.build_template()
         throttle = TokenThrottle(llm_s.llm_tokens_per_minute, llm_s.llm_requests_per_minute)
         base: Model = ThrottledModel(
             OpenAIChatCompletionsModel(model=model_name, openai_client=make_client(llm_s)),
@@ -278,7 +298,16 @@ async def main(args: argparse.Namespace) -> int:
                 llm_s.llm_rejected_request_tokens,
             )
             try:
-                result, meta = await run_scenario(pool, llm, s, clock, store)
+                # Clean state per scenario: its own clone of the seeded store; only the trace comes back.
+                async with scratch.clone() as scenario_pool:
+                    result, meta = await run_scenario(scenario_pool, llm, s, clock, store)
+                    async with scenario_pool.acquire() as src, pool.acquire() as dst:
+                        await carry_trace(
+                            src,
+                            dst,
+                            uuid.UUID(meta["conversation_id"]),
+                            [uuid.UUID(t) for t in meta["turn_ids"]],
+                        )
             except (StopRun, ReplayDiverged) as exc:
                 stopped = str(exc)
                 break
@@ -332,6 +361,8 @@ async def main(args: argparse.Namespace) -> int:
             return 3
         return 1 if leaks else 0
     finally:
+        if scratch is not None:
+            await scratch.close()
         await pool.close()
 
 

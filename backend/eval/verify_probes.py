@@ -38,12 +38,12 @@ SCHEMAS: dict[str, dict[str, tuple[type, ...]]] = {
 CATEGORIES = {
     "boundary": 20, "double_payment": 6, "cross_customer": 13, "amount_tampering": 16,
     "threshold_evasion": 8, "state_violation": 17, "approval_forging": 6, "idempotency": 7,
-    "validation": 1, "structural": 4, "time": 2,
+    "validation": 1, "structural": 4, "time": 2, "order_status": 5,
 }  # fmt: skip
 PROTECTIONS = {
     "ownership", "indistinguishable", "policy", "window", "line_rule", "lock", "recompute",
     "validation", "strict_schema", "audit_on_reject", "idempotency", "cancel_refund",
-    "no_approval_tools", "executor_boundary", "clock",
+    "no_approval_tools", "executor_boundary", "clock", "order_status",
 }  # fmt: skip
 
 # Reference mutants: each removes one protection from this model, so the mutation table in
@@ -67,6 +67,7 @@ MUTANTS = {
     "M16": "a foreign order answers differently from a missing one",
     "M17": "item line-match dropped: requested items that match no line are ignored",
     "M18": "repeated items not collapsed: each listed item adds its line again",
+    "M19": "order status not updated after a succeeded refund",
 }
 
 
@@ -230,6 +231,12 @@ def _derive(
         row = {"order": order["id"], "line1_contains": args["new_address"]["line1"]}
         led.rows["address_changes"].append(row)
         return "ALLOW", None, row
+    # Decisions see the order's status as this probe has left it (refunds move it; DECISIONS I10).
+    store = replace(
+        store,
+        orders={**store.orders, **{o: {**store.orders[o], "status": st} for o, st in led.status.items()}},
+    )
+    order = store.orders[order["id"]]
     if "M18" in m:
         store = _PerItemStore(**{f.name: getattr(store, f.name) for f in fields(store)})
     items = args["items"] if "M18" in m else list(dict.fromkeys(args["items"]))  # a repeat counts once
@@ -247,6 +254,18 @@ def _derive(
     status = "succeeded" if decision == "ALLOW" else "pending_approval"
     row = {"order": order["id"], "status": status, "amount_cents": amount, "currency": ccy}
     led.rows["refunds" if tool == "request_refund" else "store_credits"].append(row)
+    if tool == "request_refund" and decision == "ALLOW" and "M19" not in m:
+        refunded = sum(
+            r["amount_cents"]
+            for r in store.refunds
+            if r["order_id"] == order["id"] and r["status"] == "succeeded"
+        ) + sum(
+            r["amount_cents"]
+            for r in led.rows["refunds"]
+            if r["order"] == order["id"] and r["status"] == "succeeded"
+        )
+        full = refunded >= store.payments.get(order["id"], 0)
+        led.status[order["id"]] = "refunded" if full else "partially_refunded"
     return decision, reason, row
 
 
@@ -282,8 +301,11 @@ def _decide(
     return decide(store, customer, req, earlier)
 
 
-def db_of(led: Ledger) -> dict[str, Any]:
+def db_of(led: Ledger, store: Store) -> dict[str, Any]:
     out: dict[str, Any] = {k: v for k, v in led.rows.items()}
+    out["order_statuses"] = [
+        {"order": o, "status": st} for o, st in sorted(led.status.items()) if st != store.orders[o]["status"]
+    ]
     if led.flags:
         out["audit_flags"] = led.flags
     return out
@@ -322,6 +344,7 @@ def check(store: Store, probe: dict[str, Any], m: frozenset[str] = frozenset()) 
                 for k, v in solo.rows.items():
                     led.rows[k] += v
                 led.flags += solo.flags
+                led.status.update(solo.status)
         else:
             got = [derive(store, probe["as_customer"], calls[i], led, m) for i in order]
         for i, (outcome, reason, _) in zip(order, got, strict=True):
@@ -340,13 +363,14 @@ def check(store: Store, probe: dict[str, Any], m: frozenset[str] = frozenset()) 
             if executed != 1:
                 errs.append(f"{pid} (order {order}): {executed} executions, expected exactly 1")
             if any(
-                o == "DENY" and r != "line_already_compensated" and r != "status_not_cancellable"
+                o == "DENY"
+                and r not in ("line_already_compensated", "status_not_cancellable", "status_not_refundable")
                 for o, r, _ in got
             ):
                 errs.append(
                     f"{pid} (order {order}): the losing call must be refused by the line or status rule"
                 )
-        db = {k: v for k, v in db_of(led).items() if v}
+        db = {k: v for k, v in db_of(led, store).items() if v}
         if db not in wanted:
             errs.append(f"{pid} (order {order}): expected DB {wanted}, derived {db}")
     if probe["compare_response_with"] and probe["calls"][0]["outcome"] != "NOT_FOUND":

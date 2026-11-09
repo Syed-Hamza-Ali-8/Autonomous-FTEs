@@ -2,7 +2,9 @@
 -- Dates are fixture_now minus the fixture offsets (fixed instant), unless rendered with
 -- --relative-dates for a live demo.
 
-TRUNCATE app.audit_log, app.tool_calls, app.run_log, app.messages, app.tickets, app.conversations, app.product_reviews, app.refunds, app.shipments, app.payments, app.order_items, app.orders, app.products, app.customers RESTART IDENTITY CASCADE;
+BEGIN;
+
+TRUNCATE app.audit_log, app.tool_calls, app.run_log, app.messages, app.idempotency_keys, app.store_credits, app.tickets, app.action_requests, app.conversations, app.product_reviews, app.refunds, app.shipments, app.payments, app.order_items, app.orders, app.products, app.customers RESTART IDENTITY CASCADE;
 
 INSERT INTO app.customers (id, email, name, tier, created_at) VALUES
   ('CUS-001', 'ayesha.khan@northwind.example', 'Ayesha Khan', 'standard', '2026-11-07T12:00:00+00:00'::timestamptz - interval '200 days'),
@@ -899,3 +901,5 @@ INSERT INTO app.product_reviews (id, product_id, customer_id, rating, body, crea
   ('REV-038', 'PRD-109', 'CUS-037', 3, 'Good value for the price.', '2026-11-07T12:00:00+00:00'::timestamptz - interval '70 days'),
   ('REV-039', 'PRD-110', 'CUS-010', 1, 'Good value for the price.', '2026-11-07T12:00:00+00:00'::timestamptz - interval '138 days'),
   ('REV-040', 'PRD-103', 'CUS-025', 4, 'Good value for the price.', '2026-11-07T12:00:00+00:00'::timestamptz - interval '156 days');
+
+COMMIT;

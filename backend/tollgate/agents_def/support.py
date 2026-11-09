@@ -1,15 +1,18 @@
-"""Phase 1 single agent: answers order and tracking questions with read tools only."""
+"""Single support agent (Phase 3): read tools plus write tools that only propose; the gateway decides."""
 
+import hashlib
+import json
 from pathlib import Path
 
-from agents import Agent, Model, ModelSettings, RunContextWrapper
+from agents import Agent, FunctionTool, Model, ModelSettings, RunContextWrapper
 
 from tollgate.tools.context import TurnContext
 from tollgate.tools.read_tools import READ_TOOLS
 from tollgate.tools.registry import allowed_tools
+from tollgate.tools.write_tools import WRITE_TOOLS
 
 AGENT_NAME = "support"
-PROMPT_VERSION = "support-v1"
+PROMPT_VERSION = "support-v2"
 PROMPT = (Path(__file__).parent / "prompts" / f"{PROMPT_VERSION}.md").read_text()
 
 
@@ -20,8 +23,22 @@ def instructions(ctx: RunContextWrapper[TurnContext], agent: Agent[TurnContext])
     return PROMPT
 
 
+ALL_TOOLS = {**READ_TOOLS, **WRITE_TOOLS}
+
+
+def agent_tools() -> list[FunctionTool]:
+    return [ALL_TOOLS[name] for name in sorted(allowed_tools(AGENT_NAME))]
+
+
+def tool_schema_version() -> str:
+    """Fingerprint of the tool schemas the model sees. Recordings are tied to it (CLAUDE.md token rules):
+    when it changes, affected recordings are re-recorded and the old ones kept, labelled."""
+    shape = [(t.name, t.description, t.params_json_schema) for t in agent_tools()]
+    return hashlib.sha256(json.dumps(shape, sort_keys=True).encode()).hexdigest()[:12]
+
+
 def build_support_agent(model: Model) -> Agent[TurnContext]:
-    tools = [READ_TOOLS[name] for name in sorted(allowed_tools(AGENT_NAME))]
+    tools = agent_tools()
     return Agent[TurnContext](
         name=AGENT_NAME,
         instructions=instructions,

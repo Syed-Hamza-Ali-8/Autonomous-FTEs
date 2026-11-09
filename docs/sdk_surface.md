@@ -92,3 +92,8 @@ Verified by calling `FunctionTool.on_invoke_tool(ToolContext(...), json)` on `op
 Consequence (DECISIONS I3): every write tool re-validates `ctx.tool_arguments` with its own strict model
 (`extra="forbid"`, strict types) and audits rejections from both layers, recording argument names and error
 locations only.
+- `function_tool(strict_mode=True)` (the default) makes every parameter `required` in the advertised schema, even ones
+  with defaults. Groq validates the model's tool call against that schema server-side and rejects a call that omits
+  one (`missing properties: 'amount_cents'`, eval run 20261107T213633Z). Write tools therefore use
+  `strict_mode=False` (required = only the parameters without defaults); the gateway's strict re-validation is the
+  enforcement either way.

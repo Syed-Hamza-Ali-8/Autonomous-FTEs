@@ -25,6 +25,10 @@ ALLOWED = {
     ("llm/budget.py", "datetime.now(UTC)"): "spend ledger: provider limits run on real time",
     ("agents_def/runner.py", "datetime.now(UTC)"): "run_log telemetry: when the real call happened",
     (
+        "actions/gateway.py",
+        "return ctx.clock.now()",
+    ): "the INJECTED Clock (G1), not a wall-clock read; the gateway's only time source",
+    (
         "domain/conversations.py",
         "updated_at = now()",
     ): "record-keeping; orders conversations, decides nothing",

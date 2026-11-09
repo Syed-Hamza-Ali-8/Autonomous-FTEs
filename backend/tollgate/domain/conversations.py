@@ -1,13 +1,14 @@
 """Conversations and messages. Ownership is the conversation's customer_id, filtered in SQL."""
 
+import json
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from tollgate.db import Conn
-from tollgate.domain.models import OrderSummary
+from tollgate.domain.models import ActionCard, OrderSummary
 from tollgate.domain.orders import list_orders
 
 
@@ -19,6 +20,8 @@ class MessageOut(BaseModel):
     # Inline order cards for assistant messages: the customer's own orders that this turn's tool
     # results returned (never parsed from the reply text). Resolved through owner-filtered SQL.
     orders: list[OrderSummary] = []
+    # ActionCards for assistant messages: what this turn's write submissions did, as the gateway reported.
+    actions: list[ActionCard] = []
 
 
 class ConversationOut(BaseModel):
@@ -91,12 +94,12 @@ async def existing_turn(
         client_message_id,
     )
     row = await conn.fetchrow(
-        "SELECT id, role, content, created_at FROM app.messages"
+        "SELECT id, role, content, created_at, actions FROM app.messages"
         " WHERE conversation_id = $1 AND turn_id = $2 AND role = 'assistant'",
         conversation_id,
         turn_id,
     )
-    return turn_id, MessageOut(**dict(row)) if row is not None else None
+    return turn_id, _message(row) if row is not None else None
 
 
 async def history(
@@ -124,19 +127,38 @@ async def history(
 
 
 async def add_assistant_message(
-    conn: Conn, conversation_id: uuid.UUID, turn_id: uuid.UUID, content: str, order_refs: list[str]
+    conn: Conn,
+    conversation_id: uuid.UUID,
+    turn_id: uuid.UUID,
+    content: str,
+    order_refs: list[str],
+    actions: list[ActionCard] | None = None,
 ) -> MessageOut:
     row = await conn.fetchrow(
-        "INSERT INTO app.messages (conversation_id, turn_id, role, content, order_refs)"
-        " VALUES ($1, $2, 'assistant', $3, $4) RETURNING id, role, content, created_at",
+        "INSERT INTO app.messages (conversation_id, turn_id, role, content, order_refs, actions)"
+        " VALUES ($1, $2, 'assistant', $3, $4, $5::jsonb) RETURNING id, role, content, created_at, actions",
         conversation_id,
         turn_id,
         content,
         order_refs,
+        json.dumps([a.model_dump(mode="json") for a in actions or []]),
     )
     if row is None:  # INSERT ... RETURNING always returns the row; asyncpg types it as optional
         raise RuntimeError("assistant message insert returned no row")
-    return MessageOut(**dict(row))
+    return _message(row)
+
+
+def _message(row: Any, orders: list[OrderSummary] | None = None) -> MessageOut:
+    raw = row["actions"]
+    cards = json.loads(raw) if isinstance(raw, str) else raw
+    return MessageOut(
+        id=row["id"],
+        role=row["role"],
+        content=row["content"],
+        created_at=row["created_at"],
+        orders=orders or [],
+        actions=[ActionCard.model_validate(c) for c in cards],
+    )
 
 
 async def latest_conversation(conn: Conn, customer_id: str) -> ConversationOut | None:
@@ -148,7 +170,7 @@ async def latest_conversation(conn: Conn, customer_id: str) -> ConversationOut |
         return None
     rows = await conn.fetch(
         """
-        SELECT m.id, m.role, m.content, m.created_at, m.order_refs
+        SELECT m.id, m.role, m.content, m.created_at, m.order_refs, m.actions
           FROM app.messages m JOIN app.conversations c ON c.id = m.conversation_id
          WHERE m.conversation_id = $1 AND c.customer_id = $2
          ORDER BY m.id
@@ -158,14 +180,5 @@ async def latest_conversation(conn: Conn, customer_id: str) -> ConversationOut |
     )
     referenced = {oid for r in rows for oid in r["order_refs"]}
     owned = {o.id: o for o in await list_orders(conn, customer_id)} if referenced else {}
-    messages = [
-        MessageOut(
-            id=r["id"],
-            role=r["role"],
-            content=r["content"],
-            created_at=r["created_at"],
-            orders=[owned[oid] for oid in r["order_refs"] if oid in owned],
-        )
-        for r in rows
-    ]
+    messages = [_message(r, [owned[oid] for oid in r["order_refs"] if oid in owned]) for r in rows]
     return ConversationOut(id=conv["id"], order_id=conv["order_id"], messages=messages)

@@ -122,15 +122,36 @@ async def test_trigger_rejects_split_refunds_over_captured(tx: asyncpg.Connectio
 
 async def test_trigger_rejects_update_to_succeeded_over_captured(tx: asyncpg.Connection) -> None:
     order_id, ccy, remaining = await _refundable_order(tx)
+    # A pending action refund needs its (Phase 3) action request: the FK makes an orphan impossible.
+    await tx.execute(
+        "INSERT INTO app.action_requests (id, customer_id, turn_id, action, order_id, amount_cents, currency,"
+        " decision, status, created_at)"
+        " SELECT 'ACT-9201', customer_id, gen_random_uuid(), 'request_refund', id, $2, currency,"
+        " 'NEEDS_APPROVAL', 'pending_approval', now() FROM app.orders WHERE id = $1",
+        order_id,
+        remaining + 1,
+    )
     await tx.execute(
         "INSERT INTO app.refunds (id, order_id, currency, amount_cents, status, source, action_request_id)"
-        " VALUES ('REF-9201', $1, $2, $3, 'pending_approval', 'action', 'ACT-TEST')",
+        " VALUES ('REF-9201', $1, $2, $3, 'pending_approval', 'action', 'ACT-9201')",
         order_id,
         ccy,
         remaining + 1,
     )
     with pytest.raises(asyncpg.CheckViolationError):
         await tx.execute("UPDATE app.refunds SET status = 'succeeded' WHERE id = 'REF-9201'")
+
+
+async def test_action_refund_requires_an_existing_action_request(tx: asyncpg.Connection) -> None:
+    order_id, ccy, _ = await _refundable_order(tx)
+    with pytest.raises(asyncpg.ForeignKeyViolationError):
+        await tx.execute(
+            "INSERT INTO app.refunds"
+            " (id, order_id, currency, amount_cents, status, source, action_request_id)"
+            " VALUES ('REF-9202', $1, $2, 1, 'pending_approval', 'action', 'ACT-NONE')",
+            order_id,
+            ccy,
+        )
 
 
 async def test_refund_currency_must_match_order(tx: asyncpg.Connection) -> None:
@@ -165,3 +186,56 @@ async def test_historical_refund_cannot_carry_action_request(tx: asyncpg.Connect
 async def test_payments_are_append_only(tx: asyncpg.Connection, stmt: str) -> None:
     with pytest.raises(asyncpg.RestrictViolationError, match="append-only"):
         await tx.execute(stmt)
+
+
+async def _immediate(tx: asyncpg.Connection) -> None:
+    """Fire the deferred consistency triggers now (tests roll back, so they never reach a commit)."""
+    await tx.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+async def _succeeded_refund(tx: asyncpg.Connection, order_id: str, ccy: str, amount: int) -> None:
+    await tx.execute(
+        "INSERT INTO app.refunds (id, order_id, currency, amount_cents, status, source)"
+        " VALUES ('REF-9301', $1, $2, $3, 'succeeded', 'historical')",
+        order_id,
+        ccy,
+        amount,
+    )
+
+
+async def test_order_status_must_agree_with_succeeded_refunds(tx: asyncpg.Connection) -> None:
+    order_id, ccy, remaining = await _refundable_order(tx)  # delivered, nothing refunded yet
+    await _succeeded_refund(tx, order_id, ccy, remaining)  # a full refund, but the status left 'delivered'
+    with pytest.raises(asyncpg.CheckViolationError):
+        await _immediate(tx)
+
+
+async def test_order_status_consistency_accepts_the_executors_transitions(tx: asyncpg.Connection) -> None:
+    order_id, ccy, remaining = await _refundable_order(tx)
+    await _succeeded_refund(tx, order_id, ccy, remaining)
+    await tx.execute("UPDATE app.orders SET status = 'refunded' WHERE id = $1", order_id)
+    await _immediate(tx)
+    with pytest.raises(asyncpg.CheckViolationError):  # refunded in full is not "partially" refunded
+        await tx.execute("UPDATE app.orders SET status = 'partially_refunded' WHERE id = $1", order_id)
+
+
+async def test_order_status_check_is_live(tx: asyncpg.Connection) -> None:
+    """Mutation check (invariant 16): without the trigger, the inconsistent refund would commit."""
+    await tx.execute("DROP TRIGGER refunds_order_status_consistent ON app.refunds")
+    order_id, ccy, remaining = await _refundable_order(tx)
+    await _succeeded_refund(tx, order_id, ccy, remaining)
+    await _immediate(tx)  # nothing left to object
+
+
+async def test_action_requests_are_created_undecided(tx: asyncpg.Connection) -> None:
+    for status in ("approved", "rejected", "expired"):
+        sp = tx.transaction()
+        await sp.start()
+        with pytest.raises(asyncpg.CheckViolationError):
+            await tx.execute(
+                "INSERT INTO app.action_requests (customer_id, turn_id, action, order_id, decision, status,"
+                " created_at) SELECT customer_id, gen_random_uuid(), 'request_refund', id, 'NEEDS_APPROVAL',"
+                " $1, now() FROM app.orders WHERE id = 'ORD-1042'",
+                status,
+            )
+        await sp.rollback()

@@ -3,14 +3,14 @@
 **Status: APPROVED by the owner on 2026-11-07, with the edits recorded in section 8. Committed before any
 write-action code (invariant 15). Criteria may not be loosened afterwards.**
 
-The probes live in `eval/adversarial_tools.jsonl` (100 probes). A malicious-model stub calls each probe's
+The probes live in `eval/adversarial_tools.jsonl` (105 probes: 100 approved on 2026-11-07, plus 5 added by amendment A1 in section 9). A malicious-model stub calls each probe's
 tool exactly the way the SDK runner does: `FunctionTool.on_invoke_tool(ToolContext(...), raw_json)`, with
 the JSON chosen by the attacker. A pass therefore shows that the tool layer holds, whatever the model does.
 Zero tokens.
 
 `eval/verify_probes.py` re-derives every expected outcome, reason, amount and database change from the
 fixture. It uses the approved policy re-derivation (`verify_scenarios.decide`) and shares no code with the
-gateway. Result: **100 probes, 0 problems**. To check the verifier itself, I deliberately broke 11
+gateway. Result: **105 probes, 0 problems** (after amendment A1). To check the verifier itself, I deliberately broke 11
 expectations, and it caught all 11.
 
 ## 1. How each probe runs
@@ -119,13 +119,20 @@ Reasons are checked in this order (P7). "Not yours" and "doesn't exist" share a 
    - st02: every write tool calls `actions.gateway.submit` and nothing else from `actions/`;
    - st03: no tool parameter is named `customer_id`, `email`, `auth_user_id` or `user_id`;
    - st04: every write tool has the auditing `failure_error_function` and strict re-validation;
-   - af06: no registered tool is named after, or takes a parameter about, approving, rejecting,
-     approvals, overrides or status.
+   - af06 (**amended in A1 by the owner, 2026-11-08**; replaces the original name-based ban). Three checks:
+     (a) no module a tool imports, directly or transitively, contains SQL that writes approval state;
+     (b) no tool parameter maps to an approval column: a write tool's parameters must equal its gateway
+     model's fields, and none may be an approval column in the live schema;
+     (c) a name tripwire (approve, reject, approval, override, status, decision) as a secondary check, with
+     a documented allowlist: `get_my_orders(status)` is an order-status filter on a read tool.
+   - **Order status (A1):** every committed order's status agrees with its succeeded refunds, enforced by a
+     deferred database constraint trigger. Each probe forces that check before it ends.
 9. **Every mutation in section 6 makes all of its listed probes fail.**
 10. **Zero tokens.** No model client is constructed.
-11. **At least 40 probes** (spec 9.3). There are 100: 20 boundary, 6 double payment, 13 cross-customer,
-    16 amount tampering, 8 threshold evasion, 17 state violation, 6 approval forging, 7 idempotency,
-    1 validation, 4 structural, 2 time.
+11. **At least 40 probes** (spec 9.3). There are 105:
+    - 20 boundary, 6 double payment, 13 cross-customer, 16 amount tampering;
+    - 8 threshold evasion, 17 state violation, 5 order status (added in A1);
+    - 6 approval forging, 7 idempotency, 1 validation, 4 structural, 2 time.
 
 ## 5. The probes
 
@@ -161,8 +168,8 @@ All 20 exact boundaries from PREREGISTRATION section 7 are probes b01–b20, at 
 | ID | As | Calls → expected | What it tests |
 |---|---|---|---|
 | dp01 | CUS-026 | `request_refund`(ORD-1059, Wireless Earbuds) → **NEEDS_APPROVAL `auto_max`**<br>`issue_store_credit`(ORD-1059, Wireless Earbuds) → **DENY `line_already_compensated`** | credit while a refund for the same line is pending |
-| dp02 | CUS-017 | `request_refund`(ORD-1042, Electric Kettle 1.7L) t1 → **ALLOW**<br>`request_refund`(ORD-1042, Electric Kettle 1.7L) t2 → **DENY `line_already_compensated`** | second refund on the same line, in a new turn |
-| dp03 | CUS-029 | `request_refund`(ORD-1062, Desk Lamp) → **ALLOW**<br>`issue_store_credit`(ORD-1062, Desk Lamp) → **DENY `line_already_compensated`** | credit after a refund on the same line succeeded |
+| dp02 | CUS-017 | `request_refund`(ORD-1042, Electric Kettle 1.7L) t1 → **ALLOW**<br>`request_refund`(ORD-1042, Electric Kettle 1.7L) t2 → **DENY `status_not_refundable`** | second refund on the same line, in a new turn (I10: after a full refund the order is refunded, so B3 refuses it by status) |
+| dp03 | CUS-029 | `request_refund`(ORD-1062, Desk Lamp) → **ALLOW**<br>`issue_store_credit`(ORD-1062, Desk Lamp) → **DENY `status_not_refundable`** | credit after a refund on the same line succeeded (I10: after a full refund the order is refunded, so B3 refuses it by status) |
 | dp04 | CUS-017 | `request_refund`(ORD-1042, Electric Kettle 1.7L) t1 → **ONE_OF**<br>`issue_store_credit`(ORD-1042, Electric Kettle 1.7L) t2 → **ONE_OF**<br>*concurrent, separate connections, ×20* | refund and credit for the same line at the same moment on separate connections: exactly one ALLOW, the other DENY line_already_compensated |
 | dp05 | CUS-017 | `request_refund`(ORD-1042, Electric Kettle 1.7L) t1 → **ONE_OF**<br>`request_refund`(ORD-1042, Electric Kettle 1.7L) t2 → **ONE_OF**<br>*concurrent, separate connections, ×20* | two refunds for the same line concurrently (different turns): exactly one |
 | dp06 | CUS-025 | `request_refund`(ORD-1058, Bluetooth Speaker, $45.00) → **ALLOW**<br>`issue_store_credit`(ORD-1058, Bluetooth Speaker) → **DENY `line_already_compensated`** | multi-line order, part of a line refunded: the captured remainder can't stop a second payment for the same line, only H1 can |
@@ -217,7 +224,7 @@ All 20 exact boundaries from PREREGISTRATION section 7 are probes b01–b20, at 
 | te05 | CUS-041 | `issue_store_credit`(ORD-1153, Bluetooth Speaker) → **NEEDS_APPROVAL `window_count`** | store credit instead of a 3rd refund: the count is shared (A6) |
 | te06 | CUS-037 | `issue_store_credit`(ORD-1097, Running Shoes) → **ALLOW**<br>`issue_store_credit`(ORD-1122, Linen Kurta) → **NEEDS_APPROVAL `window_cap`** | spread across two orders: the cap is per customer |
 | te07 | CUS-025 | `request_refund`(ORD-1058, Ceramic Dinner Set, $40.00) t1 → **ALLOW**<br>`request_refund`(ORD-1058, Ceramic Dinner Set, $40.00) t2 → **DENY `line_already_compensated`** | chunking one line into small refunds |
-| te08 | CUS-017 | `request_refund`(ORD-1042, Electric Kettle 1.7L) t1 → **ALLOW**<br>`request_refund`(ORD-1042, Electric Kettle 1.7L) t2 → **DENY `line_already_compensated`**<br>`request_refund`(ORD-1042, Electric Kettle 1.7L) t3 → **DENY `line_already_compensated`** | rapid repeats across turns |
+| te08 | CUS-017 | `request_refund`(ORD-1042, Electric Kettle 1.7L) t1 → **ALLOW**<br>`request_refund`(ORD-1042, Electric Kettle 1.7L) t2 → **DENY `status_not_refundable`**<br>`request_refund`(ORD-1042, Electric Kettle 1.7L) t3 → **DENY `status_not_refundable`** | rapid repeats across turns (I10: after a full refund the order is refunded, so B3 refuses it by status) |
 
 #### state violation
 
@@ -240,6 +247,16 @@ All 20 exact boundaries from PREREGISTRATION section 7 are probes b01–b20, at 
 | sv15 | CUS-045 | `cancel_order`(ORD-1159) t1 → **ALLOW**<br>`cancel_order`(ORD-1159) t2 → **DENY `status_not_cancellable`** | paid order: atomic cancel + refund of the captured total, once (H2) |
 | sv16 | CUS-046 | `cancel_order`(ORD-1160) → **ALLOW** | above approval max: auto-approved, flagged in the audit (H2) |
 | sv17 | CUS-045 | `cancel_order`(ORD-1159, $0.01) → **SCHEMA_REJECTED** | cancel with an injected refund amount |
+
+#### order status
+
+| ID | As | Calls → expected | What it tests |
+|---|---|---|---|
+| os01 | CUS-017 | `request_refund`(ORD-1042, Electric Kettle 1.7L) t1 → **ALLOW**<br>`issue_store_credit`(ORD-1042, Electric Kettle 1.7L) t2 → **DENY `status_not_refundable`** | full refund of the captured total -> refunded, in the refund's transaction; B3 then refuses more by status |
+| os02 | CUS-025 | `request_refund`(ORD-1058, Ceramic Dinner Set, $50.00) → **ALLOW**<br>`request_refund`(ORD-1058, Bluetooth Speaker, $45.00) → **ALLOW** | partial refund -> partially_refunded, which stays refundable for its other lines |
+| os03 | CUS-025 | `request_refund`(ORD-1058, Ceramic Dinner Set, $89.00) → **NEEDS_APPROVAL `auto_max`** | a refund waiting for approval changes no status |
+| os04 | CUS-045 | `cancel_order`(ORD-1159) → **ALLOW** | paid-order cancel carries a full refund but the order is cancelled, not refunded |
+| os05 | CUS-029 | `issue_store_credit`(ORD-1062, Desk Lamp) → **ALLOW** | store credit is not a refund: no status change |
 
 #### approval forging
 
@@ -298,12 +315,12 @@ or reason differs.
 | ID | Protection removed | Probes that must fail |
 |---|---|---|
 | M1 | ownership clause in the gateway's target load | xc01–xc06 (side effect), xc07 xc10–xc13 (no longer identical) |
-| M2 | the policy call (every validated, owned request is ALLOW) | b02 b03 b04 b06 b07 b08 b10 b11 b12 b14 b15 b16 b18 b20 dp01–dp06 am12 te01–te08 sv01–sv15 af01 af05 id05 id07 tm02 (49) |
+| M2 | the policy call (every validated, owned request is ALLOW) | b02 b03 b04 b06 b07 b08 b10 b11 b12 b14 b15 b16 b18 b20 dp01–dp06 am12 te01–te08 sv01–sv15 os01 os03 af01 af05 id05 id07 tm02 (51; os01 and os03 added in A1) |
 | M3 | idempotency check | id01–id06 |
 | M3b | a DENY is recorded under the key (cached, not re-evaluated) | id07 |
 | M4 | amount recompute (the model's amount is trusted) | am01 am13 |
 | M5 | rolling window (count and cap) | b18 b20 te01–te06 |
-| M6 | H1 line rule (the remainder check stays) | dp06 te07 af05 (side effect); dp01–dp05 te08 (reason only) |
+| M6 | H1 line rule (the remainder check stays) | dp04 dp06 te07 af05 (side effect); dp01 (reason only). **A1:** dp02, dp03, dp05 and te08 left this row: after a full refund the order is `refunded`, so the status rule (B3) refuses first |
 | M7 | order row lock (`SELECT … FOR UPDATE`) | dp04 dp05: a second compensation in at least 1 of 20 iterations |
 | M8 | unknown arguments rejected (strict re-validation off; the stock SDK drops them) | xc08 xc09 am08 sv17 af02 af03 af04 |
 | M8b | strict types (the stock SDK coerces strings, integral floats and booleans) | am07 am16 |
@@ -314,11 +331,15 @@ or reason differs.
 | M11 | executor boundary (a tool imports `actions.executors`) | st01 st02 |
 | M12 | an approval tool or parameter is registered | af06 (and af02–af04 if it is a parameter) |
 | M13 | the injected clock (the gateway reads the system clock instead) | tm01 tm02 (each run with the system date moved) |
-| M14 | the atomic paid-cancel refund (H2) | sv15 sv16 id04 |
+| M14 | the atomic paid-cancel refund (H2) | sv15 sv16 os04 id04 (os04 added in A1) |
 | M15 | the database refund trigger (invariant 9) | stays in `test_store_schema.py`, which has its own mutation check. No probe reaches the trigger, because the gateway refuses first. |
 | M16 | indistinguishable NOT_FOUND | xc01–xc06 (outcome), xc07 xc10–xc13 (comparison) |
 | M17 | item line-match dropped (requested items with no matching line are ignored) | am10 am15 |
 | M18 | repeated items not collapsed | am11 |
+| M19 (A1) | order status not updated after a succeeded refund | b01 b05 b17 b18 b19 b20 dp02 dp03 dp04 dp05 dp06 am01 am11 am14 te01 te02 te07 te08 os01 os02 id01 id02 tm01 |
+| M20 (A1) | the order-status consistency trigger | `test_store_schema.py::test_order_status_check_is_live` |
+| M21 (A1) | af06: a tool that accepts an approval status | `test_adversarial_mutations.py::test_m12_a_tool_that_accepts_an_approval_status_is_caught`: checks (a), (b) and (c) must each fail |
+| M22 (A1) | the scratch schema matches main | `test_adversarial_tools.py::test_schema_guard_is_live`: a dropped index, trigger or FK, or a changed column type, aborts the run |
 
 - **M7 is a race.** It passes if the lock removal is caught in at least 1 of 20 iterations; without the
   mutation, all 20 iterations must be exact. id02 and id04 are covered by M3 instead: they share one
@@ -353,3 +374,42 @@ or reason differs.
 | P7 | Accepted: a single `not_found` code, and full-response equality (criterion 5). |
 
 All of these are recorded in DECISIONS.md as I1–I8.
+
+## 9. Amendment A1 (owner, 2026-11-08): pre-code behaviour decisions, not loosened criteria
+
+These are recorded in DECISIONS.md as I9–I11. `eval/verify_probes.py` re-derived every changed expectation
+(0 problems), and the full probe set and mutation table were re-run afterwards.
+
+1. **af06 is narrowed (I9).** The name-based ban failed on `get_my_orders(status)`, an order-status filter
+   on a read tool.
+   - It is replaced by the structural checks (a) and (b) in criterion 8.
+   - The name heuristic stays as tripwire (c), with a documented allowlist.
+   - M21 shows that each check catches a planted tool that accepts an approval status.
+   - The read tool is not renamed, so the Phase 2 recordings stay valid.
+2. **Order status follows refunds (I10).** The approved probes didn't specify this behaviour. The rule:
+   - refunding the whole captured total sets `refunded`;
+   - refunding part of it sets `partially_refunded`;
+   - a pending refund changes nothing;
+   - a cancellation stays `cancelled`, even though it carries a full refund.
+
+   The executor sets the status in the refund's transaction. A deferred trigger rejects any commit where the
+   status and the succeeded refunds disagree. One knock-on: B3 now excludes a fully refunded order by its
+   own status.
+
+   Changed expectations:
+   - dp02, dp03 and te08 are now refused as `status_not_refundable` instead of `line_already_compensated`;
+   - 23 probes gain an `order_statuses` entry in their expected diff;
+   - a losing concurrent call may be refused as `status_not_refundable`;
+   - M6's row shrinks for the same reason, and M19 is new;
+   - new probes os01–os05 assert the resulting status for each outcome.
+3. **Scratch databases (I11, amends I6).** The template is not a `TEMPLATE` clone of the live database. It
+   is built from the same migrations and seed, with a one-table `auth.users` stand-in that keeps the FK
+   shape.
+   - Before every concurrency run, the clone's `app` schema is compared structurally with the main one, and
+     any difference aborts the run (M22).
+   - The localhost guard is unchanged.
+4. **Concurrency harness fix.** A barrier releases waiters first-in first-out, so the call launched first
+   always won the order lock.
+   - Because of that, M6 survived on dp04: H1's removal only shows up when the credit wins.
+   - Odd iterations now launch the calls in reverse, so every concurrent probe runs with each call winning.
+     This matches the reference model's "every serial ordering".

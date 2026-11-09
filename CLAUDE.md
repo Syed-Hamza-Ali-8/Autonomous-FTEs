@@ -5,13 +5,13 @@
 **Core principle: the model *proposes* actions; deterministic code *decides* them.**
 
 **Source of truth:** `TOLLGATE_BUILD_SPEC.md`. Before each phase, re-read Section 10 for that phase plus every section it touches. This file is the short manual; the spec is the reference.
-**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I8, T1). They override spec defaults where they differ. Never change one without owner approval.
+**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I11, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
 - **Phase:** 3 (Write actions and the Action Gateway), started 2026-11-07
 - **Last completed gate:** Phase 2 (approved 2026-11-07)
-- **Next step:** probe set approved and committed (DECISIONS I1–I8). Build in order: migrations, policy engine, gateway, executors, idempotency; then run `eval/adversarial_tools.jsonl` and report against its criteria
-- **Waiting on owner:** demo passwords; cloud project + signing method
+- **Next step:** finish the scored write scenarios under tool schema `6fffe0b91095` (resume run `20261107T215559Z`; ~200k tokens left to spend, across days), then the Phase 3 gate report. Adversarial suite, A1 amendment, agent wiring, ActionCard UI done (uncommitted)
+- **Waiting on owner:** a04 address defaults (keep current name/country?); clean-state-per-scenario design (clones + trace copy-back); interim claim check v1; demo passwords; cloud project + signing method
 - **Runs:** pytest/offline smoke change nothing; real-model runs may only grow F6 tables. Time pinned to `fixture_now` (G1). Eval runs are throttled to 8k tokens/min; a full 45-scenario run (~198k) needs `--resume` across two days
 - **Notes:** npm audit findings are dev tooling only, left as is. Input borders fixed (zinc-500, >= 3:1 both themes).
 
@@ -112,6 +112,7 @@ Do not start phase N+1 until every gate item of phase N passes **and the owner a
 - **Never rotate multiple free accounts** to dodge limits. Stay at $0 (DECISIONS D3).
 - Spend is also kept in `.tollgate/token_spend.jsonl` (H4); pre-flight takes the higher of it and `run_log`. Per machine only: spend from elsewhere is invisible. Never delete it to free budget.
 - No detached background scheduling (`nohup`, `sleep` chains). Long runs happen in-session with resume.
+- **Recordings are tied to a tool-schema version.** When an agent's tool schemas change, the affected recordings are re-recorded. The old ones are kept and labelled with the version they were made under, never silently reused.
 
 ## UI rule
 Every UI change follows spec **Section 13**:

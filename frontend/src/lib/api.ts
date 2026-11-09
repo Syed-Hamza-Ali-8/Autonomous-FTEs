@@ -9,10 +9,12 @@ export type OrderStatus = OrderSummary["status"];
 export type CustomerProfile = Schemas["CustomerProfile"];
 export type ConversationOut = Schemas["ConversationOut"];
 export type MessageOut = Schemas["MessageOut"];
+export type ActionCard = Schemas["ActionCard"];
 export type ChatEvent =
   | Schemas["TurnStarted"]
   | Schemas["Progress"]
   | Schemas["OrderRef"]
+  | Schemas["Action"]
   | Schemas["Reply"]
   | Schemas["ChatError"]
   | Schemas["Done"];

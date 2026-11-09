@@ -87,3 +87,30 @@ class CustomerProfile(BaseModel):
     id: str
     name: str
     email: str
+
+
+ActionKind = Literal[
+    "request_refund",
+    "issue_store_credit",
+    "cancel_order",
+    "update_shipping_address",
+    "create_ticket",
+    "escalate_to_human",
+]
+ActionState = Literal["completed", "waiting_for_approval", "not_allowed"]
+
+
+class ActionCard(BaseModel):
+    """What one Action Gateway submission did, for the chat's ActionCard (spec 13.3).
+
+    Built by the gateway from its own result, never from the model's text. `explanation` is customer-safe:
+    no rule names, thresholds or internal IDs beyond the request reference.
+    """
+
+    action: ActionKind
+    state: ActionState
+    order_id: str | None = None  # None when the order was not found: nothing is echoed back
+    amount: Money | None = None  # recomputed by the gateway
+    reference: str | None = None  # the action request, for completed and waiting cards
+    explanation: str
+    at: datetime  # when the gateway decided, from the injected clock
