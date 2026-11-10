@@ -386,3 +386,94 @@ models the domain more accurately: pending is a property of the request, and a d
     planted forgeries), which proves both triggers are live.
 - **Unchanged:** the approval-path probes (ap01–ap16) refer to the approval by its action-request reference
   (`ACT-…`), which is also what the customer's card shows.
+
+---
+
+## 9. Amendment A3-P4 (owner, 2026-11-11, before the code it governs): derived expiry, one approval path
+
+**Owner decisions:**
+1. **The money-row trigger (A2-P4 extension) is confirmed.** It stays.
+2. **Expiry is a derived predicate.**
+   - A pending request is **expired** once `now >= created_at + 48h`, with `now` taken from the injected clock (G1).
+   - Every reader uses this one predicate (`tollgate/approvals/expiry.py`). None depends on the lazy write having
+     happened. The write (`expire_due`, and expiry-on-act) only catches stored state up to the derived value.
+   - An expired pending row stops blocking new requests. Otherwise the customer is told to ask again and is then
+     refused.
+3. **One generic approval path for every action type.** Two paths would let the re-check, expiry and execution
+   rules drift apart. Only refunds and credits are queued today. Cancels and address changes plug into the same
+   path when fraud routing lands.
+
+### 9.1 Readers of pending state (each applies the derived predicate)
+| Reader | Where | Expired pending row |
+|---|---|---|
+| R1 action status endpoint and ActionCard | `domain/actions.get_action` | new state `closed` |
+| R2 order detail and refund history (customer page, `get_order` and `get_refund_history` tools) | `domain/orders._refunds` | status shown as `expired` |
+| R3 refundable remainder | `gateway._order_facts` (remainder) | not subtracted |
+| R4 rolling-window count and amount | `gateway._window` | not counted |
+| R5 pending request on the same lines (H1) | `gateway._order_facts` (lines) | doesn't block |
+| R6 decisions (approve, reject) | `approvals/service._due` | the decision is `expired`, nothing executes |
+| (staff) the approvals inbox | staff API (step 2) | shown as expired, never actionable |
+
+The approval re-check (B6) reads R3–R5 through the same functions, so other expired requests on the order don't
+count against the one being approved.
+
+### 9.2 Customer wording (I15)
+- The card for an expired request says, in substance: it wasn't reviewed in time, so it was closed and nothing
+  changed; you can ask again, or ask to be passed to a member of our support team.
+- The system message posted on expiry says the same.
+- **The 48-hour figure is never stated.** It is an internal control parameter (tier C), and
+  `test_customer_facing_text` checks that "48" appears in none of these texts.
+- Implementer addition (same root cause): a polled card for a *rejected* request now carries the decided text
+  instead of keeping the "needs a quick check" wording. It says the request was reviewed and couldn't be
+  approved, so nothing changed, and never says why.
+
+### 9.3 Expiry probes (`tests/test_expiry_probes.py`, model-free)
+**Setup.** Each probe queues its request(s) through the real gateway with the clock set 49 hours before
+`fixture_now`; ex02 uses exactly 48 hours, the boundary. It then acts at `fixture_now`.
+
+| ID | Reader | Setup and action | Expected |
+|---|---|---|---|
+| ex01 | R1 | CUS-025: $51 refund of Ceramic Dinner Set (ORD-1058), queued 49h ago; read its action record | state `closed`, the expiry wording, no "48" |
+| ex02 | R1 | CUS-047: $200 store credit on ORD-1161, queued exactly 48h ago; read its action record | state `closed` |
+| ex03 | R2 | ex01's setup; `get_order` detail for ORD-1058 | the request's refund row shows `expired` |
+| ex04 | R2 | ex01's setup; `get_refund_history` for ORD-1058 | the request's refund row shows `expired` |
+| ex05 | R4 count | CUS-025: two expired pending refunds of $51 (Ceramic Dinner Set, Cotton Bedsheet Set); new refund of Bluetooth Speaker capped at $40 | ALLOW, executed (counted: `window_count` → queued) |
+| ex06 | R4 amount | CUS-025: one expired pending $95 refund (Ceramic Dinner Set); new $40 refund of Bluetooth Speaker | ALLOW, executed (counted: `window_cap` → queued) |
+| ex07 | R5 | CUS-025: expired pending $51 refund of Ceramic Dinner Set; new $51 refund of the same line | NEEDS_APPROVAL, queued (counted: DENY `line_already_compensated`) |
+| ex08 | R5 | the same expired refund; new $40 store credit for the same line | ALLOW, executed (counted: DENY `line_already_compensated`) |
+| ex09 | R3 | CUS-031, ORD-1005 (historical $170.80 refunded, remainder $256.20): expired pending $250 refund of 4K Monitor; new refund of Wireless Earbuds ($59) | NEEDS_APPROVAL (`window_cap` from the historical refund), queued (counted: DENY `exceeds_refundable_remainder`) |
+| ex10 | R3 | the same setup; new store credit for Linen Kurta ($39) | NEEDS_APPROVAL, queued (counted: DENY `exceeds_refundable_remainder`) |
+| ex11 | R6 | ex01's setup; staff approve with the exact amount | decision `expired`; no refund succeeds |
+| ex12 | R6 | ex01's setup; staff reject with a note | decision `expired` (not `rejected`) |
+
+### 9.4 Mutations (each kills at least two probes, K5)
+Each mutation removes the derived predicate from exactly one reader, so that reader treats every pending row as
+live.
+
+| Mutation | Removes the predicate from | Must kill |
+|---|---|---|
+| M39 | R1 action record | ex01, ex02 |
+| M40 | R2 order-detail refund rows | ex03, ex04 |
+| M41 | R3 remainder | ex09, ex10 |
+| M42 | R4 window | ex05, ex06 |
+| M43 | R5 same-lines check | ex07, ex08 |
+| M30 (pre-registered, "no expiry check") | R6 decisions | ex11, ex12 (plus ap05 and ap15 with the staff API) |
+
+### 9.5 One approval path
+- `approvals/service.approve` is the only approve path. Every queueable action type has an entry in one table
+  (`PATHS`): a re-check on current data and an execution. The table covers refunds, store credits, cancellations
+  and address changes.
+- The contact tier (`create_ticket`, `escalate_to_human`) is never queued (P4-1). It is listed explicitly as not
+  approvable, and a test asserts the table plus that list cover every action kind.
+- **Execution is shared with the gateway**, not duplicated. The gateway's executors and the approval path call the
+  same effect functions: cancel with its H2 refund, address change, and the money completion. So the two cannot
+  drift.
+- **Re-checks** use DENY rules only; the NEEDS_APPROVAL rules are what the approval satisfies (B6):
+  - money: as section 4.5;
+  - cancel: ownership, `evaluate_cancel` on the current status, and the H2 refund recomputed. It must equal the
+    amount the request recorded, which is what staff were shown;
+  - address: ownership, `evaluate_address_change` on the current status, and the order's current address must
+    still be the one the change was merged onto (`previous_address`, stored at queueing).
+- **Implementer proposal, for owner confirmation (tightening only):** two re-check reason codes, `amount_changed`
+  (cancel) and `address_changed` (address). They are staff-facing only; the customer sees the generic rejection
+  wording. A queued address change without `previous_address` fails its re-check (fail closed).
