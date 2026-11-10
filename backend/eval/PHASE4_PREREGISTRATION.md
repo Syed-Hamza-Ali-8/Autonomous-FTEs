@@ -474,6 +474,36 @@ live.
     amount the request recorded, which is what staff were shown;
   - address: ownership, `evaluate_address_change` on the current status, and the order's current address must
     still be the one the change was merged onto (`previous_address`, stored at queueing).
-- **Implementer proposal, for owner confirmation (tightening only):** two re-check reason codes, `amount_changed`
-  (cancel) and `address_changed` (address). They are staff-facing only; the customer sees the generic rejection
-  wording. A queued address change without `previous_address` fails its re-check (fail closed).
+- **Two re-check reason codes (implementer proposal, confirmed by the owner 2026-11-11):** `amount_changed`
+  (cancel) and `address_changed` (address). They are staff-facing only; the customer wording is in section 10.
+  A queued address change without `previous_address` fails its re-check (fail closed).
+
+---
+
+## 10. Amendment A4-P4 (owner, 2026-11-11, before the code it governs): a failed re-check is not a rejection
+
+**Owner decision.** A rejection means a person decided against the request. A failed re-check means the request
+went stale. The customer-facing outcome for `failed_recheck` must not read as a rejection. This replaces the
+"reads exactly like a rejection" wording of sections 4.5, 9.2 and 9.5.
+
+- **Wording** covers both causes (a state change, or a DENY rule now firing) and names neither. In substance:
+  "Something about this order changed after you asked, so we couldn't complete it. You can ask again, or we can
+  pass you to a member of our support team."
+- **The specific reason stays staff-only** (the decision row's `recheck`, the audit log, the console).
+- **Card state.** The action record derives a separate state from the decision row (read-only):
+
+| Stored request status | Decision | Card state | Pill label |
+|---|---|---|---|
+| `rejected` | `rejected` | `not_allowed` | Not approved |
+| `rejected` | `failed_recheck` | `not_completed` | Couldn't complete |
+| `expired`, or pending past expiry | `expired` or none yet | `closed` | Closed |
+
+  - "Not allowed" stays the label for a policy denial at request time, which has no action record.
+  - Implementer addition (same principle): the refund row on the order page and in the read tools shows a
+    failed re-check as `not_completed`, not `rejected`.
+- **Tests (`test_customer_facing_text`, `test_approval_service`):**
+  - the `failed_recheck` and `rejected` customer texts differ, for both the system message and the card;
+  - neither contains a rule name, a threshold or a reason code. The check covers the gateway's reason codes and
+    the re-check-only codes (`amount_changed`, `address_changed`), which join the group-C patterns;
+  - liveness: a text that includes a re-check code is flagged;
+  - a failed re-check and a rejection of the same request give different card states, labels and messages.
