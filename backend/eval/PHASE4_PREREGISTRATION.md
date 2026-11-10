@@ -349,3 +349,40 @@ the owner's say-so. The aggregate never absorbs a regression.
   sent to the owner had swapped them.
 - **Tags:** every re-registered or new expectation carries the v4 change it belongs to (section 3.2).
 - **Approval decisions:** P4-1 to P4-5 as in section 6.
+
+## 8. Amendment A2-P4 (owner, 2026-11-11, before any code): approvals is a decisions-only log
+
+**Reason (owner):** the wording in sections 4.1 and 4.2 put pending rows in `app.approvals`. The gateway's queue would
+then INSERT into `app.approvals` from code a tool can reach, which af06 (a) forbids. Making that work would have meant
+narrowing a pre-registered safety check. Keeping approvals as a **decisions-only log** preserves af06 intact, and it
+models the domain more accurately: pending is a property of the request, and a decision is an event.
+
+**Replaces the corresponding parts of 4.1 and 4.2:**
+- **Pending state** stays where it already lives: `action_requests.status = 'pending_approval'`, plus the pending
+  refund or credit row.
+  - B7 expiry is `action_requests.created_at + 48h`, evaluated lazily.
+  - Queueing is an INSERT of an undecided request (the `action_requests_born_undecided` trigger already guarantees
+    that), done from the gateway only.
+- **`app.approvals`** holds decisions only:
+  - columns: `id` (`APR-…`), `action_request_id` (unique FK), `decision` (`approved | rejected | expired |
+    failed_recheck`), `decided_by` (FK staff_users; null only for `expired`), `note`, `recheck` (jsonb), `decided_at`;
+  - written **only** by `approvals/service.py`, and never updated or deleted (append-only trigger).
+- **af06 structural coverage, extended** (tightened; nothing narrowed):
+  - (a1) no tool-reachable code INSERTs, UPDATEs or DELETEs `app.approvals` (unchanged);
+  - (a2) no tool-reachable code UPDATEs `action_requests.status` into an approved or executed state. Today's (a)
+    already forbids any UPDATE of `action_requests` from tool-reachable code, and (a2) names the dangerous direction
+    explicitly, as its own check.
+  - **Mutations M35 (a1) and M36 (a2):** each plants tool-reachable code that writes the forbidden state. Each is
+    killed by at least two planted cases (different SQL shapes: single- and multi-line, quoted and unquoted
+    identifiers), in line with K5.
+- **Database-level guard** (`action_requests_decision_requires_approval`): a trigger refusing any transition of an
+  `action_request` out of `pending_approval` into `approved` or `executed`, unless a matching `app.approvals` row
+  with `decision = 'approved'` exists. Forging then needs two coordinated writes, and one of them lives in the
+  restricted module.
+  - **Extension, added by the implementer** (tightening; owner to confirm): the same guard on the money rows. A
+    pending `refunds` or `store_credits` row may become `succeeded` only if its action request has an approved
+    decision. Without it, a forger could skip the request and update the money row directly.
+  - **Mutation checks M37 and M38:** dropping either trigger lets a forged transition commit (each with at least two
+    planted forgeries), which proves both triggers are live.
+- **Unchanged:** the approval-path probes (ap01–ap16) refer to the approval by its action-request reference
+  (`ACT-…`), which is also what the customer's card shows.

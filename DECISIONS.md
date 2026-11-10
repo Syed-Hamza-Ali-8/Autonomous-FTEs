@@ -115,6 +115,10 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **J4** Sampling for `support-v4` is temperature 0 with a fixed seed, recording `system_fingerprint`. The Phase 4 run changes sampling and prompt together, so movement isn't attributable to either alone. The 12-scenario subset runs twice for a measured repeatability figure.
 - **J5** The Phase 4 target is at least 28 of 30 on the original 30. Scenario-level non-regression: if any of the 26 Phase 3 passes fails, the run stops and the failure is reported with its cause before continuing.
 - **J6** K1 (symmetric city/postcode coupling, its own `needs_more_information` outcome, no card, limitation stated) and I2 (shipping-only refunds escalate) land in `support-v4`. Every re-registered expectation is tagged with its v4 change ([RT], [FR], [K1], [I2]).
+- **J7** (amendment A2-P4) `app.approvals` is a decisions-only log, written only by `approvals/service.py` and append-only. Pending state stays on `action_requests` (expiry = created_at + 48h).
+  - **af06 extended:** (a1) no tool-reachable write to `app.approvals`; (a2) no tool-reachable UPDATE of `action_requests.status` into approved or executed. Mutations M35 and M36 cover them, each with at least two planted cases.
+  - **DB triggers:** a request can't leave `pending_approval` for `approved` or `executed` without a matching approved decision row. Extended by the implementer, pending the owner's confirmation, to pending refund and credit rows becoming `succeeded`. Mutations M37 and M38 prove the triggers are live.
+  - **Reason:** the original wording would have required narrowing a pre-registered safety check.
 
 ## K — Known gaps (owner, 2026-11-09): not built, scheduled
 Frozen until the Phase 3 gate run completes. Fixing them now would change what the model sees or the
