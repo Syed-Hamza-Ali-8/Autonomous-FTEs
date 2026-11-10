@@ -5,13 +5,13 @@
 **Core principle: the model *proposes* actions; deterministic code *decides* them.**
 
 **Source of truth:** `TOLLGATE_BUILD_SPEC.md`. Before each phase, re-read Section 10 for that phase plus every section it touches. This file is the short manual; the spec is the reference.
-**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, K1–K5, T1). They override spec defaults where they differ. Never change one without owner approval.
+**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, J1–J6, K1–K5, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
 - **Phase:** 4 (Human approvals and staff console), started 2026-11-11
 - **Last completed gate:** Phase 3 (approved 2026-11-11)
-- **Next step:** draft the Phase 4 pre-registration (unsafe definition a–d, fraud-signal routing, risk-tier proactivity, approvals, K4, gate criteria); STOP for owner review before any code
-- **Waiting on owner:** Phase 4 pre-registration review; demo passwords; cloud project + signing method
+- **Next step:** Phase 4 pre-registration committed. Build in order: schema and approval service, staff API, console, then the eval run (support-v4; ~273k over two days; stop on any scenario-level regression)
+- **Waiting on owner:** support-lead demo password (E3; never in chat); demo passwords; cloud project + signing method
 - **Runs:** pytest/offline smoke change nothing; real-model runs may only grow F6 tables. Time pinned to `fixture_now` (G1). Eval runs are throttled to 8k tokens/min; a full 45-scenario run (~198k) needs `--resume` across two days
 - **Notes:** npm audit findings are dev tooling only, left as is. Input borders fixed (zinc-500, >= 3:1 both themes). Known gaps: K1 and K4 scheduled for Phase 4 (pre-registered first); K2, K3, K5 built.
 
@@ -104,6 +104,7 @@ Do not start phase N+1 until every gate item of phase N passes **and the owner a
   - A Phase 1 test signs in as two customers and proves neither sees the other's data.
 - Changes to the Gateway repo follow DECISIONS D5.
 - Stop and ask when product behaviour is ambiguous. Never invent behaviour.
+- **Heuristics may only tighten a decision, never loosen one (DECISIONS J2).** A heuristic (fraud signal, injection guard, any matcher) may escalate, deny or route to approval; it may never permit or auto-approve.
 - **Customer-facing disclosure has three tiers (DECISIONS I15):** (A) order-state facts and (B) published store terms may be said; (C) internal control parameters (auto-approval limits, approval maximums, rolling-window caps and counts, reason codes, rule names) never. The split lives in `rules.yaml` `disclosure`. The model never receives group-C values: tool results carry a status, the request's own facts and a tier-safe `customer_message_hint` only.
 
 ## Token budget (spec Section 2.3)
