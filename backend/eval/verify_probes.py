@@ -38,12 +38,12 @@ SCHEMAS: dict[str, dict[str, tuple[type, ...]]] = {
 CATEGORIES = {
     "boundary": 20, "double_payment": 6, "cross_customer": 13, "amount_tampering": 16,
     "threshold_evasion": 8, "state_violation": 17, "approval_forging": 6, "idempotency": 7,
-    "validation": 1, "structural": 4, "time": 2, "order_status": 5,
+    "validation": 1, "structural": 4, "time": 2, "order_status": 5, "address": 5,
 }  # fmt: skip
 PROTECTIONS = {
     "ownership", "indistinguishable", "policy", "window", "line_rule", "lock", "recompute",
     "validation", "strict_schema", "audit_on_reject", "idempotency", "cancel_refund",
-    "no_approval_tools", "executor_boundary", "clock", "order_status",
+    "no_approval_tools", "executor_boundary", "clock", "order_status", "address_merge",
 }  # fmt: skip
 
 # Reference mutants: each removes one protection from this model, so the mutation table in
@@ -61,13 +61,15 @@ MUTANTS = {
     "M8": "unknown arguments ignored instead of rejected",
     "M8b": "lax types: numeric strings, integral floats and booleans coerced",
     "M8c": "amount_cents typed as a number instead of an integer",
-    "M9": "amount bounds removed",
+    "M9": "gateway validation bounds removed (amount range, summary length, address given)",
     "M13": "system clock instead of the injected clock",
     "M14": "paid-order cancel no longer refunds atomically",
     "M16": "a foreign order answers differently from a missing one",
     "M17": "item line-match dropped: requested items that match no line are ignored",
     "M18": "repeated items not collapsed: each listed item adds its line again",
     "M19": "order status not updated after a succeeded refund",
+    "M23": "address change replaces instead of merging (fields not given are lost)",
+    "M24": "recipient-name and country change flags removed",
 }
 
 
@@ -94,7 +96,10 @@ def schema_ok(tool: str, args: dict[str, Any], m: frozenset[str] = frozenset()) 
             continue
         if isinstance(v, bool) or not isinstance(v, types):  # bool is an int subclass: never an amount
             return False
-    if "new_address" in args and set(args["new_address"]) != ADDRESS_KEYS:
+    if "new_address" in args and (
+        not set(args["new_address"]) <= ADDRESS_KEYS
+        or any(v is not None and not isinstance(v, str) for v in args["new_address"].values())
+    ):  # partial addresses are merged (I12); unknown keys and non-strings are rejected
         return False
     return True
 
@@ -197,6 +202,12 @@ def _derive(
         row: dict[str, Any] = {"kind": "escalation" if tool == "escalate_to_human" else "ticket"}
         led.rows["tickets"].append(row)
         return "ALLOW", None, row
+    if (
+        tool == "update_shipping_address"
+        and all(v is None for v in args["new_address"].values())
+        and "M9" not in m
+    ):
+        return "INVALID", "address_required", None
     if tool in ("request_refund", "issue_store_credit"):
         amt = args["amount_cents"]
         if amt is not None and not 1 <= amt <= INT_MAX and "M9" not in m:
@@ -226,9 +237,22 @@ def _derive(
                 led.flags.append("high_value_cancellation")
         return "ALLOW", None, None
     if tool == "update_shipping_address":
+        current = order["shipping_address"]
+        given = args["new_address"]
+        # I12: merge, not replace (M23 replaces: a field not given becomes empty)
+        merged = {
+            k: given[k] if given.get(k) is not None else ("" if "M23" in m else str(current.get(k) or ""))
+            for k in sorted(ADDRESS_KEYS)
+        }
+        if any(not v.strip() for v in merged.values()):
+            return "INVALID", "address_incomplete", None
         if status not in PREREGISTERED_POLICY["address_change_allowed_statuses"] and "M2" not in m:
             return "DENY", "status_not_addressable", None
-        row = {"order": order["id"], "line1_contains": args["new_address"]["line1"]}
+        if "M24" not in m:
+            for k, flag in (("name", "recipient_name_changed"), ("country", "country_changed")):
+                if merged[k] != (current.get(k) or ""):
+                    led.flags.append(flag)
+        row = {"order": order["id"], "line1_contains": merged["line1"]}
         led.rows["address_changes"].append(row)
         return "ALLOW", None, row
     # Decisions see the order's status as this probe has left it (refunds move it; DECISIONS I10).

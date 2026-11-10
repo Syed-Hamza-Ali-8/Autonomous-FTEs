@@ -33,3 +33,24 @@ cancellation:
   auto_approve_any_amount: true      # nothing has shipped; money returns to the original payment method
   counts_toward_window: false        # the 90-day cap governs returns, not pre-shipment cancellations
   audit_flag_above: {USD: 50000, PKR: 15000000}   # high-value cancellations are flagged, not gated
+
+# Disclosure tiers (owner, DECISIONS I15). Every rule above is in exactly one list
+# (tests/test_policy_rules.py). The third tier, order-state facts ("already shipped", "already refunded"),
+# isn't configured here: it is the order's own status, always sayable.
+disclosure:
+  # B: published store terms, printed publicly by a real store. Customers and the model may be told them.
+  # (Final-sale and digital-after-download are product attributes, published the same way.)
+  published:
+    - return_window_days
+    - refundable_statuses
+    - cancel_allowed_statuses
+    - address_change_allowed_statuses
+  # C: internal control parameters. Never customer-facing, never in a tool result the model sees:
+  # auto-approval limits, approval maximums, rolling-window caps and counts, and the cancellation audit flag.
+  internal:
+    - rolling_window_days
+    - max_refunds_in_window_before_approval
+    - refund
+    - store_credit
+    - window_amount_cap
+    - cancellation

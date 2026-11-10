@@ -22,3 +22,8 @@ the Phase 2 baseline record, and the affected scenarios are re-recorded under th
 |---|---|---|
 | `20261107T213633Z` | Phase 3 batch 1 (14 write scenarios), tool schema `b8a139fe9dfd`: 12/14. p05 failed on a provider-side schema rejection caused by strict-mode tool schemas, fixed by `strict_mode=False` (schema `6fffe0b91095`). | As a measurement under `b8a139fe9dfd` only. **Stale for replay**: re-recorded under the new schema |
 | `20261107T215559Z` | Phase 3, tool schema `6fffe0b91095` (current): p05 d01 d02 d03 e01, 5/5. To be resumed with the rest of the 30 originally approved scenarios. | yes |
+
+**2026-11-09:** address merge (I12) changed the tool schema to `b1cb8a55705b` (prompt `support-v3`). Runs
+`20261107T213633Z` and `20261107T215559Z` are kept as measurements under their schemas, and are stale for replay.
+Everything is re-recorded under `b1cb8a55705b`, starting with the 12-scenario subset.
+| `20261109T161333Z` | Phase 3 subset, tool schema `b1cb8a55705b` (current), prompt `support-v3`: 12/12, recorded (12 recordings). | yes |

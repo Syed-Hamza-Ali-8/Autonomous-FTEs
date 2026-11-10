@@ -31,6 +31,24 @@ export function formatTime(iso: string): string {
   return timeFmt.format(new Date(iso));
 }
 
+/** "17:00" for today, "9 Nov, 17:00" otherwise; the viewer's local clock, like message times. */
+export function formatWhen(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return sameDay ? formatTime(iso) : `${d.getDate()} ${MONTHS[d.getMonth()]}, ${formatTime(iso)}`;
+}
+
+/**
+ * Staff console and audit log (DECISIONS F2, amended): the instant with an EXPLICIT timezone, "7 Nov 2026,
+ * 12:00 UTC", so staff in different places read the same time. Customer-facing times use formatWhen.
+ */
+export function formatStaffTimestamp(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${formatDate(iso)}, ${hh}:${mm} UTC`;
+}
+
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
 export function relativeTime(iso: string, now: Date = new Date()): string {

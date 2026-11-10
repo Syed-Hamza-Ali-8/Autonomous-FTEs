@@ -10,6 +10,7 @@ export type CustomerProfile = Schemas["CustomerProfile"];
 export type ConversationOut = Schemas["ConversationOut"];
 export type MessageOut = Schemas["MessageOut"];
 export type ActionCard = Schemas["ActionCard"];
+export type ActionRecord = Schemas["ActionRecord"];
 export type ChatEvent =
   | Schemas["TurnStarted"]
   | Schemas["Progress"]

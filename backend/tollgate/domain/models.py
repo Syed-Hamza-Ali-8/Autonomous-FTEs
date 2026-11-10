@@ -114,3 +114,19 @@ class ActionCard(BaseModel):
     reference: str | None = None  # the action request, for completed and waiting cards
     explanation: str
     at: datetime  # when the gateway decided, from the injected clock
+
+
+class ActionRecord(BaseModel):
+    """One of the customer's action requests, read live for its ActionCard (DECISIONS C2): the current state
+    (a pending card updates in place when staff decide) and detail too long for the card's live event, such as
+    the full resulting delivery address. Never sent to the model."""
+
+    reference: str
+    action: ActionKind
+    state: ActionState
+    order_id: str | None
+    amount: Money | None = None
+    delivery_address: Address | None = None  # address changes: the address now on the order
+    kept_fields: list[str] = []  # address fields the merge kept from the previous address (I12)
+    at: datetime
+    decided_at: datetime | None = None

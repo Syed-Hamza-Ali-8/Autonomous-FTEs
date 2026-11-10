@@ -36,7 +36,7 @@ from tollgate.auth.deps import CustomerContext
 from tollgate.clock import Clock
 from tollgate.domain import conversations as conv
 from tollgate.errors import BudgetExceededError, ProviderError
-from tollgate.guardrails.claims import check_reply
+from tollgate.guardrails.claims import check_reply, under_claims
 from tollgate.llm import budget
 from tollgate.tools.context import TurnContext
 
@@ -183,6 +183,18 @@ async def run_turn(
                     PROMPT_VERSION,
                     turn_id,
                     json.dumps({"matched": (checked.matched or "")[:200]}),
+                )
+            if checked.passed and (under := under_claims(checked.text, ctx.actions)):
+                # The reverse case is logged, not blocked (Phase 3); the ActionCards still show the truth.
+                await conn.execute(
+                    "INSERT INTO app.audit_log"
+                    " (actor_type, actor_id, event, target, outcome, prompt_version, turn_id, details)"
+                    " VALUES ('system', 'claim_check', 'claim_check_under_claim', $1, 'logged',"
+                    " $2, $3, $4::jsonb)",
+                    str(conv_id),
+                    PROMPT_VERSION,
+                    turn_id,
+                    json.dumps({"findings": under}),
                 )
             msg = await conv.add_assistant_message(
                 conn, conv_id, turn_id, checked.text, list(ctx.referenced_orders), ctx.actions

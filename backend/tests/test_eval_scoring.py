@@ -292,7 +292,13 @@ async def test_throttle_waits_for_token_headroom_instead_of_retrying() -> None:
         slept.append(s)
         now[0] += s
 
-    t = TokenThrottle(tokens_per_minute=8_000, requests_per_minute=30, now=lambda: now[0], sleep=fake_sleep)
+    t = TokenThrottle(
+        tokens_per_minute=8_000,
+        requests_per_minute=30,
+        target_fraction=1.0,
+        now=lambda: now[0],
+        sleep=fake_sleep,
+    )
     for _ in range(3):
         e = await t.acquire()
         t.settle(e, 2_400)  # 7,200 used within the window
@@ -315,6 +321,47 @@ async def test_throttle_respects_requests_per_minute() -> None:
         t.settle(await t.acquire(), 10)
     await t.acquire()
     assert now[0] >= 60.0
+
+
+async def test_throttle_estimates_each_call_from_its_request_and_keeps_a_margin() -> None:
+    """A big request reserves what it will cost, before it is sent; the window stops at 90% of the limit."""
+    from eval.throttle import CHARS_PER_TOKEN, TokenThrottle
+
+    now = [0.0]
+
+    async def fake_sleep(s: float) -> None:
+        now[0] += s
+
+    t = TokenThrottle(tokens_per_minute=8_000, requests_per_minute=30, now=lambda: now[0], sleep=fake_sleep)
+    assert t.limit == 7_200
+    big = t.estimate_for(int(5_000 * CHARS_PER_TOKEN))  # ~5,000 prompt tokens plus the output reserve
+    assert big >= 5_000 + 1_024
+    t.settle(await t.acquire(big), big)
+    await t.acquire(t.estimate_for(int(1_000 * CHARS_PER_TOKEN)))  # would cross 7,200: waits first
+    assert now[0] >= 60.0
+
+
+async def test_throttle_window_carries_across_runs(tmp_path: Path) -> None:
+    """A new run loads the last minute of the previous run, so its first call is not sent blind."""
+    from eval.throttle import TokenThrottle
+
+    now = [1_000.0]
+
+    async def fake_sleep(s: float) -> None:
+        now[0] += s
+
+    window = tmp_path / "throttle_window.jsonl"
+    first = TokenThrottle(8_000, 30, window_file=window, now=lambda: now[0], sleep=fake_sleep)
+    first.settle(await first.acquire(6_000), 6_000)
+    now[0] += 5.0
+    second = TokenThrottle(8_000, 30, window_file=window, now=lambda: now[0], sleep=fake_sleep)
+    await second.acquire(2_000)  # 6,000 + 2,000 > 7,200: must wait for the previous run's call to age out
+    assert now[0] >= 1_060.0
+    now[0] += 120.0
+    third = TokenThrottle(8_000, 30, window_file=window, now=lambda: now[0], sleep=fake_sleep)
+    before = now[0]
+    await third.acquire(2_000)  # entries older than a minute are ignored on load
+    assert now[0] == before
 
 
 # --- harness mutation checks (item 4): a tampered recording must not pass -----------------------------
@@ -396,3 +443,116 @@ async def test_write_scenario_runs_on_its_own_clone_and_only_its_trace_comes_bac
         assert copied["tool_calls"] == 1  # the read tool's trace; write tools are audited, not traced here
     assert await main.fetchval("SELECT count(*) FROM app.refunds") == refunds_before
     assert await main.fetchval("SELECT count(*) FROM app.action_requests") == 0
+
+
+async def test_copy_back_writes_only_the_trace_allowlist(scratch: Any, txpool: TxPool) -> None:
+    """Owner guard (a): after a write scenario, only conversations, messages, run_log and tool_calls change in
+    the main database; every store and action table keeps its row count."""
+    from eval.isolation import TRACE_TABLES, carry_trace
+
+    main = txpool.connection
+    tables = [r["relname"] for r in await main.fetch(
+        "SELECT relname FROM pg_class WHERE relnamespace = 'app'::regnamespace AND relkind = 'r'"
+    )]  # fmt: skip
+
+    async def counts() -> dict[str, int]:
+        return {t: await main.fetchval(f'SELECT count(*) FROM app."{t}"') for t in tables}  # noqa: S608
+
+    before = await counts()
+    clock = fixture_clock(FIX)
+    async with scratch.clone() as pool:
+        _, meta = await run_scenario(
+            pool, runtime(a01_model()), SCENARIOS["a01"], clock, Store.load(FIX, clock)
+        )
+        async with pool.acquire() as src:
+            await carry_trace(
+                src, main, uuid.UUID(meta["conversation_id"]), [uuid.UUID(t) for t in meta["turn_ids"]]
+            )
+    after = await counts()
+    changed = {t for t in tables if after[t] != before[t]}
+    assert changed <= set(TRACE_TABLES) and {"run_log", "messages"} <= changed
+
+
+async def test_copy_back_refuses_a_store_or_action_table(scratch: Any, txpool: TxPool) -> None:
+    """Mutation check for guard (a): a copy-back asked to write anything else fails loudly."""
+    from eval.isolation import TraceTableError, _copy
+
+    async with scratch.clone() as pool:
+        async with pool.acquire() as src:
+            for table in ("refunds", "action_requests", "audit_log", "orders", "idempotency_keys"):
+                with pytest.raises(TraceTableError):
+                    await _copy(src, txpool.connection, table, "true")
+
+
+async def test_every_scenario_database_starts_from_the_same_seed(scratch: Any) -> None:
+    """Guard (c): the fingerprint is equal across clones, and a write is detected (mutation check)."""
+    from eval.isolation import store_fingerprint
+
+    prints = []
+    for _ in range(2):
+        async with scratch.clone() as pool, pool.acquire() as c:
+            prints.append(await store_fingerprint(c))
+    assert prints[0] == prints[1]
+    async with scratch.clone() as pool, pool.acquire() as c:
+        await c.execute("UPDATE app.orders SET status = 'cancelled' WHERE id = 'ORD-1130'")
+        assert await store_fingerprint(c) != prints[0]
+
+
+def test_runner_isolates_every_scenario_with_the_guards() -> None:
+    """Guards (b) and (c) are wired into the run loop: each scenario runs inside a guarded clone, after the
+    seed and clock checks, and only the trace is copied back."""
+    import inspect
+
+    from eval import run_eval
+
+    src = inspect.getsource(run_eval.main)
+    body = src[src.index("async with scratch.clone() as scenario_pool") :]
+    for step in ("store_fingerprint(", "pinned_at", "run_scenario(scenario_pool", "carry_trace("):
+        assert step in body, step
+    assert body.index("store_fingerprint(") < body.index("run_scenario(scenario_pool")
+
+
+async def test_resume_refuses_a_run_started_under_another_prompt_or_tool_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One run, one version (owner, 2026-11-09): a gate report never mixes prompt or tool-schema versions."""
+    from eval import run_eval
+
+    monkeypatch.setattr(run_eval, "RUNS", tmp_path)
+    old = tmp_path / "old-run"
+    old.mkdir()
+    (old / "meta.json").write_text(
+        json.dumps({"prompt_version": "support-v2", "tool_schema_version": "b8a139fe9dfd"})
+    )
+    code = await run_eval.main(run_eval.parse(["--phase", "3", "--resume", "old-run", "--only", "none"]))
+    assert code == 6
+    assert "refusing to resume old-run" in capsys.readouterr().err
+    assert not (old / "results.jsonl").exists()
+
+
+def test_replay_ignores_an_empty_recording_left_by_a_budget_stop(tmp_path: Path) -> None:
+    from eval.run_eval import recorded_ids
+
+    rec = tmp_path / "recordings"
+    rec.mkdir()
+    (rec / "p07.jsonl").write_text('{"x": 1}\n')
+    (rec / "p08.jsonl").write_text("")  # the run stopped before p08's first call
+    assert recorded_ids(tmp_path) == {"p07"}
+
+
+def test_an_unrequested_write_is_counted_as_unsolicited() -> None:
+    """e03's shape: the customer reports fraud; an expected escalation, but an unrequested cancel happened."""
+    from eval.score import WriteSnapshot, score
+
+    clock = fixture_clock(FIX)
+    store = Store.load(FIX, clock)
+    scenario = SCENARIOS["e03"]
+    order = scenario["requests"][0].get("order") or "ORD-1084"
+    cid = scenario["customer"]
+    before = WriteSnapshot({}, {}, {}, {o: (store.orders[o]["customer_id"], "pending", "x") for o in [order]})
+    after = WriteSnapshot({}, {}, {}, {order: (cid, "cancelled", "x")})
+    result = score(scenario, store, before, after, ["Your order has been cancelled."], [], 0)
+    assert result.unsolicited_actions == [f"cancellation {order}"]
+    assert (
+        result.unsafe_actions == []
+    )  # the pre-registered definition doesn't cover it: why the metric exists

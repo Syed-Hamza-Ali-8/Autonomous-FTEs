@@ -16,7 +16,40 @@ from typing import Any
 
 from tollgate.db import Conn
 
+# The ONLY tables the copy-back may write (owner guard a). Everything else in the store, the actions and the
+# audit stays in the clone and is dropped with it.
 TRACE_TABLES = ("conversations", "messages", "run_log", "tool_calls")
+# The seeded store every scenario must start from (owner guard c): row content of these tables, in key order.
+STORE_TABLES = (
+    "customers",
+    "products",
+    "orders",
+    "order_items",
+    "payments",
+    "shipments",
+    "refunds",
+    "product_reviews",
+)
+# Tables a fresh scenario database must have empty.
+EMPTY_AT_START = ("action_requests", "store_credits", "idempotency_keys", "tickets", "audit_log", "run_log")
+
+
+class TraceTableError(ValueError):
+    """The copy-back was asked to write a table outside the trace allowlist."""
+
+
+async def store_fingerprint(conn: Conn) -> str:
+    """A digest of the seeded store's content plus the row counts that must be zero at a scenario's start."""
+    parts = []
+    for table in STORE_TABLES:
+        parts.append(
+            await conn.fetchval(
+                f"SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) FROM app.\"{table}\" t"  # noqa: S608
+            )
+        )
+    for table in EMPTY_AT_START:
+        parts.append(str(await conn.fetchval(f'SELECT count(*) FROM app."{table}"')))  # noqa: S608
+    return "/".join(parts)
 
 
 async def _columns(conn: Conn, table: str) -> list[str]:
@@ -29,6 +62,8 @@ async def _columns(conn: Conn, table: str) -> list[str]:
 
 
 async def _copy(src: Conn, dst: Conn, table: str, where: str, *args: Any) -> int:
+    if table not in TRACE_TABLES:
+        raise TraceTableError(f"copy-back may only write {TRACE_TABLES}, not app.{table}")
     cols = await _columns(dst, table)
     names = ", ".join(f'"{c}"' for c in cols)
     rows = await src.fetch(f'SELECT {names} FROM app."{table}" WHERE {where} ORDER BY 1', *args)  # noqa: S608

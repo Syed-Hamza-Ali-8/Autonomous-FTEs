@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { formatDate, formatMoney, initials } from "./format.ts";
+import { formatDate, formatMoney, formatStaffTimestamp, formatTime, formatWhen, initials } from "./format.ts";
 
 test("USD always shows cents", () => {
   assert.equal(formatMoney({ amount_cents: 3200, currency: "USD" }), "$32.00");
@@ -33,4 +33,21 @@ test("initials for product tiles", () => {
   assert.equal(initials("Electric Kettle 1.7L"), "EK");
   assert.equal(initials("Photo Editor Pro (licence)"), "PE");
   assert.equal(initials("Cookbook (e-book)"), "C");
+});
+
+test("action times: time only today, day and month otherwise", () => {
+  const now = new Date(2026, 10, 9, 18, 0); // 9 Nov 2026, local
+  const today = new Date(2026, 10, 9, 9, 30).toISOString();
+  const earlier = new Date(2026, 10, 7, 17, 0).toISOString();
+  assert.equal(formatWhen(today, now), formatTime(today));
+  assert.equal(formatWhen(earlier, now), `7 Nov, ${formatTime(earlier)}`);
+});
+
+test("staff timestamps carry an explicit timezone; customer ones carry none (F2)", () => {
+  assert.equal(formatStaffTimestamp("2026-11-07T12:00:00Z"), "7 Nov 2026, 12:00 UTC");
+  assert.equal(formatStaffTimestamp("2026-11-07T23:30:00+05:00"), "7 Nov 2026, 18:30 UTC");
+  const iso = "2026-11-07T12:00:00Z";
+  for (const shown of [formatTime(iso), formatWhen(iso, new Date(2026, 0, 1))]) {
+    assert.doesNotMatch(shown, /UTC|GMT|[+-]\d{2}:?\d{2}\b/);
+  }
 });

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 import pytest
 
 from tollgate.domain.models import ActionCard
-from tollgate.guardrails.claims import CORRECTION, CORRECTION_WITH_ACTIONS, check_reply
+from tollgate.guardrails.claims import CORRECTION, CORRECTION_WITH_ACTIONS, check_reply, under_claims
 
 FALSE_CLAIMS = [
     "I've refunded your order.",
@@ -106,3 +106,22 @@ def test_typographic_punctuation_is_normalised_in_shown_text() -> None:
 )
 def test_adverbs_between_subject_and_verb_do_not_hide_a_claim(reply: str) -> None:
     assert not check_reply(reply).passed
+
+
+TICKET_DONE = card("create_ticket", "completed")
+
+
+@pytest.mark.parametrize(
+    ("reply", "actions", "found"),
+    [
+        ("Your refund for ORD-1042 is done.", [REFUND_DONE], []),
+        ("Thanks for waiting! Anything else?", [REFUND_DONE], ["omitted:request_refund"]),
+        ("I'm sorry, I couldn't refund the kettle.", [REFUND_DONE], ["denied:request_refund"]),
+        ("I'm unable to open a ticket right now.", [TICKET_DONE], ["denied:create_ticket"]),
+        ("Your refund is with our team for review.", [REFUND_WAITING], []),  # only completed actions count
+    ],
+)
+def test_under_claims_find_completed_actions_the_reply_omits_or_denies(
+    reply: str, actions: list[ActionCard], found: list[str]
+) -> None:
+    assert under_claims(reply, actions) == found

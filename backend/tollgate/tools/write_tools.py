@@ -17,7 +17,7 @@ from typing import Any
 from agents import FunctionTool, RunContextWrapper, function_tool
 from agents.exceptions import ModelBehaviorError
 from agents.tool_context import ToolContext
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from tollgate.actions import gateway
 from tollgate.tools.context import TurnContext
@@ -25,11 +25,11 @@ from tollgate.tools.context import TurnContext
 
 # Advertised to the model only; the gateway validates the raw arguments with its own strict model.
 class ShippingAddress(BaseModel):
-    name: str
-    line1: str
-    city: str
-    postal_code: str
-    country: str
+    name: str | None = Field(None, description="Recipient name, only if it changes.")
+    line1: str | None = Field(None, description="Street address, only if it changes.")
+    city: str | None = Field(None, description="City, only if it changes.")
+    postal_code: str | None = Field(None, description="Postal code, only if it changes.")
+    country: str | None = Field(None, description="Two-letter country code, only if it changes.")
 
 
 FAILED = "The action could not be completed because of an internal error. Nothing was confirmed."
@@ -114,7 +114,7 @@ async def update_shipping_address(
 
     Args:
         order_id: The order ID, like ORD-1013.
-        new_address: The full new address with keys name, line1, city, postal_code and country.
+        new_address: Only the parts of the address that change; everything left out stays as it is.
     """
     del order_id, new_address
     return await gateway.submit(*_call(ctx))

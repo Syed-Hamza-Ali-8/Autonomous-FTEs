@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 import asyncpg
 from agents import Model, OpenAIChatCompletionsModel, set_tracing_disabled
 
-from eval.isolation import carry_trace
+from eval.isolation import carry_trace, store_fingerprint
 from eval.models import RecordingModel, ReplayDiverged, ReplayModel
 from eval.score import ScenarioScore, WriteSnapshot, score, summarise
 from eval.throttle import ThrottledModel, TokenThrottle
@@ -41,6 +41,7 @@ from tollgate.db import create_pool
 from tollgate.domain import conversations as conv
 from tollgate.llm.budget import tokens_used_24h
 from tollgate.llm.provider import make_client
+from tollgate.policy.disclosure import find
 
 RUNS = Path(__file__).resolve().parent / "runs" / "eval"
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -125,6 +126,11 @@ async def run_scenario(
             "SELECT model_calls, total_tokens, latency_ms FROM app.run_log WHERE turn_id = ANY($1::uuid[])",
             turn_ids,
         )
+        under = await conn.fetchval(
+            "SELECT count(*) FROM app.audit_log"
+            " WHERE turn_id = ANY($1::uuid[]) AND event = 'claim_check_under_claim'",
+            turn_ids,
+        )
         replaced = await conn.fetchval(
             "SELECT count(*) FROM app.audit_log"
             " WHERE turn_id = ANY($1::uuid[]) AND event = 'claim_check_replaced'",
@@ -141,6 +147,13 @@ async def run_scenario(
         # charge per rejected request (owner item 2): visible in every summary.
         "retry_wasted_tokens": int(wasted) + len(failed_turn_ids) * llm.rejected_request_tokens,
         "rejected_requests": len(failed_turn_ids),
+        # Completed actions the reply omitted or denied: logged, not scored as a failure (Phase 3).
+        "under_claims": int(under),
+        # Monitoring (DECISIONS I15), reported, never blocking: replies containing a group-C term (reason
+        # code, rule name, internal window or count), and replies naming an amount equal to an internal
+        # limit (to review: it may simply be the customer's own amount).
+        "internal_terms_in_replies": sum(bool(find(r, ("term",))) for r in replies),
+        "limit_amounts_in_replies": sum(bool(find(r, ("limit_amount",))) for r in replies),
         "unsealed_calls": replay.unsealed if replay else 0,
         "drifted_calls": replay.drifted if replay else 0,
         "turns": len(scenario["turns"]),
@@ -152,6 +165,12 @@ async def run_scenario(
         "turn_ids": [str(t) for t in turn_ids],
     }
     return result, meta
+
+
+def recorded_ids(run_dir: Path) -> set[str]:
+    """Scenarios with a recording to replay. An empty file is a scenario the run never got to (a budget stop
+    can leave one behind), not a recording."""
+    return {p.stem for p in (run_dir / "recordings").glob("*.jsonl") if p.stat().st_size > 0}
 
 
 def why(r: ScenarioScore) -> list[str]:
@@ -192,7 +211,7 @@ async def main(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 5
-        recorded = {p.stem for p in (RUNS / args.replay / "recordings").glob("*.jsonl")}
+        recorded = recorded_ids(RUNS / args.replay)
         chosen = [s for s in chosen if s["id"] in recorded]
     model_name = llm_s.model_strong
     if not model_name:
@@ -231,6 +250,15 @@ async def main(args: argparse.Namespace) -> int:
                 f"pre-flight: ~{need} tokens needed, {remaining} left "
                 f"of {llm_s.llm_daily_token_budget} in the last 24h"
             )
+            if args.until_budget and todo:
+                # Multi-day mode: only the next scenario must fit. Every turn still pre-flights against
+                # the rolling 24h ledger (runner.run_turn) and the run stops cleanly before a turn that
+                # would not fit; resume it after the window rolls.
+                need = len(todo[0]["turns"]) * llm_s.llm_turn_token_estimate
+                print(
+                    f"pre-flight (--until-budget): next scenario needs ~{need};"
+                    " the run stops before the budget"
+                )
             if need > remaining:
                 print(
                     "pre-flight FAILED: not enough budget; run --subset, fewer scenarios, or resume later",
@@ -245,7 +273,21 @@ async def main(args: argparse.Namespace) -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "recordings").mkdir(exist_ok=True)
         meta_path = run_dir / "meta.json"
-        if not meta_path.exists():
+        if meta_path.exists():
+            # One run, one version (owner, 2026-11-09): a resumed run must use the prompt and tool schemas
+            # it started with, or its scenarios would mix versions in one report.
+            started = json.loads(meta_path.read_text())
+            now_versions = {"prompt_version": PROMPT_VERSION, "tool_schema_version": tool_schema_version()}
+            then_versions = {k: started.get(k) for k in now_versions}
+            if then_versions != now_versions:
+                print(
+                    f"refusing to resume {run_id}: it started under {then_versions},"
+                    f" current is {now_versions}; start a new run (and re-run its scenarios)"
+                    " instead of mixing versions",
+                    file=sys.stderr,
+                )
+                return 6
+        else:
             meta_path.write_text(
                 json.dumps(
                     {
@@ -270,13 +312,20 @@ async def main(args: argparse.Namespace) -> int:
         scratch = ScratchDatabases(sb.database_url.get_secret_value())
         await scratch.purge_leftovers()  # an interrupted run leaves its clones behind
         await scratch.build_template()
-        throttle = TokenThrottle(llm_s.llm_tokens_per_minute, llm_s.llm_requests_per_minute)
+        throttle = TokenThrottle(
+            llm_s.llm_tokens_per_minute,
+            llm_s.llm_requests_per_minute,
+            # carried across runs, so a run's first call sees the previous run's last minute
+            window_file=llm_s.llm_budget_ledger.parent / "throttle_window.jsonl",
+        )
         base: Model = ThrottledModel(
             OpenAIChatCompletionsModel(model=model_name, openai_client=make_client(llm_s)),
             throttle,
             llm_s.llm_rejected_request_tokens,
         )
         stopped: str | None = None
+        seed_fingerprint: str | None = None
+        pinned_at = datetime.fromisoformat(fixture["fixture_now"])  # G1: the fixture's instant
         for s in todo:
             if args.replay:
                 model: Model = ReplayModel(
@@ -299,7 +348,15 @@ async def main(args: argparse.Namespace) -> int:
             )
             try:
                 # Clean state per scenario: its own clone of the seeded store; only the trace comes back.
-                async with scratch.clone() as scenario_pool:
+                async with scratch.clone() as scenario_pool:  # schema-identical, local only (guard b)
+                    # Guard c: every scenario starts from the same seed, at the same pinned instant.
+                    async with scenario_pool.acquire() as c:
+                        start = await store_fingerprint(c)
+                    seed_fingerprint = seed_fingerprint or start
+                    if start != seed_fingerprint:
+                        raise StopRun(f"{s['id']}: scenario database does not match the seed; run aborted")
+                    if clock.now() != pinned_at:
+                        raise StopRun(f"{s['id']}: clock moved from the pinned fixture instant; run aborted")
                     result, meta = await run_scenario(scenario_pool, llm, s, clock, store)
                     async with scenario_pool.acquire() as src, pool.acquire() as dst:
                         await carry_trace(
@@ -344,6 +401,9 @@ async def main(args: argparse.Namespace) -> int:
             "rejected_requests",
             "unsealed_calls",
             "drifted_calls",
+            "under_claims",
+            "internal_terms_in_replies",
+            "limit_amounts_in_replies",
         )
         cost: dict[str, Any] = {k: sum(r.get(k, 0) for r in rows) for k in keys}
         cost["throttle_waited_s"] = round(throttle.waited_s, 1)
@@ -375,6 +435,11 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--replay", metavar="RUN_ID", help="re-score using a recorded run's outputs (0 tokens)")
     p.add_argument("--resume", metavar="RUN_ID", help="continue an interrupted run")
     p.add_argument("--dry-run", action="store_true", help="plan and pre-flight only")
+    p.add_argument(
+        "--until-budget",
+        action="store_true",
+        help="run what fits today: per-turn pre-flight stops the run cleanly; resume later",
+    )
     p.add_argument(
         "--allow-drift", action="store_true", help="replay even if inputs changed (marked drifted)"
     )

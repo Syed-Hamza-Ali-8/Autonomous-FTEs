@@ -486,3 +486,59 @@ async def test_chat_true_claim_backed_by_a_completed_action_passes(
     cards = [e["card"] for e in events if e["type"] == "action"]
     assert [(c["action"], c["state"]) for c in cards] == [("create_ticket", "completed")]
     assert next(e for e in events if e["type"] == "reply")["text"].startswith("I've submitted a ticket")
+
+
+async def test_completed_action_the_reply_leaves_out_is_logged_not_blocked(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, _, _ = people
+    summary = "Please have someone call me about my order."
+    script(
+        [
+            CallTool("create_ticket", {"summary": summary, "category": "other"}),
+            Say("Thanks for your patience!"),
+        ]
+    )
+    status, events = await chat(client, a, {"message": summary})
+    assert status == 200
+    assert (
+        next(e for e in events if e["type"] == "reply")["text"] == "Thanks for your patience!"
+    )  # not blocked
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    logged = await db.fetchval(
+        "SELECT details->'findings' FROM app.audit_log"
+        " WHERE turn_id = $1 AND event = 'claim_check_under_claim'",
+        turn_id,
+    )
+    assert json.loads(logged) == ["omitted:create_ticket"]
+
+
+async def _address_request(db: asyncpg.Connection, customer_id: str, order_id: str) -> str:
+    address = {"name": "Sana Morgan", "line1": "14 Garden Road", "city": "Lahore", "postal_code": "54000",
+               "country": "PK"}  # fmt: skip
+    ref: str = await db.fetchval(
+        "INSERT INTO app.action_requests (customer_id, turn_id, action, order_id, args, decision, status,"
+        " created_at) VALUES ($1, gen_random_uuid(), 'update_shipping_address', $2, $3::jsonb, 'ALLOW',"
+        " 'executed', now()) RETURNING id",
+        customer_id,
+        order_id,
+        json.dumps({"new_address": address, "changed": ["line1"]}),
+    )
+    return ref
+
+
+async def test_action_record_shows_the_resulting_address_and_is_owner_only(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, b, _ = people
+    mine = await _address_request(db, a.customer_id, a.order_ids[0])
+    theirs = await _address_request(db, b.customer_id, b.order_ids[0])
+    ok = await client.get(f"/v1/actions/{mine}", headers=a.headers)
+    assert ok.status_code == 200
+    body = ok.json()
+    assert (body["state"], body["delivery_address"]["line1"]) == ("completed", "14 Garden Road")
+    assert body["kept_fields"] == ["name", "city", "postal_code", "country"]
+    foreign = await client.get(f"/v1/actions/{theirs}", headers=a.headers)
+    missing = await client.get("/v1/actions/ACT-999999", headers=a.headers)
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.content == missing.content  # indistinguishable (invariant 8)

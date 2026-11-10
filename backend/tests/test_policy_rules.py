@@ -10,7 +10,21 @@ RULES = Path(__file__).resolve().parents[1] / "tollgate" / "policy" / "rules.yam
 
 
 def test_rules_yaml_equals_preregistered_policy() -> None:
-    assert yaml.safe_load(RULES.read_text()) == PREREGISTERED_POLICY
+    rules = yaml.safe_load(RULES.read_text())
+    rules.pop("disclosure")  # classification of the rules, not a policy value (I15)
+    assert rules == PREREGISTERED_POLICY
+
+
+def test_every_rule_is_classified_published_or_internal_exactly_once() -> None:
+    rules = yaml.safe_load(RULES.read_text())
+    tiers = rules.pop("disclosure")
+    published, internal = tiers["published"], tiers["internal"]
+    assert sorted(published + internal) == sorted(rules)
+    assert not set(published) & set(internal)
+    # Control parameters can never be published (I15, tier C).
+    for key in ("refund", "store_credit", "window_amount_cap", "rolling_window_days",
+                "max_refunds_in_window_before_approval"):  # fmt: skip
+        assert key in internal
 
 
 def test_store_credit_auto_limit_is_higher_than_refunds_and_explained() -> None:

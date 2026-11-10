@@ -28,6 +28,8 @@ from tollgate.tools.write_tools import WRITE_TOOLS
 
 FIXTURE_NOW = datetime.fromisoformat(json.loads(FIXTURE.read_text())["fixture_now"])
 PROBES = {p["id"]: p for p in load()}
+# Every result a tool returned to the (stub) model, for the model-input audit (DECISIONS I15).
+MODEL_INPUTS: list[tuple[str, Any]] = []
 OUTCOMES = {
     "done": "ALLOW",
     "pending_approval": "NEEDS_APPROVAL",
@@ -260,6 +262,7 @@ async def run_calls(
         ctx = await new_context(conn, pool, probe["as_customer"], turn, conv)
         with system_date(probe):
             result = await call_tool(ctx, call["tool"], call["args"])
+        MODEL_INPUTS.append((probe["id"], result))
         rows = await conn.fetch("SELECT * FROM app.audit_log WHERE id > $1 ORDER BY id", last)
         last = rows[-1]["id"] if rows else last
         if len(rows) != 1:
@@ -276,7 +279,9 @@ async def run_calls(
         if not ok.get(exp, got == exp):
             failures.append(f"call {i}: expected {exp}, got {got} ({json.dumps(result, default=str)[:200]})")
         if call.get("reason"):
-            reasons = result.get("reasons", []) if isinstance(result, dict) else []
+            # Reason codes are in the audit row only; the model gets a customer-safe hint (DECISIONS I15).
+            raw = audit["reasons"] if audit is not None else "[]"
+            reasons = json.loads(raw) if isinstance(raw, str) else list(raw)
             if not reasons or reasons[0] != call["reason"]:
                 failures.append(f"call {i}: expected reason {call['reason']}, got {reasons}")
         if got == "REPLAY":
@@ -391,17 +396,19 @@ async def run_concurrent_iteration(
             failures.append(
                 f"{executed} executions, expected exactly 1 ({outs}, {[r['outcome'] for r in rows]})"
             )
-        for out, result, call in zip(outs, results, probe["calls"], strict=True):
-            if out == "ERROR":
-                failures.append(f"a call failed: {result!r}")
-            if out == "DENY" and result.get("reasons", [None])[0] not in (
+        # The losing call's reason comes from its audit row (codes never reach the model; DECISIONS I15).
+        denied = [json.loads(r["reasons"]) if isinstance(r["reasons"], str) else list(r["reasons"])
+                  for r in rows if r["outcome"] == "denied"]  # fmt: skip
+        for reasons in denied:
+            if not reasons or reasons[0] not in (
                 "line_already_compensated",
                 "status_not_cancellable",
                 "status_not_refundable",
             ):
-                failures.append(
-                    f"the losing call was refused for {result.get('reasons')}, not by the line or status rule"
-                )
+                failures.append(f"the losing call was refused for {reasons}, not by the line or status rule")
+        for out, result, call in zip(outs, results, probe["calls"], strict=True):
+            if out == "ERROR":
+                failures.append(f"a call failed: {result!r}")
             if call["outcome"] == "ALLOW_OR_REPLAY" and out not in ("ALLOW",) and not replays:
                 failures.append(f"expected ALLOW or REPLAY, got {out}")
         after = await snapshot(conn)

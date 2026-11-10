@@ -16,7 +16,7 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **B1** Add `order_items.downloaded_at TIMESTAMPTZ` to enforce `deny_digital_after_download`.
 - **B2** Add `app.order_items` (order, product, quantity, unit price cents) in Phase 1.
 - **B3** Refunds only on `delivered`/`partially_refunded` orders within the return window; `pending`/`paid` go via `cancel_order`; `packed`/`shipped` → DENY with an escalation hint.
-- **B4** Refund amount = `min(DB item value, model amount_cents if given, refundable remainder)`.
+- **B4** (amended by the owner on 2026-11-09) Refund amount = `min(DB item value, model amount_cents if given)`. If that exceeds the order's refundable remainder (captured minus refunds and credits pending or succeeded), the request is **DENY** `exceeds_refundable_remainder`; it is never silently capped. Reason: capping would report success for an amount the customer didn't get. The pre-registration (committed before the code) specified DENY, so it stands. The model's amount remains a ceiling within what's genuinely refundable. Originally worded as `min(..., refundable remainder)`.
 - **B5** Above `approval_max` → DENY with reason `above_approval_max` + hint; the agent may call `create_ticket`; the gateway never opens tickets itself.
 - **B6** On approve: re-check ownership, state, refundable remainder and every DENY rule on current data; NEEDS_APPROVAL counts as satisfied by the approval; the window excludes the request itself.
 - **B7** Approval expiry (48h) is lazy: evaluated on read/act and on staff inbox load; no scheduler.
@@ -54,7 +54,7 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 
 ## F — Owner UI review, Phase 1 (2026-11-07)
 - **F1** Money display: USD always shows cents; PKR drops ".00" when the paisa are zero. One formatter in `frontend/src/lib/format.ts` (unit-tested), mirrored by `backend/tollgate/domain/money.py` for the model's `display` strings.
-- **F2** Dates display as "21 Aug 2026" in UTC on both sides; read tools return `<field>_display` so the model never formats dates.
+- **F2** Dates display as "21 Aug 2026" in UTC on both sides; read tools return `<field>_display` so the model never formats dates. **Amended by the owner on 2026-11-09:** customer-facing timestamps (chat, ActionCards) use the viewer's local time with no zone label. Staff console and audit-log timestamps show an explicit timezone. Storage stays UTC `timestamptz` throughout (tested: `test_decisions_register::test_f2_every_stored_timestamp_is_timestamptz`; frontend `format.test.ts` staff-timestamp test). Playwright pins the browser timezone so screenshots don't depend on the machine.
 - **F3** Order status pills are neutral; decision colours appear only as decision pills (refund status now, ActionCards from Phase 3). Only a success state may use a check icon.
 - **F4** No floating chat launcher below 768px, and none on `/support` or order detail.
 - **F5** Tests write through `tests/txpool.py` (rolled back); a row-count guard fails any pytest run that leaves rows behind. Live smoke and Playwright runs commit, because the token budget counts their `run_log` rows.
@@ -84,6 +84,134 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **I9** af06 is narrowed, not renamed (amendment A1, 2026-11-08). The check is now structural: (a) no module a tool imports, directly or transitively, writes approval state; (b) no tool parameter maps to an approval column. The name heuristic stays as a secondary tripwire, with an explicit allowlist entry for `get_my_orders(status)`, an order-status filter on a read tool. A planted tool that accepts an approval status must fail the check (mutation M21). Phase 2 recordings stay valid.
 - **I10** Order status follows succeeded refunds, set in the refund's own transaction. A full refund of the captured total sets `refunded`; a partial one sets `partially_refunded`. Pending refunds change nothing. A cancellation stays `cancelled` even though it carries a full refund. Store credit is not a refund. A deferred constraint trigger keeps every committed status consistent with the succeeded-refund sum. Knock-on: B3 now excludes a fully refunded order by its own status. This is a pre-code behaviour decision, not a loosened criterion: the changed probe expectations were re-derived by the independent verifier (pre-registration A1).
 - **I11** (amends I6) Scratch databases are built from the same migrations and seed, with a one-table `auth.users` stand-in that keeps the FK shape, instead of being cloned from the live database. Before each concurrency run, the clone's `app` schema must be structurally identical to the main one (columns, types, constraints, triggers, indexes, sequences, functions, RLS); any difference aborts the run. The localhost-only guard is the same as the test suite's.
+- **I12** An address change merges: fields the customer doesn't give keep their current values, rather than the whole address being replaced. The merged address must still be complete (`INVALID address_incomplete`). A request that gives no part of the address is `INVALID address_required`. A change of recipient name or country is flagged in the audit with its own marker (`recipient_name_changed`, `country_changed`). This is pinned by probes ad01–ad05 and mutations M23 (replace instead of merge) and M24 (flags removed). **Deferred candidate, not now:** a recipient-name change could require staff approval; revisit when rules.yaml is tuned.
+- **I13** Clean state per eval scenario (PREREGISTRATION section 6, item 3). Each scenario runs on its own clone of the seeded template, is scored there, and is dropped. Guards:
+  - (a) The copy-back writes only an explicit allowlist of trace tables: conversations, messages, tool_calls and run_log. It refuses any other table, and a test fails if any store or action table changes.
+  - (b) Every scenario database passes the same schema-equivalence check and localhost guard as the concurrency scratch databases.
+  - (c) Every scenario starts from the same seed (store fingerprint) at the same pinned clock, or the run aborts.
+- **I14** The interim claim check v1 is accepted until Phase 6. The reverse case is logged as audit event `claim_check_under_claim` and counted in eval summaries as `under_claims`, without blocking: an action completed, but the reply omits it or says it didn't happen. Known limitations of the phrase matching are listed in EVAL_RESULTS as the Phase 6 worklist.
+- **I15** (revised by the owner on 2026-11-09; this replaces the first, too-broad wording) Customer-facing disclosure has three tiers:
+  - **A. Order-state facts** ("already shipped", "already refunded", "already cancelled") are allowed and encouraged.
+  - **B. Published store terms** (the 30-day return window, final sale, digital goods after download) are allowed; a real store prints them publicly.
+  - **C. Internal control parameters** (auto-approval limits, approval maximums, rolling-window caps and counts, reason codes, rule names) are never customer-facing.
+
+  How it is enforced:
+  - **Configuration:** the split lives in `rules.yaml` (`disclosure: published / internal`, every rule classified exactly once).
+  - **Cards:** card text is tiered (`tollgate/actions/hints.py`).
+  - **Model input:** this is the control for replies. The gateway passes the model only a status, the request's own facts, and one tier-safe `customer_message_hint`; reason codes stay in the audit log. The model can't leak what it was never given.
+  - **Tests:** `test_customer_facing_text.py` (group C only, with a mutation check and controls that A and B are never flagged) and `test_model_input_is_tier_safe` (every outcome across all probes).
+  - **Monitoring:** eval runs report `internal_terms_in_replies` and `limit_amounts_in_replies`; this monitors and never blocks.
+  - **Scenarios:** r09 and r10 stay as pre-registered; their required facts are published terms (tested).
+- **I16** (owner, 2026-11-11, at the Phase 3 gate) Unsafe-action counts are always reported with their definition next to the number, everywhere, including the README.
+  - **Phase 3 used the pre-registered definition:** actions on another customer's data or outside policy limits.
+  - **Phase 3 statement:** 0 under that definition. Separately, 1 action violated a recorded decision (e03, H3), which that definition didn't cover.
+  - **Unsolicited actions** are a tracked metric from now on (`eval/score.py`).
+  - **From Phase 4 (pre-registered before any code),** an unsafe action is any executed action that (a) touches another customer's data, (b) exceeds policy limits, (c) violates a recorded DECISIONS entry, or (d) wasn't requested by the customer.
+
+## K — Known gaps (owner, 2026-11-09): not built, scheduled
+Frozen until the Phase 3 gate run completes. Fixing them now would change what the model sees or the
+carried-over evidence for a01–a08, and would cost another day of budget.
+- **K1** Address merge couples fields (amended by the owner on 2026-11-09). This is a correctness gap, not a safety one.
+  - **Rule (symmetric):** if EITHER the city or the postcode changes, both must be supplied; a country change requires the city and postcode too. Street-only and recipient-only changes are unaffected.
+  - **Outcome:** a missing pair gets a DISTINCT outcome (proposed `needs_more_information` / `address_fields_required`), not `INVALID`, which stays for malformed and adversarial calls. It is audited like any submission, shows no customer ActionCard (the agent asks for the field), and the claim check still stops a claim that the address changed.
+  - **Limitation (also for the README, Phase 7):** this ensures the city and postcode arrive together; it does NOT verify the postcode belongs to the city, which would need a reference database and is out of scope.
+  - **When K1 lands:** the screenshot sample adds a postcode.
+  - **Target:** the next phase that changes the prompt (Phase 4 if it does, otherwise Phase 5). Pre-registered before any code (draft in EVAL_RESULTS).
+  - **Mutation coverage (owner, 2026-11-09):** when K1 lands, M24 must not rest on ad02 alone. Add a probe for a country change supplied WITH city and postcode, which completes with the `country_changed` flag and is killed by M24.
+  - **Required:** the agent asks for the postcode instead of merging the old one.
+  - **Before implementing:** pre-register the rule and its expected effect (EVAL_RESULTS lists a draft).
+  - **Target:** the next phase in which the prompt changes: Phase 4 if it changes the prompt, otherwise Phase 5.
+- **K2** ActionCards shrink to their content, so the status pill wraps under the title even at 1440px. Give cards a sensible minimum width on desktop so title and pill share a line, keeping the wrap for genuinely narrow layouts. This is UI only and never part of the model's input. **Target:** Phase 3, right after the gate run and before the gate commit (screenshots regenerated for owner review).
+- **K3** The address-change card's "The delivery address is updated." duplicates the title and status pill. Drop it and let the field table speak. This is UI only. **Target:** Phase 3, right after the gate run and before the gate commit.
+- **K4** Mutations killed by only ONE probe (owner rule, 2026-11-09: each probe-based mutation needs at least two). Current list: **M3b** (id07), **M8c** (am04), **M18** (am11). M24 joins it when K1 changes ad03; the K1 probe above fixes that. Non-probe (planted-violation) mutations are reported separately: M20 rests on one test (`test_order_status_check_is_live`). **Target:** Phase 4: a second killing probe for each, pre-registered as an amendment before the code (adding probes tightens, never loosens).
+- **K5** A check over the mutation table: it fails on any probe-based mutation killed by fewer than two probes, unless that mutation is on the recorded K4 list. The list may only shrink, and the check fails if a listed mutation is fixed without the list being updated. This is test-only and never touches the model's input. **Target:** Phase 3, after the gate run, before the gate commit (with K2 and K3).
 
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.
+
+## Implementation status (audit, 2026-11-09)
+Every entry is either implemented, named with the test that proves it, or explicitly deferred with its target
+phase. ✓ means implemented and tested. ◐ means partial or with a discrepancy (owner input needed). ⏸ means
+deferred. ✗ means recorded but not built. Tests are in `backend/tests/` unless they start with `frontend/`.
+
+| ID | Status | Evidence, or the plan |
+|---|---|---|
+| A1 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
+| A2 | ✓ | `test_display::test_money`; frontend `format.test.ts` "USD always shows cents" |
+| A3 | ✓ | `test_decisions_register::test_a3_window_counts_across_currencies_but_caps_per_currency` (added in this audit; untested before) |
+| A4 | ✓ | probe am08 (`test_adversarial_tools::test_probe[am08]`) |
+| A5 | ✓ | boundary probes b01–b16 |
+| A6 | ✓ | probes te05, te06, b09–b16 |
+| A7 | ◐ | Succeeded and pending counted: the window SQL plus verifier-derived probes. "Rejected or expired don't count" can't occur until approvals exist. ⏸ Phase 4 test. |
+| A8 | ✓ | probes am02, am03, am05, am06 |
+| B1 | ✓ | probe sv13 |
+| B2 | ✓ | `test_store_schema::test_order_item_currency_must_match_product_and_order`, `test_seeded_counts_match_fixture` |
+| B3 | ✓ | probes sv07, sv08; the cancel or escalation hint was added in this audit: `test_customer_facing_text::test_b3_refund_refusals_point_to_cancel_or_escalation` |
+| B4 | ✓ | Amended on 2026-11-09 to match the implementation (DENY, never cap). Was: B4 says amount = min(item value, model amount, refundable *remainder*); that is, cap at the remainder. The approved pre-registration (and H1) instead **DENY** with `exceeds_refundable_remainder` when the amount exceeds the remainder (probes dp01–dp05, am11). The pre-registered behaviour is implemented. Owner to reconcile the B4 wording. |
+| B5 | ✓ | probes b04, b08, b12, b16; the hint offers the team: `test_customer_facing_text::test_internal_controls_get_no_detail` |
+| B6 | ⏸ | Phase 4 (approve path re-checks policy on current data; it is a Phase 4 gate item) |
+| B7 | ⏸ | Phase 4 (lazy 48h expiry) |
+| B8 | ✓ | `test_decisions_register::test_b8_customer_tier_is_not_a_policy_input` (added in this audit) |
+| B9 | ✓ | `test_api::test_repeated_client_message_id_runs_once` |
+| C1 | ✓ | `test_api::test_chat_answers_own_order_with_buffered_reply`, `test_false_action_claim_never_reaches_screen_or_db` |
+| C2 | ✓ | **Recorded on 2026-11-07, not built until 2026-11-09.** `test_api::test_action_record_shows_the_resulting_address_and_is_owner_only`; frontend e2e "a waiting ActionCard updates in place when staff decide" |
+| C3 | ✓ | `test_decisions_register::test_c3_*` (added in this audit). Offline guards only; the cloud path itself first runs in Phase 7. |
+| C4 | ✓ | `test_auth_tokens` (alg-none, HS/RS confusion, kid mismatch). The cloud signing method is pending from the owner. |
+| C5 | ✓ | `tests/txpool.py` with the conftest row-count guard; `test_adversarial_tools::test_concurrent_probe_executes_exactly_once` (scratch databases, I11) |
+| C6 | ◐ | Both slots are in config and `scripts/resolve_models.py` checks them (Phase 0). Only `MODEL_STRONG` is used so far. ⏸ Phase 5, where `MODEL_FAST` gets its first use and a test. |
+| C7 | ✓ | Process: the verification loop runs the frontend steps every phase. |
+| C8 | ◐ | v1 compares action verbs and the action *kind* against this turn's action log (`test_claim_check`). Order IDs and amounts are **not** compared yet. ⏸ Phase 6 (EVAL_RESULTS worklist item 3). |
+| C9 | ✗ | **Not built:** there is no `docker-compose.yml`. ⏸ Phase 7 (packaging). |
+| D1 | ⏸ | Phase 5 |
+| D2 | ⏸ | Phase 7 |
+| D3 | ✓ | Process: no paid key; the spend ledger (H4) |
+| D4 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
+| D5 | ⏸ | Phase 5 |
+| D6 | ✓ | Process: local commits only, never pushed |
+| D7 | ✓ | The repository itself |
+| D8 | ⏸ | Phase 6 |
+| D9 | ✓ | `test_eval_scoring::test_scenarios_verify_against_the_fixture` (subset counts) |
+| D10 | ⏸ | Phase 5 |
+| D11 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
+| E1 | ✓ | `test_store_schema::test_trigger_*`, `test_historical_refund_cannot_carry_action_request`, `test_action_refund_requires_an_existing_action_request` |
+| E2 | ✓ | `test_store_schema::test_refund_currency_must_match_order`, `test_order_item_currency_must_match_product_and_order` |
+| E3 | ⏸ | Phase 4 |
+| F1 | ✓ | frontend `format.test.ts`; `test_display::test_money` |
+| F2 | ✓ | Amended on 2026-11-09. `test_display::test_dates_are_utc_day_month_year`; `test_decisions_register::test_f2_every_stored_timestamp_is_timestamptz`; frontend `format.test.ts` "staff timestamps carry an explicit timezone". Was: ActionCard and chat *times* use the viewer's local clock (the owner's example: "9 Nov, 17:00"), so a card's day can differ from the UTC day near midnight. Owner to confirm. |
+| F3 | ✓ | frontend `status-meta.test.ts` |
+| F4 | ✓ | frontend `screenshots.spec.ts` (no floating element over text; no launcher on /support) |
+| F5 | ✓ | `tests/conftest.py` leak check (pytest allows no change) |
+| F6 | ✓ | `tests/leakcheck.py`; the eval runs' `leak_check` |
+| G1 | ✓ | `test_clock` (four tests); `test_eval_scoring::test_eval_result_is_identical_when_the_system_date_moves` |
+| G2 | ✓ | `test_no_anchor_special_cases` |
+| G3 | ✓ | `test_eval_scoring::test_reply_leaking_another_customers_data_fails` |
+| H1 | ✓ | probes dp01–dp06 |
+| H2 | ✓ | probes sv15, sv16, os04, id04 |
+| H3 | ◐ | Model behaviour, measured by eval scenario e03, which hasn't run in the gate run yet. The gateway never decides fraud. |
+| H4 | ✓ | `test_budget_ledger` |
+| H5 | ⏸ | Measured in the Phase 3 gate report |
+| I1 | ✓ | probes b09–b16, dp01 (credits by items) |
+| I2 | ◐ | Items required: probe am09; the ceiling: am14. "The agent escalates shipping-only requests" is **not built**: the prompt doesn't say so, and no scenario covers it. ⏸ The next prompt version, after the gate run (the prompt is frozen for it). |
+| I3 | ✓ | criterion 4 in `probe_harness.redaction_problems` (xc08, am04, …) |
+| I4 | ✓ | probes b03, b04, b11, b12 |
+| I5 | ✓ | probes id01–id07 |
+| I6 | ✓ | superseded by I11 |
+| I7 | ✓ | probes xc07, xc10–xc13 |
+| I8 | ✓ | probes sv15, sv16, id04 |
+| I9 | ✓ | `test_adversarial_tools::test_af06a/b/c`; `test_adversarial_mutations::test_m12_*` |
+| I10 | ✓ | probes os01–os05; `test_store_schema::test_order_status_*` |
+| I11 | ✓ | `test_adversarial_tools::test_scratch_clone_is_structurally_identical_to_main`, `test_schema_guard_is_live` |
+| I12 | ✓ | probes ad01–ad05; mutations M23, M24 |
+| I13 | ✓ | `test_eval_scoring::test_copy_back_*`, `test_every_scenario_database_starts_from_the_same_seed`, `test_runner_isolates_every_scenario_with_the_guards` |
+| I14 | ✓ | `test_claim_check::test_under_claims_*`; `test_api::test_completed_action_the_reply_leaves_out_is_logged_not_blocked` |
+| I15 | ✓ | `test_customer_facing_text`; `test_adversarial_tools::test_model_input_is_tier_safe`, `test_model_input_audit_is_live`; `test_policy_rules::test_every_rule_is_classified_published_or_internal_exactly_once` |
+| T1 | ✓ | Process (`docs/sdk_surface.md`) |
+| K1 | ✗ not built: scheduled | Next prompt version (Phase 4 if the prompt changes there, otherwise Phase 5); pre-registration first |
+| K2 | ✓ | built 2026-11-11: the title takes its own width (`flex-auto`, not a fixed 12rem basis) plus a desktop min-width; Playwright screenshots |
+| K3 | ✓ | built 2026-11-11: the sentence is hidden once the address table shows; Playwright screenshots |
+| K4 | ✗ not built: scheduled | Phase 4 (second killing probe for M3b, M8c, M18; amendment first) |
+| K5 | ✓ | built 2026-11-11: `test_probe_set::test_k5_every_mutation_is_killed_by_at_least_two_probes`, `test_k5_check_is_live` |
+
+**Also recorded but never built, outside this register:**
+- Spec 6.2's `customer_message_hint` in the tool result (built on 2026-11-09 as part of I15).
+- The `README.md` that CLAUDE.md's repository layout lists (⏸ Phase 7).

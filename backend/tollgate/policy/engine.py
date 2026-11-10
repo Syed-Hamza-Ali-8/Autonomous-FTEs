@@ -37,6 +37,13 @@ class CancellationRules(_Strict):
     audit_flag_above: dict[Currency, int]
 
 
+class Disclosure(_Strict):
+    """Which rules customers may be told (published) and which never leave the system (internal; I15)."""
+
+    published: list[str]
+    internal: list[str]
+
+
 class Rules(_Strict):
     return_window_days: int
     rolling_window_days: int
@@ -48,6 +55,7 @@ class Rules(_Strict):
     cancel_allowed_statuses: list[str]
     address_change_allowed_statuses: list[str]
     cancellation: CancellationRules
+    disclosure: Disclosure
 
     def limits(self, kind: MoneyKind) -> Limits:
         return self.refund if kind == "refund" else self.store_credit

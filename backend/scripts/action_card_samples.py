@@ -26,7 +26,8 @@ from tollgate.actions import gateway
 from tollgate.auth.deps import CustomerContext
 from tollgate.clock import FixedClock
 from tollgate.config import SupabaseSettings
-from tollgate.domain.models import ActionCard
+from tollgate.domain import actions
+from tollgate.domain.models import ActionCard, ActionRecord
 from tollgate.tools.context import TurnContext
 
 FIXTURE_NOW = datetime.fromisoformat(
@@ -34,11 +35,19 @@ FIXTURE_NOW = datetime.fromisoformat(
 )
 
 
+RECORDS: dict[str, ActionRecord] = {}  # action records read before each rollback (DECISIONS C2)
+
+
 async def attempt(pool: TxPool, ctx: TurnContext, action: str, args: dict[str, Any]) -> ActionCard | None:
     async with pool.savepoint():
         ctx.actions.clear()
         await gateway.submit(ctx, action, json.dumps(args))
-        return ctx.actions[-1] if ctx.actions else None
+        card = ctx.actions[-1] if ctx.actions else None
+        if card is not None and card.reference and card.reference.startswith("ACT-"):
+            record = await actions.get_action(pool.connection, ctx.customer.customer_id, card.reference)
+            if record is not None:
+                RECORDS[card.reference] = record
+        return card
 
 
 async def samples(pool: TxPool, customer_id: str) -> list[ActionCard]:
@@ -75,13 +84,8 @@ async def samples(pool: TxPool, customer_id: str) -> list[ActionCard]:
                 found.setdefault(card.state, card)
     # No refund or credit completes automatically for some customers (e.g. their rolling-window history):
     # any completed action shows the state, so fall back to an address change, then a ticket.
-    address = {
-        "name": row["name"],
-        "line1": "14 Garden Road",
-        "city": "Lahore",
-        "postal_code": "54000",
-        "country": "PK",
-    }
+    # Only what the customer says ("14 Garden Road, Lahore"): the merge keeps the rest (DECISIONS I12).
+    address = {"line1": "14 Garden Road", "city": "Lahore"}
     for line in lines:
         if "completed" not in found and line["status"] in ("pending", "paid", "packed"):
             card = await attempt(
@@ -114,7 +118,10 @@ async def main(customer_id: str) -> int:
         return 2
     async with rolled_back(dsn) as pool:
         cards = await samples(pool, customer_id)
-    print(json.dumps({"cards": [c.model_dump(mode="json") for c in cards]}))
+    records = {
+        c.reference: RECORDS[c.reference].model_dump(mode="json") for c in cards if c.reference in RECORDS
+    }
+    print(json.dumps({"cards": [c.model_dump(mode="json") for c in cards], "records": records}))
     return 0
 
 

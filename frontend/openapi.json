@@ -94,6 +94,101 @@
         "title": "ActionCard",
         "type": "object"
       },
+      "ActionRecord": {
+        "description": "One of the customer's action requests, read live for its ActionCard (DECISIONS C2): the current state\n(a pending card updates in place when staff decide) and detail too long for the card's live event, such as\nthe full resulting delivery address. Never sent to the model.",
+        "properties": {
+          "action": {
+            "enum": [
+              "request_refund",
+              "issue_store_credit",
+              "cancel_order",
+              "update_shipping_address",
+              "create_ticket",
+              "escalate_to_human"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Address"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kept_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Kept Fields",
+            "type": "array"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "completed",
+              "waiting_for_approval",
+              "not_allowed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "action",
+          "state",
+          "order_id",
+          "at"
+        ],
+        "title": "ActionRecord",
+        "type": "object"
+      },
       "Address": {
         "properties": {
           "city": {
@@ -860,6 +955,49 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/actions/{reference}": {
+      "get": {
+        "description": "One of the customer's own action requests, for its ActionCard (C2).",
+        "operationId": "get_action_v1_actions__reference__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "title": "Reference",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Action",
+        "tags": [
+          "store"
+        ]
+      }
+    },
     "/v1/chat": {
       "post": {
         "operationId": "chat_v1_chat_post",

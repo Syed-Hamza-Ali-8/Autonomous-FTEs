@@ -93,3 +93,32 @@ def check_reply(reply: str, actions: Sequence[ActionCard] = ()) -> ClaimCheck:
                 passed=False, text=CORRECTION_WITH_ACTIONS if actions else CORRECTION, matched=claim
             )
     return ClaimCheck(passed=True, text=text, matched=None)
+
+
+# -- the reverse case: an action completed, but the reply omits it or says it didn't happen ------------------
+# Logged (audit event `claim_check_under_claim`) and counted in eval summaries; never blocks (owner, Phase 3).
+
+NEGATION = re.compile(
+    r"(?i)\b(?:couldn't|could\s+not|can't|cannot|wasn't\s+able|was\s+not\s+able|unable|not\s+able|didn't"
+    r"|did\s+not|haven't|have\s+not|won't|will\s+not|isn't\s+possible|not\s+possible)\b"
+)
+NEGATION_WINDOW = 40  # characters before a mention of the action searched for a negation
+
+
+def under_claims(reply: str, actions: Sequence[ActionCard]) -> list[str]:
+    """Completed actions the reply leaves out ("omitted:<action>") or denies ("denied:<action>")."""
+    text = normalise(reply)
+    kinds = dict(KINDS)
+    out: list[str] = []
+    for card in actions:
+        if card.state != "completed":
+            continue
+        mentions = list(kinds[card.action].finditer(text))
+        if not mentions and not (card.order_id and card.order_id in text):
+            out.append(f"omitted:{card.action}")
+            continue
+        for m in mentions:
+            if NEGATION.search(text[max(0, m.start() - NEGATION_WINDOW) : m.start()]):
+                out.append(f"denied:{card.action}")
+                break
+    return out

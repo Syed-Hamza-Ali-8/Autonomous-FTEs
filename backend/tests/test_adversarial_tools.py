@@ -5,6 +5,7 @@ passes only if run_probe reports no failure. Mutation checks live in tests/test_
 """
 
 import ast
+import json
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -223,3 +224,65 @@ async def test_schema_guard_is_live(scratch: ScratchDatabases) -> None:
                 await conn.execute(change)
             with pytest.raises(SchemaMismatchError):
                 await scratch.assert_identical(pool)
+
+
+# -- the model's input is tier-safe (DECISIONS I15, change 3): it can't leak what it was never given -------
+
+RESULT_FIELDS = {
+    "status", "action", "order_id", "reference", "refund_id", "store_credit_id", "ticket_id",
+    "amount_cents", "currency", "display", "refund", "customer_message_hint",
+}  # fmt: skip
+
+
+def input_problems(probe_id: str, result: object) -> list[str]:
+    """Group-C values in one tool result, ignoring the request's OWN amount (raw cents or its display string):
+    a $50.00 refund is not a disclosure of a $50.00 limit."""
+    from tollgate.policy.disclosure import find
+
+    if isinstance(result, str):  # the generic internal-error text
+        return [f"{probe_id}: {hit}" for hit in find(result)]
+    assert isinstance(result, dict)
+    out = [f"{probe_id}: field {k!r} is not allowed" for k in set(result) - RESULT_FIELDS]
+    parts = [result] + ([result["refund"]] if isinstance(result.get("refund"), dict) else [])
+    for part in parts[1:]:
+        out += [
+            f"{probe_id}: refund.{k} is not allowed"
+            for k in set(part) - {"amount_cents", "currency", "display"}
+        ]
+    # `status` is the fixed outcome vocabulary the model reads, not a policy reason; the rest is scanned.
+    if result.get("status") not in {"done", "pending_approval", "denied", "not_found", "invalid", "rejected"}:
+        out.append(f"{probe_id}: unexpected status {result.get('status')!r}")
+    own = {str(p.get("amount_cents")) for p in parts} | {str(p.get("display")) for p in parts}
+    for hit in find(json.dumps({k: v for k, v in result.items() if k != "status"})):
+        if hit.split(": ", 1)[1] not in own:
+            out.append(f"{probe_id}: {hit}")
+    return out
+
+
+async def test_model_input_is_tier_safe(txpool: TxPool) -> None:
+    """Every outcome the gateway can return to the model, across all sequential probes, carries no reason
+    code, rule name, limit, cap or count: only a status, the request's own facts and the safe hint."""
+    from tests.probe_harness import MODEL_INPUTS
+
+    MODEL_INPUTS.clear()
+    for probe_id in SEQUENTIAL:
+        await run_probe(txpool, PROBES[probe_id])
+    statuses = {r.get("status") for _, r in MODEL_INPUTS if isinstance(r, dict)}
+    assert {"done", "pending_approval", "denied", "not_found", "invalid", "rejected"} <= statuses
+    problems = [p for probe_id, result in MODEL_INPUTS for p in input_problems(probe_id, result)]
+    assert problems == []
+
+
+def test_model_input_audit_is_live() -> None:
+    """Mutation check: the old result shape (reason codes in `reasons`) would be caught."""
+    old = {
+        "status": "pending_approval",
+        "reasons": ["auto_max", "window_cap"],
+        "amount_cents": 8900,
+        "currency": "USD",
+    }
+    assert input_problems("x", old) != []
+    assert (
+        input_problems("x", {"status": "denied", "customer_message_hint": "Over the $50.00 auto limit."})
+        != []
+    )

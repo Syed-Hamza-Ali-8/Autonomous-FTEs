@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/v1/actions/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Action
+         * @description One of the customer's own action requests, for its ActionCard (C2).
+         */
+        get: operations["get_action_v1_actions__reference__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chat": {
         parameters: {
             query?: never;
@@ -127,6 +147,42 @@ export interface components {
             order_id?: string | null;
             /** Reference */
             reference?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "completed" | "waiting_for_approval" | "not_allowed";
+        };
+        /**
+         * ActionRecord
+         * @description One of the customer's action requests, read live for its ActionCard (DECISIONS C2): the current state
+         *     (a pending card updates in place when staff decide) and detail too long for the card's live event, such as
+         *     the full resulting delivery address. Never sent to the model.
+         */
+        ActionRecord: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "request_refund" | "issue_store_credit" | "cancel_order" | "update_shipping_address" | "create_ticket" | "escalate_to_human";
+            amount?: components["schemas"]["Money"] | null;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Decided At */
+            decided_at?: string | null;
+            delivery_address?: components["schemas"]["Address"] | null;
+            /**
+             * Kept Fields
+             * @default []
+             */
+            kept_fields: string[];
+            /** Order Id */
+            order_id: string | null;
+            /** Reference */
+            reference: string;
             /**
              * State
              * @enum {string}
@@ -439,6 +495,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_action_v1_actions__reference__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     chat_v1_chat_post: {
         parameters: {
             query?: never;

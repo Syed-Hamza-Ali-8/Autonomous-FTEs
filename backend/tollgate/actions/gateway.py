@@ -26,7 +26,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from tollgate.actions import cards, executors, idempotency
+from tollgate.actions import cards, executors, hints, idempotency
 from tollgate.actions.executors import MoneyAction, Request
 from tollgate.approvals import service as approvals
 from tollgate.db import Conn
@@ -41,21 +41,24 @@ MAX_AMOUNT_CENTS = 2**31 - 1  # amounts are Postgres integer columns
 MAX_SUMMARY_CHARS = 10_000
 MAX_AUDITED_NAMES = 50
 
-# One constant result for "not yours" and "does not exist", echoing nothing from the request (I7).
-NOT_FOUND: dict[str, Any] = {
-    "status": "not_found",
-    "reasons": ["not_found"],
-    "message": "No order with that ID was found on this customer's account.",
-}
-REJECTED: dict[str, Any] = {
-    "status": "rejected",
-    "reasons": ["invalid_arguments"],
-    "message": "The request was rejected because its arguments did not match the tool. Nothing was done.",
-}
+# What the model sees of an outcome that didn't complete: a status and ONE customer-safe sentence
+# (DECISIONS I15). No reason codes, rule names, limits, caps or counts are ever in a tool result; they go
+# to the audit log only. "Not yours" and "does not exist" are one constant result, echoing nothing from
+# the request (I7).
+NOT_FOUND: dict[str, Any] = {"status": "not_found", "customer_message_hint": hints.NOT_FOUND}
+REJECTED: dict[str, Any] = {"status": "rejected", "customer_message_hint": hints.REJECTED}
+# Version of the model-visible result format; part of the tool-schema version, so a run never mixes formats.
+RESULT_FORMAT = "hints-v2"
+
+
+def _hinted(status: str, reason: str, order_status: str | None = None) -> dict[str, Any]:
+    return {"status": status, "customer_message_hint": hints.hint(reason, order_status)}
+
 
 # OWNERSHIP, with the row lock that serialises every write on one order (invariants 3 and 9).
 OWNED_ORDER_SQL = (
-    "SELECT id, status, currency, delivered_at FROM app.orders WHERE id = $1 AND customer_id = $2 FOR UPDATE"
+    "SELECT id, status, currency, delivered_at, shipping_address FROM app.orders"
+    " WHERE id = $1 AND customer_id = $2 FOR UPDATE"
 )
 
 
@@ -76,11 +79,19 @@ class CancelArgs(_Strict):
 
 
 class NewAddress(_Strict):
-    name: str
-    line1: str
-    city: str
-    postal_code: str
-    country: str
+    """Only the parts that change: fields left out keep their current values (owner, DECISIONS I12)."""
+
+    name: str | None = None
+    line1: str | None = None
+    city: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+
+
+ADDRESS_FIELDS = ("name", "line1", "city", "postal_code", "country")
+# Audited with a distinct marker whenever an address change alters them (I12). Deferred candidate: a
+# recipient-name change could need staff approval; revisit when rules.yaml is tuned.
+ADDRESS_FLAGS = {"name": "recipient_name_changed", "country": "country_changed"}
 
 
 class AddressArgs(_Strict):
@@ -139,9 +150,7 @@ async def submit(
         return dict(REJECTED)
 
     if (invalid := _invalid(args)) is not None:
-        out = Outcome(
-            {"status": "invalid", "reasons": [invalid]}, "invalid", reasons=[invalid], target=_target(args)
-        )
+        out = Outcome(_hinted("invalid", invalid), "invalid", reasons=[invalid], target=_target(args))
         async with ctx.pool.acquire() as conn:
             await _audit(conn, ctx, action, out)
         return out.result
@@ -149,7 +158,7 @@ async def submit(
     try:
         async with ctx.pool.acquire() as conn, conn.transaction():
             out = await _run(conn, ctx, action, args)
-            await _audit(conn, ctx, action, out)
+            audit_id = await _audit(conn, ctx, action, out)
     except _ConcurrentDuplicate as dup:
         # Another submission with the same key committed first; ours was rolled back. Answer as a repeat.
         async with ctx.pool.acquire() as conn:
@@ -157,7 +166,7 @@ async def submit(
             if original is None:
                 raise ActionFailedError("idempotency conflict without a recorded result") from None
             out = _replayed(original, dup.target)
-            await _audit(conn, ctx, action, out)
+            audit_id = await _audit(conn, ctx, action, out)
     except Exception as exc:
         log.exception("action %s failed", action)
         async with ctx.pool.acquire() as conn:
@@ -166,7 +175,11 @@ async def submit(
             )
             await _audit(conn, ctx, action, failed)
         raise ActionFailedError(f"{action} failed: {type(exc).__name__}") from exc
-    if (card := cards.card_for(action, out.outcome, out.result, out.target, _now(ctx))) is not None:
+    # Every submission is audited, so a refused one has a reference too: its audit row (never in the result).
+    audit_ref = f"AUD-{audit_id:06d}" if audit_id is not None else None
+    if (
+        card := cards.card_for(action, out.outcome, out.result, out.target, _now(ctx), audit_ref)
+    ) is not None:
         ctx.actions.append(card)
     return out.result
 
@@ -187,6 +200,8 @@ def _invalid(args: BaseModel) -> str | None:
             return "items_required"
     if isinstance(args, TicketArgs | EscalateArgs) and len(args.summary) > MAX_SUMMARY_CHARS:
         return "summary_too_long"
+    if isinstance(args, AddressArgs) and all(getattr(args.new_address, f) is None for f in ADDRESS_FIELDS):
+        return "address_required"
     return None
 
 
@@ -328,7 +343,7 @@ async def _money(conn: Conn, ctx: TurnContext, action: str, args: MoneyArgs, ord
         names,
     )
     if _missing_items(lines, names):
-        return _denied(["item_not_in_order"], order_id, {"items": names})
+        return _denied(["item_not_in_order"], order_id, {"items": names}, order["status"])
     line_ids = [r["id"] for r in lines]
     value = _line_value(lines, names)
     amount = _amount(value, args.amount_cents)
@@ -362,7 +377,9 @@ async def _money(conn: Conn, ctx: TurnContext, action: str, args: MoneyArgs, ord
     )
     verdict = engine.evaluate_money(rules, facts, now)
     if verdict.decision == "DENY":
-        return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, details))
+        return await _settle(
+            conn, ctx, key, _denied(list(verdict.reasons), order_id, details, order["status"])
+        )
 
     # ROUTE
     req = replace(
@@ -383,7 +400,7 @@ async def _money(conn: Conn, ctx: TurnContext, action: str, args: MoneyArgs, ord
         reasons = list(verdict.reasons)
         result = {"status": "pending_approval", **base, **refs, "amount_cents": amount, "currency": ccy}
         out = Outcome(
-            with_display(result | {"reasons": reasons}),
+            with_display(result | {"customer_message_hint": hints.PENDING}),
             "queued",
             "NEEDS_APPROVAL",
             reasons,
@@ -415,7 +432,7 @@ async def _cancel(conn: Conn, ctx: TurnContext, args: CancelArgs, order: Any) ->
         return _replayed(original, order_id)
     verdict = engine.evaluate_cancel(rules, order["status"])
     if verdict.decision == "DENY":
-        return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}))
+        return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}, order["status"]))
     flags = (
         ["high_value_cancellation"] if refund and engine.high_value_cancellation(rules, ccy, refund) else []
     )
@@ -434,9 +451,23 @@ async def _cancel(conn: Conn, ctx: TurnContext, args: CancelArgs, order: Any) ->
     )
 
 
+def _merge_address(current: dict[str, Any], given: NewAddress) -> dict[str, str]:
+    """Merge, not replace (I12): a field the customer didn't give keeps its current value."""
+    return {
+        f: v if (v := getattr(given, f)) is not None else str(current.get(f) or "") for f in ADDRESS_FIELDS
+    }
+
+
 async def _address(conn: Conn, ctx: TurnContext, args: AddressArgs, order: Any) -> Outcome:
     customer, order_id = ctx.customer.customer_id, order["id"]
-    new_address = args.new_address.model_dump()
+    raw = order["shipping_address"]
+    current: dict[str, Any] = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    # RECOMPUTE: the address that would be stored, from the order's own current address.
+    new_address = _merge_address(current, args.new_address)
+    if any(not v.strip() for v in new_address.values()):
+        reasons = ["address_incomplete"]
+        return Outcome(_hinted("invalid", reasons[0]), "invalid", reasons=reasons, target=order_id)
+    flags = [flag for f, flag in ADDRESS_FLAGS.items() if new_address[f] != (current.get(f) or "")]
     key = idempotency.key(
         customer, "update_shipping_address", order_id, {"new_address": new_address}, ctx.turn_id
     )
@@ -444,13 +475,19 @@ async def _address(conn: Conn, ctx: TurnContext, args: AddressArgs, order: Any) 
         return _replayed(original, order_id)
     verdict = engine.evaluate_address_change(engine.load_rules(), order["status"])
     if verdict.decision == "DENY":
-        return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}))
+        return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}, order["status"]))
     req = replace(
-        _request(ctx, "update_shipping_address", order_id, "ALLOW"), args={"new_address": new_address}
+        _request(ctx, "update_shipping_address", order_id, "ALLOW"),
+        args={
+            "new_address": new_address,
+            # which fields the customer gave; the rest were kept by the merge (shown on the card, I12)
+            "changed": [f for f in ADDRESS_FIELDS if getattr(args.new_address, f) is not None],
+        },
     )
     refs = await executors.run_address_change(conn, req, new_address)
     result = {"status": "done", "action": "update_shipping_address", "order_id": order_id, **refs}
-    return await _settle(conn, ctx, key, Outcome(result, "executed", "ALLOW", [], order_id, dict(refs)))
+    details = {**refs, "flags": flags} if flags else dict(refs)
+    return await _settle(conn, ctx, key, Outcome(result, "executed", "ALLOW", [], order_id, details))
 
 
 async def _ticket(conn: Conn, ctx: TurnContext, action: str, args: TicketArgs | EscalateArgs) -> Outcome:
@@ -469,8 +506,9 @@ async def _ticket(conn: Conn, ctx: TurnContext, action: str, args: TicketArgs | 
     return await _settle(conn, ctx, key, Outcome(result, "executed", "ALLOW", [], None, dict(refs)))
 
 
-def _denied(reasons: list[str], order_id: str, details: dict[str, Any]) -> Outcome:
-    return Outcome({"status": "denied", "reasons": reasons}, "denied", "DENY", reasons, order_id, details)
+def _denied(reasons: list[str], order_id: str, details: dict[str, Any], order_status: str) -> Outcome:
+    result = _hinted("denied", reasons[0], order_status)
+    return Outcome(result, "denied", "DENY", reasons, order_id, details)
 
 
 def _replayed(original: dict[str, Any], target: str | None) -> Outcome:
@@ -491,11 +529,11 @@ async def _settle(conn: Conn, ctx: TurnContext, key: str, out: Outcome) -> Outco
 # -- audit ------------------------------------------------------------------------------------------------
 
 
-async def _audit(conn: Conn, ctx: TurnContext, action: str, out: Outcome) -> None:
-    await conn.execute(
+async def _audit(conn: Conn, ctx: TurnContext, action: str, out: Outcome) -> int | None:
+    audit_id: int | None = await conn.fetchval(
         "INSERT INTO app.audit_log (actor_type, actor_id, event, target, decision, reasons, outcome,"
         " prompt_version, turn_id, details)"
-        " VALUES ('customer', $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb)",
+        " VALUES ('customer', $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb) RETURNING id",
         ctx.customer.customer_id,
         f"action.{action}",
         out.target,
@@ -506,6 +544,7 @@ async def _audit(conn: Conn, ctx: TurnContext, action: str, out: Outcome) -> Non
         ctx.turn_id,
         json.dumps(out.details),
     )
+    return audit_id
 
 
 async def _audit_rejection(

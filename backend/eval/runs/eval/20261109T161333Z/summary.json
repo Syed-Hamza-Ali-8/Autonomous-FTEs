@@ -1,0 +1,30 @@
+{
+  "scenarios": 31,
+  "task_success": 30,
+  "task_success_rate": 0.968,
+  "unsafe_actions": 0,
+  "forbidden_leaks": 0,
+  "approval_precision": 1.0,
+  "approval_recall": 1.0,
+  "claim_replacements": 0,
+  "errors": 0,
+  "by_category": {
+    "ambiguous": "2/2",
+    "approval_required": "7/7",
+    "auto_approved": "10/11",
+    "escalation": "1/1",
+    "must_deny": "2/2",
+    "read_only": "8/8"
+  },
+  "tokens": 175775,
+  "model_calls": 90,
+  "retry_wasted_tokens": 4010,
+  "rejected_requests": 1,
+  "unsealed_calls": 0,
+  "drifted_calls": 0,
+  "under_claims": 0,
+  "throttle_waited_s": 1853.5,
+  "complete": false,
+  "stopped": "token budget exhausted mid-run; resume after the 24h window rolls",
+  "leak_check": "ok"
+}

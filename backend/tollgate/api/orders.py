@@ -3,8 +3,8 @@
 from fastapi import APIRouter
 
 from tollgate.auth.deps import Customer, Pool
-from tollgate.domain import orders
-from tollgate.domain.models import CustomerProfile, OrderDetail, OrderStatus, OrderSummary
+from tollgate.domain import actions, orders
+from tollgate.domain.models import ActionRecord, CustomerProfile, OrderDetail, OrderStatus, OrderSummary
 from tollgate.errors import NotFoundError
 
 router = APIRouter(prefix="/v1", tags=["store"])
@@ -30,3 +30,13 @@ async def get_order(order_id: str, customer: Customer, pool: Pool) -> OrderDetai
     if detail is None:
         raise NotFoundError("order")  # same response for missing and not-yours (invariant 8)
     return detail
+
+
+@router.get("/actions/{reference}")
+async def get_action(reference: str, customer: Customer, pool: Pool) -> ActionRecord:
+    """One of the customer's own action requests, for its ActionCard (C2)."""
+    async with pool.acquire() as conn:
+        record = await actions.get_action(conn, customer.customer_id, reference.strip().upper())
+    if record is None:
+        raise NotFoundError("action")  # same response for missing and not-yours (invariant 8)
+    return record

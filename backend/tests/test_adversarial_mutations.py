@@ -190,6 +190,18 @@ def m19(mp: pytest.MonkeyPatch) -> None:
     mp.setattr(executors, "sync_refund_status", no_status)
 
 
+def m23(mp: pytest.MonkeyPatch) -> None:
+    mp.setattr(
+        gateway,
+        "_merge_address",
+        lambda current, given: {f: getattr(given, f) or "" for f in gateway.ADDRESS_FIELDS},  # replace
+    )
+
+
+def m24(mp: pytest.MonkeyPatch) -> None:
+    mp.setattr(gateway, "ADDRESS_FLAGS", {})
+
+
 def m18(mp: pytest.MonkeyPatch) -> None:
     mp.setattr(gateway, "_dedupe", lambda names: list(names))
     mp.setattr(
@@ -204,7 +216,7 @@ def m18(mp: pytest.MonkeyPatch) -> None:
 PATCHES: dict[str, Patch] = {
     "M1": m1, "M2": m2, "M3": m3, "M3b": m3b, "M4": m4, "M5": m5, "M6": m6, "M7": m7, "M8": m8,
     "M8b": m8b, "M8c": m8c, "M9": m9, "M10": m10, "M10b": m10b, "M13": m13, "M14": m14, "M16": m16,
-    "M17": m17, "M18": m18, "M19": m19,
+    "M17": m17, "M18": m18, "M19": m19, "M23": m23, "M24": m24,
 }  # fmt: skip
 WITH_CALLS = " ".join(sorted(p["id"] for p in PROBES.values() if p["calls"]))
 KILLS = {

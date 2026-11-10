@@ -38,7 +38,13 @@ export function ChatPanel({
           <OrderCard order={orderContext} />
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4" aria-live="polite" aria-relevant="additions">
+      {/* Content scrolling out at the top fades instead of being cut flush under the header border, where a
+          clipped bubble edge read as a second, wider header line. */}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [mask-image:linear-gradient(to_bottom,transparent,black_1rem)]"
+        aria-live="polite"
+        aria-relevant="additions"
+      >
         {chat.loading ? (
           <div className="flex flex-col gap-3" aria-label="Loading conversation">
             <Skeleton className="h-10 w-3/4" />

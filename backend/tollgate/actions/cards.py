@@ -9,9 +9,9 @@ customer's request, and a replay repeats a card already shown this turn.
 from datetime import datetime
 from typing import Any, get_args
 
+from tollgate.actions import hints
 from tollgate.domain.models import ActionCard, ActionKind, Money
 from tollgate.domain.money import format_money
-from tollgate.policy import engine
 
 DONE: dict[str, str] = {
     "request_refund": "The refund is done. It goes back to your original payment method.",
@@ -27,25 +27,6 @@ WAITING = (
 )
 
 
-def not_allowed_text(reason: str) -> str:
-    days = engine.load_rules().return_window_days
-    return {
-        "not_found": "No order with that number was found on your account.",
-        "item_not_in_order": "That item isn't part of this order.",
-        "status_not_refundable": "This order can't be refunded in its current state.",
-        "status_not_cancellable": "This order can no longer be cancelled.",
-        "status_not_addressable": "The delivery address can't be changed once an order has shipped.",
-        "outside_return_window": f"This order is past the {days}-day return window.",
-        "final_sale": "Final-sale items can't be refunded.",
-        "digital_downloaded": "Digital items that have been downloaded can't be refunded.",
-        "line_already_compensated": "This item already has a refund or store credit.",
-        "exceeds_refundable_remainder": "That's more than what's left to refund on this order.",
-        "above_approval_max": (
-            "This is more than can be refunded through chat. Our support team can review it."
-        ),
-    }.get(reason, "This request can't be completed through chat.")
-
-
 def _money(result: dict[str, Any]) -> Money | None:
     if isinstance(result.get("amount_cents"), int):
         return Money(amount_cents=result["amount_cents"], currency=result["currency"])
@@ -56,7 +37,12 @@ def _money(result: dict[str, Any]) -> Money | None:
 
 
 def card_for(
-    action: str, outcome: str, result: dict[str, Any], target: str | None, at: datetime
+    action: str,
+    outcome: str,
+    result: dict[str, Any],
+    target: str | None,
+    at: datetime,
+    audit_ref: str | None = None,
 ) -> ActionCard | None:
     if action not in get_args(ActionKind):
         return None
@@ -77,9 +63,13 @@ def card_for(
             reference=result.get("reference"), explanation=WAITING, at=at,
         )  # fmt: skip
     if outcome in ("denied", "not_found"):
-        reason = (result.get("reasons") or ["not_found"])[0]
-        order_id = None if outcome == "not_found" else target
+        # The same tier-safe sentence the model was given (hints.py; DECISIONS I15), plus the audit reference.
         return ActionCard(
-            action=kind, state="not_allowed", order_id=order_id, explanation=not_allowed_text(reason), at=at
+            action=kind,
+            state="not_allowed",
+            order_id=None if outcome == "not_found" else target,
+            reference=audit_ref,
+            explanation=result.get("customer_message_hint") or hints.hint("not_found"),
+            at=at,
         )
     return None

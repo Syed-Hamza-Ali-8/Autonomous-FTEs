@@ -15,14 +15,15 @@ import { customers, signIn } from "./helpers";
  * scenarios, not here.
  */
 
-type Card = { action: string; state: string; order_id: string | null };
+type Card = { action: string; state: string; order_id: string | null; reference: string | null };
+type Samples = { cards: Card[]; records: Record<string, unknown> };
 
-function sampleCards(customerId: string): Card[] {
+function samples(customerId: string): Samples {
   const out = execFileSync("uv", ["run", "python", "scripts/action_card_samples.py", customerId], {
     cwd: path.resolve(__dirname, "../../../backend"),
     encoding: "utf8",
   });
-  return (JSON.parse(out) as { cards: Card[] }).cards;
+  return JSON.parse(out) as Samples;
 }
 
 const ASK: Record<string, (o: string | null) => string> = {
@@ -47,11 +48,21 @@ async function shot(page: Page, name: string) {
 
 test("ActionCard: completed, waiting for staff approval, not allowed", async ({ page }) => {
   const [a] = customers();
-  const cards = sampleCards(a.customer_id);
+  const { cards, records } = samples(a.customer_id);
   expect(cards.map((c) => c.state)).toEqual(["completed", "waiting_for_approval", "not_allowed"]);
 
+  // What the server would store for these turns: claim-checked replies with their cards, and no progress
+  // steps (those are never stored). Served as the "latest conversation" after the reload below.
+  const stored: unknown[] = [];
   let turn = 0;
-  await page.route("**/v1/conversations/latest", (route) => route.fulfill({ json: null }));
+  await page.route("**/v1/conversations/latest", (route) =>
+    route.fulfill({ json: stored.length ? { id: "00000000-0000-4000-8000-000000000001", order_id: null, messages: stored } : null }),
+  );
+  // C2: action records (real gateway rows, read before the samples' rollback), served for the card's lookup.
+  await page.route("**/v1/actions/*", (route) => {
+    const ref = decodeURIComponent(route.request().url().split("/").pop() ?? "");
+    return records[ref] ? route.fulfill({ json: records[ref] }) : route.fulfill({ status: 404, json: { error: "not_found" } });
+  });
   await page.route("**/v1/chat", async (route) => {
     const card = cards[turn];
     const now = new Date().toISOString();
@@ -62,6 +73,11 @@ test("ActionCard: completed, waiting for staff approval, not allowed", async ({ 
       { type: "reply", message_id: 9000 + turn, text: SAY[card.state](card.order_id), created_at: now },
       { type: "done" },
     ];
+    const sent = JSON.parse(route.request().postData() ?? "{}") as { message: string };
+    stored.push(
+      { id: 8000 + turn, role: "customer", content: sent.message, created_at: now, orders: [], actions: [] },
+      { id: 9000 + turn, role: "assistant", content: SAY[card.state](card.order_id), created_at: now, orders: [], actions: [card] },
+    );
     turn += 1;
     await route.fulfill({
       status: 200,
@@ -84,4 +100,51 @@ test("ActionCard: completed, waiting for staff approval, not allowed", async ({ 
     await shown.scrollIntoViewIfNeeded();
     await shot(page, names[i]);
   }
+
+  // Item 1: the address card shows the resulting address in full, marking what the merge kept.
+  const address = page.getByRole("region", { name: /Address change/ }).getByLabel("Delivery address now");
+  await expect(address).toContainText("14 Garden Road");
+  await expect(address.getByText("(unchanged)")).not.toHaveCount(0);
+  // Item 2: the refused card shows its reference like the others.
+  await expect(page.getByRole("region", { name: /Not allowed/ })).toContainText(/Reference AUD-\d+/);
+
+  // Progress lines are session-only: after a reload the cards are back, "Checking your order" is not.
+  await page.reload();
+  await expect(page.getByRole("region").filter({ hasText: "Not allowed" })).toBeVisible();
+  await expect(page.getByText("Checking your order")).toHaveCount(0);
+});
+
+test("a waiting ActionCard updates in place when staff decide (DECISIONS C2)", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop-light", "behaviour, not layout: one project is enough");
+  const [a] = customers();
+  const { cards, records } = samples(a.customer_id);
+  const waiting = cards.find((c) => c.state === "waiting_for_approval")!;
+  let decided = false;
+  await page.route("**/v1/conversations/latest", (route) => route.fulfill({ json: null }));
+  await page.route("**/v1/actions/*", (route) => {
+    const record = records[waiting.reference!] as Record<string, unknown>;
+    // The first read finds it waiting; after that, staff have approved it.
+    const body = decided ? { ...record, state: "completed" } : record;
+    decided = true;
+    return route.fulfill({ json: body });
+  });
+  await page.route("**/v1/chat", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+      body: [
+        { type: "turn_started", conversation_id: "00000000-0000-4000-8000-000000000002", turn_id: crypto.randomUUID() },
+        { type: "action", card: waiting },
+        { type: "reply", message_id: 9100, text: "It's with our support team for a quick review.", created_at: new Date().toISOString() },
+        { type: "done" },
+      ].map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""),
+    }),
+  );
+  await signIn(page, a);
+  await page.goto("/support");
+  await page.getByLabel("Message", { exact: true }).fill("Can I get a refund?");
+  await page.getByLabel("Message", { exact: true }).press("Enter");
+  const card = page.getByRole("region", { name: /^Refund/ });
+  await expect(card).toContainText("Waiting for staff approval");
+  await expect(card).toContainText("Completed", { timeout: 25_000 }); // polled (15 s), updated in place
 });

@@ -10,7 +10,9 @@ export default defineConfig({
   reporter: [["list"]],
   globalSetup: "./tests/e2e/global-setup.ts",
   globalTeardown: "./tests/e2e/global-teardown.ts",
-  use: { baseURL: "http://localhost:3000", trace: "retain-on-failure" },
+  // Pinned browser timezone (DECISIONS F2): customer times show local time, so screenshots must not depend
+  // on the machine running them.
+  use: { baseURL: "http://localhost:3000", trace: "retain-on-failure", timezoneId: "Asia/Karachi" },
   webServer: [
     {
       command: "uv run uvicorn tollgate.main:app --host 127.0.0.1 --port 8000",
