@@ -565,3 +565,48 @@ The K4 list is empty, and K5 holds for every row.
 - The support lead (E3) is seeded by `seed_store.py` from `DEMO_STAFF_EMAIL` and `DEMO_STAFF_PASSWORD` in `.env`, and the
   real account is used from now on, including the Playwright console tests (the password is read from `.env` at run
   time, never copied).
+
+---
+
+## 12. Amendment A6-P4 (owner, 2026-11-11, before the code it governs): the conversation is a reader too; run set-up
+
+### 12.1 R7: the customer's conversation applies the derived expiry predicate (J8)
+**Gap (owner):** until the lazy expiry write happens, the card reads "Closed" while the customer's conversation still
+ends on the stale "I've passed this to our support team" line. Card and conversation disagree, which is exactly what
+the derived predicate exists to prevent.
+
+| Reader | Where | Expired pending request, no decision recorded yet |
+|---|---|---|
+| R7 customer conversation messages | `domain/conversations.latest_conversation` | the expiry system message is rendered from the derived state: the same text the lazy write posts (`hints.DECIDED["expired"]`), timed at `created_at + 48h`, placed in time order |
+
+- Once the decision is recorded, the stored message is shown and the derived one is not: never both.
+- The staff transcript keeps showing stored rows only, for audit fidelity. Staff already see the expired state in the
+  queue and the detail.
+
+| ID | Setup and action | Expected |
+|---|---|---|
+| ex13 | CUS-025: $51 refund queued 49h ago in a conversation; load the conversation at `fixture_now`, with no write | its last message is the expiry system message, with the request's reference |
+| ex14 | CUS-047: $200 store credit queued exactly 48h ago (the boundary); load the conversation | its last message is the expiry system message |
+
+**Mutation M44:** the predicate removed from R7 → ex13 and ex14 fail. A separate test checks that after the lazy write
+there is exactly one expiry message, never two.
+
+### 12.2 Audit log column
+The audit log's "Decision" column (header, filter and record drawer) is renamed **"Policy"**. It holds the policy
+verdict (ALLOW / NEEDS_APPROVAL / DENY, including the approval re-check), not the staff decision; the Outcome column
+carries that.
+
+### 12.3 Known gap recorded, not fixed now (DECISIONS K6)
+Because fraud-flagged items sort first, a non-fraud request close to expiry can sit below them. An urgency marker for
+anything expiring within a few hours would stop it being missed.
+
+### 12.4 The run (section 5), as set up
+- **Scenarios:** 49 under one version: the 45 existing (the 43 of the Phase 3 gate set plus r09 and r10) and the four
+  pre-registered in 3.2, f01, f02, k01 and i01. *(The owner's message said "3 new"; section 3.2 pre-registers four, and
+  pre-registered criteria are not reduced.)*
+- **Seed:** `openai-agents` 0.24.0 has no `seed` field on `ModelSettings`. Its Chat Completions model passes
+  `ModelSettings.extra_args` straight into `chat.completions.create` (verified in the installed source), so the seed is
+  sent as `extra_args={"seed": …}`, with `temperature=0`.
+- **`system_fingerprint`:** the provider returns it on every streamed chunk. The LLM client records it per model call
+  into the turn's `run_log` row (a new `system_fingerprints` column), so the repeatability figure can show whether the
+  provider's backend changed between the two subset runs.
