@@ -610,3 +610,6 @@ anything expiring within a few hours would stop it being missed.
 - **`system_fingerprint`:** the provider returns it on every streamed chunk. The LLM client records it per model call
   into the turn's `run_log` row (a new `system_fingerprints` column), so the repeatability figure can show whether the
   provider's backend changed between the two subset runs.
+
+**Erratum to 12.4 (same day, before the run):** the run is **47 scenarios**, not 49: the 43 of the Phase 3 gate set
+(phase ≤ 3) plus f01, f02, k01 and i01 (phase 4). r09 and r10 are phase-5 scenarios and are not part of this run.
