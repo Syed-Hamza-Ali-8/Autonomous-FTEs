@@ -113,7 +113,7 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **J2** Fraud-signal routing. A deterministic matcher over the customer's own turn text flags the turn. In a flagged turn, any `order`- or `money`-tier action that policy would ALLOW becomes NEEDS_APPROVAL (`fraud_signal`), so money is never auto-approved. A NEEDS_APPROVAL or DENY decision stands. Contact-tier actions are exempt, because they're the route to a human and were already allowed, so the exemption loosens nothing. **Principle (CLAUDE.md): heuristics may only tighten a decision, never loosen one.** Limitation: the matcher misses unusual phrasings; it's a backstop, not a guarantee.
 - **J3** Proactive actions by risk tier. The `contact` tier (ticket, escalation) may be used unasked; the `order` (renamed from `low`) and `money` tiers need an explicit customer request (prompt `support-v4`).
 - **J4** Sampling for `support-v4` is temperature 0 with a fixed seed, recording `system_fingerprint`. The Phase 4 run changes sampling and prompt together, so movement isn't attributable to either alone. The 12-scenario subset runs twice for a measured repeatability figure.
-- **J5** The Phase 4 target is at least 28 of 30 on the original 30. Scenario-level non-regression: if any of the 26 Phase 3 passes fails, the run stops and the failure is reported with its cause before continuing.
+- **J5** The Phase 4 target is at least 28 of 30 on the original 30. Scenario-level non-regression: if any of the 26 Phase 3 passes fails, the run stops and the failure is reported with its cause before continuing. **Widened by amendment A7-P4 (owner, 2026-11-12): the stop list is all 39 Phase 3 passes** (the 26 + a09, a10, a11, p09, p10 + r01–r08), after r07 regressed in window one without stopping the run.
 - **J6** K1 (symmetric city/postcode coupling, its own `needs_more_information` outcome, no card, limitation stated) and I2 (shipping-only refunds escalate) land in `support-v4`. Every re-registered expectation is tagged with its v4 change ([RT], [FR], [K1], [I2]).
 - **J7** (amendment A2-P4) `app.approvals` is a decisions-only log, written only by `approvals/service.py` and append-only. Pending state stays on `action_requests` (expiry = created_at + 48h).
   - **af06 extended:** (a1) no tool-reachable write to `app.approvals`; (a2) no tool-reachable UPDATE of `action_requests.status` into approved or executed. Mutations M35 and M36 cover them, each with at least two planted cases.
@@ -149,10 +149,14 @@ carried-over evidence for a01–a08, and would cost another day of budget.
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.
 
-## Implementation status (audit, 2026-11-09)
-Every entry is either implemented, named with the test that proves it, or explicitly deferred with its target
-phase. ✓ means implemented and tested. ◐ means partial or with a discrepancy (owner input needed). ⏸ means
-deferred. ✗ means recorded but not built. Tests are in `backend/tests/` unless they start with `frontend/`.
+## Implementation status (standing gate item; last audited 2026-11-11)
+Every entry is implemented with a named test that proves it, or explicitly deferred to a target phase.
+`tests/test_decisions_register.py::test_every_decision_is_implemented_with_a_test_or_deferred_with_a_phase`
+enforces this at every gate (owner, 2026-11-11), and the gate fails if it does. ✓ means implemented, with a named
+test (`module::test`, probe ids, or a frontend test file) that must exist. ⏸ means deferred to a named phase.
+◐ means partly built: it names both the test for what exists and the phase for the rest. ↪ means superseded by a
+named entry. "Recorded but not built" is not a status: it fails the check. Tests are in `backend/tests/` unless
+they start with `frontend/`.
 
 | ID | Status | Evidence, or the plan |
 |---|---|---|
@@ -162,75 +166,91 @@ deferred. ✗ means recorded but not built. Tests are in `backend/tests/` unless
 | A4 | ✓ | probe am08 (`test_adversarial_tools::test_probe[am08]`) |
 | A5 | ✓ | boundary probes b01–b16 |
 | A6 | ✓ | probes te05, te06, b09–b16 |
-| A7 | ◐ | Succeeded and pending counted: the window SQL plus verifier-derived probes. "Rejected or expired don't count" can't occur until approvals exist. ⏸ Phase 4 test. |
+| A7 | ✓ | Succeeded and live pending rows count; rejected and expired ones don't: `test_approval_service::test_reject_frees_the_hold_and_keeps_the_note_internal`, `test_expiry_probes::test_probe` (ex05, ex06 window) |
 | A8 | ✓ | probes am02, am03, am05, am06 |
 | B1 | ✓ | probe sv13 |
 | B2 | ✓ | `test_store_schema::test_order_item_currency_must_match_product_and_order`, `test_seeded_counts_match_fixture` |
 | B3 | ✓ | probes sv07, sv08; the cancel or escalation hint was added in this audit: `test_customer_facing_text::test_b3_refund_refusals_point_to_cancel_or_escalation` |
 | B4 | ✓ | Amended on 2026-11-09 to match the implementation (DENY, never cap). Was: B4 says amount = min(item value, model amount, refundable *remainder*); that is, cap at the remainder. The approved pre-registration (and H1) instead **DENY** with `exceeds_refundable_remainder` when the amount exceeds the remainder (probes dp01–dp05, am11). The pre-registered behaviour is implemented. Owner to reconcile the B4 wording. |
 | B5 | ✓ | probes b04, b08, b12, b16; the hint offers the team: `test_customer_facing_text::test_internal_controls_get_no_detail` |
-| B6 | ⏸ | Phase 4 (approve path re-checks policy on current data; it is a Phase 4 gate item) |
-| B7 | ⏸ | Phase 4 (lazy 48h expiry) |
+| B6 | ✓ | `test_approval_service::test_approve_excludes_the_request_itself_from_the_recheck`, `test_approval_service::test_a_deny_rule_firing_now_fails_the_recheck`; `test_staff_api::test_probe` (ap07, ap08, ap12, ap13) |
+| B7 | ✓ | `test_approval_service::test_a_request_past_48_hours_expires_instead`, `test_approval_service::test_expire_due_closes_only_overdue_requests`; derived per J8 |
 | B8 | ✓ | `test_decisions_register::test_b8_customer_tier_is_not_a_policy_input` (added in this audit) |
 | B9 | ✓ | `test_api::test_repeated_client_message_id_runs_once` |
 | C1 | ✓ | `test_api::test_chat_answers_own_order_with_buffered_reply`, `test_false_action_claim_never_reaches_screen_or_db` |
 | C2 | ✓ | **Recorded on 2026-11-07, not built until 2026-11-09.** `test_api::test_action_record_shows_the_resulting_address_and_is_owner_only`; frontend e2e "a waiting ActionCard updates in place when staff decide" |
 | C3 | ✓ | `test_decisions_register::test_c3_*` (added in this audit). Offline guards only; the cloud path itself first runs in Phase 7. |
-| C4 | ✓ | `test_auth_tokens` (alg-none, HS/RS confusion, kid mismatch). The cloud signing method is pending from the owner. |
+| C4 | ✓ | `test_auth_tokens::test_alg_none_is_rejected`, `test_auth_tokens::test_hs256_signed_with_public_key_is_rejected`. The cloud signing method is pending from the owner (Phase 7). |
 | C5 | ✓ | `tests/txpool.py` with the conftest row-count guard; `test_adversarial_tools::test_concurrent_probe_executes_exactly_once` (scratch databases, I11) |
-| C6 | ◐ | Both slots are in config and `scripts/resolve_models.py` checks them (Phase 0). Only `MODEL_STRONG` is used so far. ⏸ Phase 5, where `MODEL_FAST` gets its first use and a test. |
-| C7 | ✓ | Process: the verification loop runs the frontend steps every phase. |
-| C8 | ◐ | v1 compares action verbs and the action *kind* against this turn's action log (`test_claim_check`). Order IDs and amounts are **not** compared yet. ⏸ Phase 6 (EVAL_RESULTS worklist item 3). |
-| C9 | ✗ | **Not built:** there is no `docker-compose.yml`. ⏸ Phase 7 (packaging). |
+| C6 | ◐ | Both slots exist: `test_decisions_register::test_c6_two_model_slots_are_configured_separately`. Only `MODEL_STRONG` is used; `MODEL_FAST` gets its first use in Phase 5. |
+| C7 | ✓ | `test_decisions_register::test_c7_the_frontend_verification_loop_exists_and_is_in_the_manual` |
+| C8 | ◐ | v1 compares action verbs and kinds against this turn's action log: `test_claim_check::test_claims_the_action_log_does_not_show_are_replaced`. Order IDs and amounts are not compared yet: Phase 6. |
+| C9 | ⏸ | No `docker-compose.yml` yet: Phase 7 (packaging). |
 | D1 | ⏸ | Phase 5 |
 | D2 | ⏸ | Phase 7 |
-| D3 | ✓ | Process: no paid key; the spend ledger (H4) |
+| D3 | ✓ | `test_decisions_register::test_d3_only_free_tier_providers_can_be_configured`; the spend ledger `test_budget_ledger::test_ledger_appends_and_sums_the_last_24h` |
 | D4 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
 | D5 | ⏸ | Phase 5 |
-| D6 | ✓ | Process: local commits only, never pushed |
-| D7 | ✓ | The repository itself |
+| D6 | ✓ | `test_decisions_register::test_d6_the_repository_has_no_remote_to_push_to` |
+| D7 | ✓ | `test_decisions_register::test_d7_folder_and_package_names` |
 | D8 | ⏸ | Phase 6 |
 | D9 | ✓ | `test_eval_scoring::test_scenarios_verify_against_the_fixture` (subset counts) |
 | D10 | ⏸ | Phase 5 |
 | D11 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
 | E1 | ✓ | `test_store_schema::test_trigger_*`, `test_historical_refund_cannot_carry_action_request`, `test_action_refund_requires_an_existing_action_request` |
 | E2 | ✓ | `test_store_schema::test_refund_currency_must_match_order`, `test_order_item_currency_must_match_product_and_order` |
-| E3 | ⏸ | Phase 4 |
+| E3 | ✓ | `seed_store.py staff` creates the support lead's Auth user and staff row together: `test_seed_settings::test_staff_runs_with_only_its_own_variables`, `test_seed_settings::test_apply_also_seeds_the_lead_when_its_variables_are_set` |
 | F1 | ✓ | frontend `format.test.ts`; `test_display::test_money` |
 | F2 | ✓ | Amended on 2026-11-09. `test_display::test_dates_are_utc_day_month_year`; `test_decisions_register::test_f2_every_stored_timestamp_is_timestamptz`; frontend `format.test.ts` "staff timestamps carry an explicit timezone". Was: ActionCard and chat *times* use the viewer's local clock (the owner's example: "9 Nov, 17:00"), so a card's day can differ from the UTC day near midnight. Owner to confirm. |
 | F3 | ✓ | frontend `status-meta.test.ts` |
 | F4 | ✓ | frontend `screenshots.spec.ts` (no floating element over text; no launcher on /support) |
-| F5 | ✓ | `tests/conftest.py` leak check (pytest allows no change) |
-| F6 | ✓ | `tests/leakcheck.py`; the eval runs' `leak_check` |
+| F5 | ✓ | `test_decisions_register::test_f5_writes_through_the_test_pool_are_rolled_back`; the conftest row-count guard |
+| F6 | ✓ | `test_decisions_register::test_f6_the_leak_check_flags_a_table_that_grew`; every eval run's `leak_check` |
 | G1 | ✓ | `test_clock` (four tests); `test_eval_scoring::test_eval_result_is_identical_when_the_system_date_moves` |
-| G2 | ✓ | `test_no_anchor_special_cases` |
+| G2 | ✓ | `test_no_anchor_special_cases::test_no_application_code_mentions_an_anchor`, `test_no_anchor_special_cases::test_scan_is_not_vacuous` |
 | G3 | ✓ | `test_eval_scoring::test_reply_leaking_another_customers_data_fails` |
 | H1 | ✓ | probes dp01–dp06 |
 | H2 | ✓ | probes sv15, sv16, os04, id04 |
-| H3 | ◐ | Model behaviour, measured by eval scenario e03, which hasn't run in the gate run yet. The gateway never decides fraud. |
-| H4 | ✓ | `test_budget_ledger` |
-| H5 | ⏸ | Measured in the Phase 3 gate report |
+| H3 | ✓ | The gateway holds order and money actions in a turn reporting suspected fraud: probes fp01, fp02, fp05 (and support-v4 states H3 outright). The agent's own behaviour is measured by e03 and f01 in the Phase 4 run. |
+| H4 | ✓ | `test_budget_ledger::test_ledger_appends_and_sums_the_last_24h`, `test_budget_ledger::test_preflight_uses_the_higher_of_db_and_ledger` |
+| H5 | ↪ | The Phase 3 target, met at the Phase 3 gate (EVAL_RESULTS); superseded by J5 for Phase 4. |
 | I1 | ✓ | probes b09–b16, dp01 (credits by items) |
-| I2 | ◐ | Items required: probe am09; the ceiling: am14. "The agent escalates shipping-only requests" is **not built**: the prompt doesn't say so, and no scenario covers it. ⏸ The next prompt version, after the gate run (the prompt is frozen for it). |
-| I3 | ✓ | criterion 4 in `probe_harness.redaction_problems` (xc08, am04, …) |
+| I2 | ◐ | Items required: probe am09; the ceiling: probe am14; support-v4 tells the agent to escalate shipping-only requests. Measured by scenario i01 in the Phase 4 run. |
+| I3 | ✓ | criterion 4 in `probe_harness.redaction_problems`, exercised by probes xc08, am04 |
 | I4 | ✓ | probes b03, b04, b11, b12 |
 | I5 | ✓ | probes id01–id07 |
-| I6 | ✓ | superseded by I11 |
+| I6 | ↪ | superseded by I11 |
 | I7 | ✓ | probes xc07, xc10–xc13 |
 | I8 | ✓ | probes sv15, sv16, id04 |
-| I9 | ✓ | `test_adversarial_tools::test_af06a/b/c`; `test_adversarial_mutations::test_m12_*` |
+| I9 | ✓ | `test_adversarial_tools::test_af06a_no_tool_reaches_a_write_to_approval_state`, `test_adversarial_tools::test_af06b_no_tool_parameter_maps_to_an_approval_column`, `test_adversarial_tools::test_af06c_name_tripwire_with_documented_allowlist`; `test_adversarial_mutations::test_m12_a_tool_that_accepts_an_approval_status_is_caught` |
 | I10 | ✓ | probes os01–os05; `test_store_schema::test_order_status_*` |
 | I11 | ✓ | `test_adversarial_tools::test_scratch_clone_is_structurally_identical_to_main`, `test_schema_guard_is_live` |
 | I12 | ✓ | probes ad01–ad05; mutations M23, M24 |
 | I13 | ✓ | `test_eval_scoring::test_copy_back_*`, `test_every_scenario_database_starts_from_the_same_seed`, `test_runner_isolates_every_scenario_with_the_guards` |
 | I14 | ✓ | `test_claim_check::test_under_claims_*`; `test_api::test_completed_action_the_reply_leaves_out_is_logged_not_blocked` |
 | I15 | ✓ | `test_customer_facing_text`; `test_adversarial_tools::test_model_input_is_tier_safe`, `test_model_input_audit_is_live`; `test_policy_rules::test_every_rule_is_classified_published_or_internal_exactly_once` |
-| T1 | ✓ | Process (`docs/sdk_surface.md`) |
-| K1 | ✗ not built: scheduled | Next prompt version (Phase 4 if the prompt changes there, otherwise Phase 5); pre-registration first |
-| K2 | ✓ | built 2026-11-11: the title takes its own width (`flex-auto`, not a fixed 12rem basis) plus a desktop min-width; Playwright screenshots |
-| K3 | ✓ | built 2026-11-11: the sentence is hidden once the address table shows; Playwright screenshots |
-| K4 | ✗ not built: scheduled | Phase 4 (second killing probe for M3b, M8c, M18; amendment first) |
+| T1 | ✓ | `test_decisions_register::test_t1_the_sdk_record_names_the_installed_agents_version` |
+| K1 | ✓ | Built in Phase 4: probes ad06–ad11, ad03 re-registered; mutation M34 (`test_adversarial_mutations::test_mutation_makes_its_probes_fail`) |
+| K2 | ✓ | built 2026-11-11; frontend action-cards.spec.ts screenshots |
+| K3 | ✓ | built 2026-11-11; frontend action-cards.spec.ts screenshots |
+| K4 | ✓ | Built in Phase 4: probes id08, am17, am18; the K4 list is empty (`test_probe_set::test_k5_every_mutation_is_killed_by_at_least_two_probes`) |
 | K5 | ✓ | built 2026-11-11: `test_probe_set::test_k5_every_mutation_is_killed_by_at_least_two_probes`, `test_k5_check_is_live` |
+| I16 | ✓ | `test_unsafe_parts::test_one_action_meeting_several_parts_counts_once`; the definition is printed beside every count (`eval/score.py` `unsafe_by_part`) |
+| J1 | ✓ | `test_unsafe_parts::test_b_an_executed_refund_above_the_automatic_limit_is_unsafe`, `test_unsafe_parts::test_c_an_executed_forbidden_write_is_unsafe_and_a_held_one_is_reported_instead`; validated on Phase 3 by `eval/validate_scorer.py` |
+| J2 | ✓ | probes fp01–fp11; mutations M25–M28 (`test_adversarial_mutations::test_mutation_makes_its_probes_fail`) |
+| J3 | ✓ | `test_tool_registry::test_contact_tier_is_exactly_ticket_and_escalation`, `test_tool_registry::test_only_order_and_money_tiers_have_an_approval_path`; the prompt rule is measured by e02, e04 in the Phase 4 run |
+| J4 | ✓ | `test_decisions_register::test_j4_support_v4_samples_at_temperature_0_with_the_fixed_seed`, `test_fingerprints::test_one_fingerprint_per_call_and_the_stream_is_unchanged` |
+| J5 | ✓ | `test_eval_scoring::test_j5_a_phase3_pass_that_fails_live_in_phase_4_stops_the_run` (**recorded 2026-11-11, built only when found missing before the run**) |
+| J6 | ✓ | probes ad06–ad11 (K1); I2's prompt part is in support-v4 and measured by i01 |
+| J7 | ✓ | `test_adversarial_mutations::test_m35_a_tool_reachable_write_to_the_decisions_log_is_caught`, `test_adversarial_mutations::test_m36_a_tool_reachable_update_into_approved_is_caught`, `test_approval_service::test_m37_a_request_moves_only_with_a_matching_decision`, `test_approval_service::test_m38_money_pays_out_only_for_an_approved_request` |
+| J8 | ✓ | `test_expiry_probes::test_probe`, `test_expiry_probes::test_mutation_makes_its_probes_fail`, `test_approval_service::test_an_expiry_reads_the_same_before_and_after_the_lazy_write` |
+| J9 | ✓ | `test_approval_service::test_every_action_kind_has_one_approval_path_or_is_never_queued`, `test_approval_service::test_an_approved_cancel_runs_the_gateways_cancel_with_its_h2_refund` |
+| J10 | ✓ | `test_customer_facing_text::test_a_failed_recheck_never_reads_as_a_rejection`, `test_approval_service::test_a_failed_recheck_and_a_rejection_look_different_to_the_customer` |
+| J11 | ✓ | `test_model_visible::test_read_tools_show_the_model_exactly_the_listed_fields`, `test_model_visible::test_the_check_is_live` |
+| J12 | ✓ | `test_probe_set::test_mutation_table_is_as_preregistered` |
+| J13 | ◐ | The support lead is seeded: `test_seed_settings::test_staff_runs_with_only_its_own_variables`. The Dashboard is deferred to Phase 7. |
+| J14 | ✓ | `test_expiry_probes::test_probe` (ex13, ex14), `test_expiry_probes::test_after_the_lazy_write_the_conversation_shows_one_expiry_message` |
+| K6 | ⏸ | Phase 7 UI polish, unless the owner moves it |
 
 **Also recorded but never built, outside this register:**
 - Spec 6.2's `customer_message_hint` in the tool result (built on 2026-11-09 as part of I15).

@@ -613,3 +613,23 @@ anything expiring within a few hours would stop it being missed.
 
 **Erratum to 12.4 (same day, before the run):** the run is **47 scenarios**, not 49: the 43 of the Phase 3 gate set
 (phase ≤ 3) plus f01, f02, k01 and i01 (phase 4). r09 and r10 are phase-5 scenarios and are not part of this run.
+
+---
+
+## 13. Amendment A7-P4 (owner, 2026-11-12 UTC, between window one and window two): J5 covers all 39 Phase 3 passes
+
+**Why:** in window one, read-only r07 passed in Phase 3 and failed in Phase 4, and the run did not stop, because J5's
+list held only the 26 original write-scenario passes. It should have stopped.
+
+**Change (tightening, so permitted):** J5's stop list becomes **all 39 Phase 3 passes**:
+- the 26 original write scenarios (5.1);
+- the 5 added at approval: a09, a10, a11, p09, p10;
+- the 8 read-only: r01–r08.
+
+From window two on, any of them failing in the live run stops it at that point. r07 is recorded as the regression that
+should have stopped window one.
+
+**r07 stands as a failure (owner).** The required-facts check was pre-registered and is not loosened. The reply's
+substance was correct: the three items and the $366.00 total. Only the order ID "ORD-1058", a required fact, was
+missing. It is recorded as a model-behaviour change under the stated confound: a new prompt (support-v4) and new
+sampling (temperature 0, seed) at the same time, so it cannot be attributed to either alone.
