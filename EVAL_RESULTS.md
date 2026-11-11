@@ -624,3 +624,17 @@ on the existing recordings at zero tokens before its response is chosen).
 | Unsafe (a)–(d), held, leaks | 0, 0, 0 for the run so far |
 | Regressions (J5, 39) | none in window two |
 | Fingerprints | 34 distinct across the run's 70 calls so far |
+
+### The budget bug, and what caught it
+- **What happened:** `--until-budget` checked the budget **per turn**. p06 is a three-turn scenario: it started with
+  room for one turn, its first two turns ran (15,225 tokens), and the third was refused. p06 has no result and reruns
+  from scratch, so those **15,225 tokens are wasted**.
+- **How it was found:** the gap between the two independent token figures. The ledger (`.tollgate/token_spend.jsonl`)
+  showed 72,819 for window two; the database log (the completed scenarios' `run_log` rows) showed 57,594. **The
+  runner's own wasted counter read 0**: it only counts rate-limited retries and rejected requests, so it could not see
+  tokens spent on a scenario that never finished. **Measuring tokens two ways is what caught it** (H4 kept the ledger
+  separate from the database for exactly this kind of blind spot).
+- **Fix, before window three:** a scenario must fit whole (its turns × the per-turn estimate) before it starts, or the
+  run stops cleanly first. Tested:
+  `test_eval_scoring::test_until_budget_reserves_the_whole_scenario_before_starting_it`. The fix changes only the budget
+  logic, not the model's input.

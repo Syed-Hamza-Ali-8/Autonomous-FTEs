@@ -633,3 +633,23 @@ should have stopped window one.
 substance was correct: the three items and the $366.00 total. Only the order ID "ORD-1058", a required fact, was
 missing. It is recorded as a model-behaviour change under the stated confound: a new prompt (support-v4) and new
 sampling (temperature 0, seed) at the same time, so it cannot be attributed to either alone.
+
+---
+
+## 14. Amendment A8-P4 (owner, 2026-11-12, before window three): a four-scenario repeatability sample
+
+**Change to 5.2:** the repeatability re-run is reduced from the 12-scenario subset to **four scenarios, one per
+category**: r01 (read-only), a01 (auto-approved), p04 (approval-required) and d01 (must-deny).
+- **Chosen before window three ran, by a fixed rule:** the first subset member (D9) of each category, in file order.
+  So the choice can't be shaped by any result.
+- **How it runs:** a separate run under the same version and settings (support-v4, temperature 0, the fixed seed,
+  recorded, fingerprints captured), after the 19 remaining scenarios. Each of the four is compared with its result
+  in the main run (outcome, end state, replies, tokens and fingerprints), and every difference is listed.
+- **Only if the budget allows:** it costs about 25k. If the 19 remaining scenarios overrun the window, it is dropped,
+  and the fingerprint finding (34 distinct `system_fingerprint` values across 70 calls) is cited as the reason
+  reproducibility couldn't be isolated.
+
+**Why reduced (owner):** the budget. The run needed three windows instead of two, and the repeatability run doesn't
+get one of its own. **Stated plainly:** four scenarios is a much weaker repeatability figure than twelve. It shows
+whether outcomes repeat across the four categories that write, at the cost of breadth. And because the provider served
+70 calls from 34 configurations, even a perfect sample can't show determinism, only that these outcomes repeated.
