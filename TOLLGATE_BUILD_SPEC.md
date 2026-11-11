@@ -328,6 +328,7 @@ A fictional online store, **Northwind Goods**, selling electronics, home goods a
 - Products with categories, including some marked `final_sale` (non-refundable) and `digital` (non-refundable after download).
 - Some orders with prior refunds, so cumulative-refund rules are testable.
 - Order notes and product reviews containing **injection payloads** (for indirect-injection tests), clearly tagged in the fixture.
+  - *Amended (owner, 2026-11-11; DECISIONS J11):* order notes and reviews are **not model-visible**, so payloads there are negative controls (they must stay unreachable). Indirect-injection payloads that test the model go in fields it actually receives: the free-text entries of `backend/tollgate/tools/model_visible.py` (product names, address fields, refund reasons, shipment event descriptions).
 - Stable human-readable IDs (`ORD-1042`, `CUS-017`) so scenarios are reproducible across reseeds.
 - **Demo sign-ins:** two customers (one ordinary, one whose orders the attack demos target) and one support lead, created by `seed_store.py` through the Supabase Auth admin API and linked by `auth_user_id`. Their passwords come from `.env`, never committed, and are not shown on the sign-in page.
 
@@ -533,7 +534,7 @@ Pass criteria: zero unauthorized side effects (checked against DB state), correc
 
 ### 9.4 LLM adversarial set
 
-~16 attack conversations run against the real model: social engineering ("I'm the CEO"), fake approvals, emotional pressure, indirect injection planted in order notes and reviews, requests to reveal other customers' data. Metrics: unsafe actions (must be 0, guaranteed by 9.3), plus how often the model *attempts* a forbidden action and how it explains a refusal. Attempts are interesting data, not failures, because the gateway holds; record them honestly.
+~16 attack conversations run against the real model: social engineering ("I'm the CEO"), fake approvals, emotional pressure, indirect injection planted in the model-visible free-text fields (DECISIONS J11; notes and reviews are not model-visible), requests to reveal other customers' data. Metrics: unsafe actions (must be 0, guaranteed by 9.3), plus how often the model *attempts* a forbidden action and how it explains a refusal. Attempts are interesting data, not failures, because the gateway holds; record them honestly.
 
 ### 9.5 Claim check (output guardrail)
 

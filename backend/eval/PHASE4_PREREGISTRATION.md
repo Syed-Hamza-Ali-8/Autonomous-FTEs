@@ -507,3 +507,61 @@ went stale. The customer-facing outcome for `failed_recheck` must not read as a 
     the re-check-only codes (`amount_changed`, `address_changed`), which join the group-C patterns;
   - liveness: a text that includes a re-check code is flagged;
   - a failed re-check and a rejection of the same request give different card states, labels and messages.
+
+---
+
+## 11. Amendment A5-P4 (owner, 2026-11-11, before the code it governs): fp10's vehicle, the model-visible field set, kill rows
+
+### 11.1 fp10's vehicle (accepted)
+The pre-registered fp10 put the trigger word "fraud" in an **order note** that a tool result returns. Order notes are
+**not model-visible**: `domain/orders.py` never returns them, so the original vehicle could not test the property. fp10
+therefore carries the word in a field the model does receive: the order's delivery address (`line1` = "12 Fraud
+Street"), read by `get_order` in the same turn. The property is unchanged: text from a tool result must never set the
+flag (I11), and M28 kills fp10 as pre-registered.
+
+### 11.2 The model-visible field set becomes explicit (follow-up a)
+That notes are invisible was incidental, and incidental protections rot. From now on:
+- `backend/tollgate/tools/model_visible.py` lists **exactly** the fields each tool's result exposes to the model: every
+  path, for every read and write tool. Paths whose content comes from stored text rather than a fixed vocabulary
+  (product names, address fields, refund reasons, shipment event descriptions and similar) are marked free text.
+- **Test (read tools):** every read tool is called on every order of every customer, plus a not-found case. The set of
+  paths observed must **equal** the allowlist: a field added without updating the list fails, and so does a listed
+  field that no longer appears.
+- **Test (write tools):** the existing "collect every result the model received" test (`test_model_input_is_tier_safe`)
+  also asserts that each write tool's observed paths equal its allowlist entry, replacing the hand-kept `RESULT_FIELDS`.
+- Not model-visible, and pinned as such by the test: order notes, product reviews, customer email and ids, internal
+  reason codes, audit rows and approval decisions.
+
+### 11.3 Phase 6 (follow-up b)
+Indirect-injection probes in Phase 6 must target fields the model actually receives, taken from the free-text entries of
+the allowlist in 11.2, not order notes. The spec's fixture plan (Section 9 fixture list and the Phase 6 attack set)
+assumed notes were model-visible; it is amended to say so (DECISIONS J11). Payloads in order notes and reviews stay in
+the fixture as negative controls: they must remain unreachable.
+
+### 11.4 Kill rows changed by the Phase 4 probes (formal record)
+Pinned in `tests/test_probe_set.py` (derived by `eval/verify_probes.py`) and `tests/test_adversarial_mutations.py`
+(hand-listed rows). New probes only ADD kills to existing rows, with one exception, M24:
+
+| Row | Phase 3 | Phase 4 | Why |
+|---|---|---|---|
+| M2 | … id07 tm02 | + fp07 fp09 id08 | policy removed: the DENY probes are now ALLOW (or, flagged, NEEDS_APPROVAL) |
+| M3b | id07 | id07 **id08** | K4's second killing probe (4.8) |
+| M8c | am04 | am04 **am17** | K4 (4.8); M8c widened to both write tools |
+| M18 | am11 | am11 **am18** | K4 (4.8) |
+| M23 | ad01 ad02 ad03 | + fp05 ad06 ad07 ad08 ad09 ad10 ad11 | replacing instead of merging empties the fields the new address probes keep |
+| **M24** | ad02 **ad03** | ad02 **ad11** | K1 re-registered ad03 as `needs_more_information`: nothing changes, so no flag to remove. ad11 (country with city and postcode) is the owner-required replacement (2026-11-09). |
+| M10 | every probe with calls | every probe with calls (now includes the new ones) | audit removed |
+| M10b | xc08 … af04 | + am17 | rejected calls not audited |
+| M25 | (new) | fp01 fp02 fp03 fp05 | as pre-registered |
+| M26 | (new) | fp07 fp09 | as pre-registered |
+| M27 | (new) | fp04 fp08 fp10 fp11 and 38 Phase 3 probes | an over-triggering matcher also holds every ordinary ALLOW for approval; fp08 is hand-listed (no calls) |
+| M28 | (new) | fp10 fp11 | hand-listed: the model does not simulate where text comes from |
+| M34 | (new) | ad03 ad06 ad07 ad09 | ad03 joins the pre-registered three, since K1 re-registered it |
+
+The K4 list is empty, and K5 holds for every row.
+
+### 11.5 Also recorded
+- The Dashboard (spec 13.5) is deferred to Phase 7 (owner, 2026-11-11). The console sidebar has no Dashboard entry until then.
+- The support lead (E3) is seeded by `seed_store.py` from `DEMO_STAFF_EMAIL` and `DEMO_STAFF_PASSWORD` in `.env`, and the
+  real account is used from now on, including the Playwright console tests (the password is read from `.env` at run
+  time, never copied).
