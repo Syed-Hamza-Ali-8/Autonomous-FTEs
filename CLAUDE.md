@@ -5,13 +5,13 @@
 **Core principle: the model *proposes* actions; deterministic code *decides* them.**
 
 **Source of truth:** `TOLLGATE_BUILD_SPEC.md`. Before each phase, re-read Section 10 for that phase plus every section it touches. This file is the short manual; the spec is the reference.
-**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, J1–J19, K1–K7, T1). They override spec defaults where they differ. Never change one without owner approval.
+**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, J1–J20, K1–K7, L1–L17, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
-- **Phase:** 4 closed as a FAILED gate (2026-11-13, owner decision J19, carried forward); Phase 5 next, on the owner's go-ahead
+- **Phase:** 5, merged with Phase 6 (L12), NO prompt change (L16), pre-registration rev 7 APPROVED 2026-11-13: stays on support-v4; the 47 keep their Phase 4 results; deterministic controls (K7 check, claim check v2, injection guard) measured by zero-token replay; live: the adversarial 8 only (~54–102k, 1 window). HARD PRECONDITION: no tokens unless the strict replay of the 47 reports 0 drifted calls. [RT] a known issue; knowledge layer designed, NOT built (L17); multi-agent not attempted (L3)
 - **Last completed gate:** Phase 3 (approved 2026-11-11). Phase 4 gate FAILED 2026-11-13 (EVAL_RESULTS, Phase 4 gate report)
-- **Next step:** Phase 5 item 1, on the owner's go-ahead: pre-register the [RT] narrowing (tickets only after a wish for a person or an out-of-scope request) with its expected effect, BEFORE building it; re-measure in Phase 5. e02 (no action + K7) waits for Phase 6. p09 is flagged for re-registration (J16)
-- **Waiting on owner:** go-ahead for Phase 5; demo passwords; cloud project + signing method
+- **Next step:** build the probes BEFORE any code: fc01–fc09 (K7), cc01–cc10 (claim check v2), in01–in10 (injection guard), the mutation tables (M55–M64), `adversarial_llm.jsonl` (8), the 1024 Playwright assertions. Commit them, then build the code, then the zero-token replays, then (only on 0 drift) the adversarial 8
+- **Waiting on owner:** demo passwords; cloud project + signing method; hand-labelled K7 sample review (L13) when measured. WSL 6 GB cap set, restart skipped for now. Gateway branch `northwind-tenant`: finding committed (bc86496). Phase 4 misses carried: [RT] (known issue), e02/K7, usable at 1024
 - **Runs:** pytest/offline smoke change nothing; real-model runs may only grow F6 tables. Time pinned to `fixture_now` (G1). Eval runs are throttled to 8k tokens/min; a full 45-scenario run (~198k) needs `--resume` across two days
 - **Notes:** npm audit findings are dev tooling only, left as is. Input borders fixed (zinc-500, >= 3:1 both themes). Known gaps K1-K5 all built (K1 coupling and K4 second probes in Phase 4; the K4 list is empty).
 
@@ -79,14 +79,14 @@ Run whichever steps exist. Backend and frontend steps run from Phase 0 whenever 
 - [x] Phase 1: Store, read tools, single agent, first UI (gate approved 2026-11-07, commit 80642f7)
 - [x] Phase 2: Evaluation harness (gate approved 2026-11-07)
 - [x] Phase 3: Write actions and the Action Gateway (gate approved 2026-11-11)
-- [!] Phase 4: Human approvals and staff console (gate **FAILED** 2026-11-13, carried forward by owner decision J19; not re-run). Missed: unsafe 3 (pre-registered; 0 under J16), e02, original 30 at 27/28, non-regression (d01, d05), must-deny with a write 2/6. Cause: [RT] tickets. Carried: [RT] narrowing → Phase 5 first item; e02 (K7) → Phase 6
-- [ ] **Phase 5: Multi-agent design and Gateway knowledge** ← **NEXT** (starts on the owner's go-ahead; first item: pre-register the [RT] narrowing)
-- [ ] Phase 6: Guardrails and LLM adversarial run
+- [!] Phase 4: Human approvals and staff console (gate **FAILED** 2026-11-13, carried forward by owner decision J19; not re-run). Missed: unsafe 3 (pre-registered; 0 under J16), e02, original 30 at 27/28, non-regression (d01, d05), must-deny with a write 2/6; "usable at 1024" not evidenced (carried, L5). Cause: [RT] tickets. Carried: [RT] is a known issue, NOT fixed (L16, no prompt change); e02/K7 measured by replay in the merged phase
+- [ ] **Phase 5 (merged with Phase 6): deterministic controls by replay + adversarial 8; no prompt change (L16); multi-agent NOT attempted (L3)** ← **CURRENT** (pre-registration under owner review)
+- [ ] Phase 6: Guardrails and LLM adversarial run (merged into Phase 5, L12)
 - [ ] Phase 7: Packaging and demo
   - After linking the cloud project: verify migrations apply cleanly there, and confirm the lockdown with a read-only check script. Never run the test suite against the cloud (invariant 20).
 
 Do not start phase N+1 until every gate item of phase N passes **and the owner approves**.
-**Exception, by owner decision only (J19, 2026-11-13):** Phase 4's gate FAILED and is carried forward openly, not recovered by a re-run. Its missed criteria stay listed until they are re-measured (Phase 5: [RT]; Phase 6: e02). Never mark it passed.
+**Exception, by owner decision only (J19, 2026-11-13):** Phase 4's gate FAILED and is carried forward openly, not recovered by a re-run. Its missed criteria stay listed until they are re-measured ([RT]: the next model-visible version, L16; e02: K7 by replay). Never mark it passed.
 **Standing gate item, every gate (owner, 2026-11-11): the decisions register is clean.** Each DECISIONS entry is either implemented with a named test that proves it (✓), deferred to a named target phase (⏸), partly built with both (◐), or superseded by a named entry (↪). `backend/tests/test_decisions_register.py::test_every_decision_is_implemented_with_a_test_or_deferred_with_a_phase` checks the status table against the entries and the named tests; the gate fails if it does. "Recorded but not built" is not a status. Update the table in the same change as the decision. Gate items are in spec Section 10. Record results and pre-registrations in `EVAL_RESULTS.md`. Update the CURRENT marker only after approval.
 
 ## Git
