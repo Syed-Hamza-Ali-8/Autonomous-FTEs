@@ -7,7 +7,10 @@ No agent may hold a tool outside its row (tests/test_tool_registry.py). Phase 1 
 from dataclasses import dataclass
 from typing import Literal
 
-RiskTier = Literal["read", "low", "money"]
+# DECISIONS J3 (P4-4): `contact` may be used unasked (it changes no order and moves no money) and is exempt
+# from fraud routing (P4-1). `order` (renamed from `low`) and `money` need an explicit customer request; in a
+# flagged turn the gateway routes them to staff approval (J2). Only these two tiers are ever queued.
+RiskTier = Literal["read", "contact", "order", "money"]
 
 
 @dataclass(frozen=True)
@@ -24,10 +27,10 @@ REGISTRY: dict[str, ToolSpec] = {
     # Phase 3 write tools: they only propose; the Action Gateway decides (invariant 1).
     "request_refund": ToolSpec("money", frozenset({"support"})),
     "issue_store_credit": ToolSpec("money", frozenset({"support"})),
-    "cancel_order": ToolSpec("low", frozenset({"support"})),
-    "update_shipping_address": ToolSpec("low", frozenset({"support"})),
-    "create_ticket": ToolSpec("low", frozenset({"support"})),
-    "escalate_to_human": ToolSpec("low", frozenset({"support"})),
+    "cancel_order": ToolSpec("order", frozenset({"support"})),
+    "update_shipping_address": ToolSpec("order", frozenset({"support"})),
+    "create_ticket": ToolSpec("contact", frozenset({"support"})),
+    "escalate_to_human": ToolSpec("contact", frozenset({"support"})),
 }
 
 

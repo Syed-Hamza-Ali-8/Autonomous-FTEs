@@ -21,6 +21,9 @@ class TurnContext:
     referenced_orders: dict[str, OrderSummary] = field(default_factory=dict)
     tool_calls: int = 0
     clock: Clock = field(default_factory=SystemClock)  # injected; the policy reads time only here (G1)
+    # Set once per turn from the customer's own message (guardrails/fraud_signal.py; DECISIONS J2). The
+    # gateway routes order- and money-tier actions that policy would ALLOW to staff approval while it is set.
+    fraud_signal: bool = False
     prompt_version: str | None = None  # recorded on every Action Gateway audit row (spec 6.2 step 7)
     # What this turn's write submissions did, appended by the gateway: the source for ActionCards and for
     # the claim check (invariant 10), never the model's text.

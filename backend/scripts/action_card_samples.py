@@ -44,7 +44,9 @@ async def attempt(pool: TxPool, ctx: TurnContext, action: str, args: dict[str, A
         await gateway.submit(ctx, action, json.dumps(args))
         card = ctx.actions[-1] if ctx.actions else None
         if card is not None and card.reference and card.reference.startswith("ACT-"):
-            record = await actions.get_action(pool.connection, ctx.customer.customer_id, card.reference)
+            record = await actions.get_action(
+                pool.connection, ctx.customer.customer_id, card.reference, ctx.clock.now()
+            )
             if record is not None:
                 RECORDS[card.reference] = record
         return card

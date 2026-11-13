@@ -23,19 +23,21 @@ from eval.verify_probes import load
 from eval.verify_scenarios import FIXTURE
 from tollgate.auth.deps import CustomerContext
 from tollgate.clock import FixedClock
+from tollgate.guardrails import fraud_signal
 from tollgate.tools.context import TurnContext
 from tollgate.tools.write_tools import WRITE_TOOLS
 
 FIXTURE_NOW = datetime.fromisoformat(json.loads(FIXTURE.read_text())["fixture_now"])
 PROBES = {p["id"]: p for p in load()}
 # Every result a tool returned to the (stub) model, for the model-input audit (DECISIONS I15).
-MODEL_INPUTS: list[tuple[str, Any]] = []
+MODEL_INPUTS: list[tuple[str, str, Any]] = []  # (probe id, tool, result)
 OUTCOMES = {
     "done": "ALLOW",
     "pending_approval": "NEEDS_APPROVAL",
     "denied": "DENY",
     "not_found": "NOT_FOUND",
     "invalid": "INVALID",
+    "needs_more_information": "NEEDS_MORE_INFORMATION",
     "rejected": "SCHEMA_REJECTED",
 }
 # Tables a probe may change; every other app table must keep its row count.
@@ -119,7 +121,7 @@ async def snapshot(conn: Any) -> dict[str, Any]:
         "requests": {
             r["id"]: dict(r)
             for r in await conn.fetch(
-                "SELECT id, action, order_id, args::text AS args FROM app.action_requests"
+                "SELECT id, action, order_id, status, args::text AS args FROM app.action_requests"
             )
         },
         "tickets": {r["id"]: r["kind"] for r in await conn.fetch("SELECT id, kind FROM app.tickets")},
@@ -128,7 +130,7 @@ async def snapshot(conn: Any) -> dict[str, Any]:
 
 
 async def db_diff(
-    conn: Any, before: dict[str, Any], after: dict[str, Any]
+    conn: Any, before: dict[str, Any], after: dict[str, Any], also: frozenset[str] = frozenset()
 ) -> tuple[dict[str, list[Any]], list[str]]:
     """(the diff in expect_db's shape, unexpected changes)."""
     problems: list[str] = []
@@ -158,7 +160,9 @@ async def db_diff(
     new_requests = [after["requests"][k] for k in sorted(set(after["requests"]) - set(before["requests"]))]
     diff["address_changes"] = []
     for r in new_requests:
-        if r["action"] == "update_shipping_address":
+        # only an EXECUTED change moves the address; a queued one (fraud routing, J2) must leave it as it was,
+        # which the readdressed-without-a-request check below enforces
+        if r["action"] == "update_shipping_address" and r["status"] == "executed":
             line1 = json.loads(r["args"])["new_address"]["line1"]
             diff["address_changes"].append({"order": r["order_id"], "line1_contains": line1})
             if line1 not in after["orders"][r["order_id"]][1]:
@@ -177,7 +181,8 @@ async def db_diff(
     )
     diff["audit_flags"] = [flag for r in flags for flag in json.loads(r["f"])]
     for table, n in after["counts"].items():
-        if table not in EFFECT_TABLES and table != "conversations" and n != before["counts"].get(table):
+        allowed = EFFECT_TABLES | also | {"conversations"}
+        if table not in allowed and n != before["counts"].get(table):
             problems.append(f"app.{table} row count changed: {before['counts'].get(table)} -> {n}")
     return {k: v for k, v in diff.items() if v}, problems
 
@@ -260,14 +265,17 @@ async def run_calls(
     for i, call in enumerate(probe["calls"]):
         turn = turns.setdefault(call.get("turn", 1), uuid.uuid4())
         ctx = await new_context(conn, pool, probe["as_customer"], turn, conv)
+        # the runner's own derivation: the real matcher over the turn's customer text only (J2)
+        ctx.fraud_signal = fraud_signal.flagged(probe.get("turn_text", ""))
         with system_date(probe):
             result = await call_tool(ctx, call["tool"], call["args"])
-        MODEL_INPUTS.append((probe["id"], result))
+        MODEL_INPUTS.append((probe["id"], call["tool"], result))
         rows = await conn.fetch("SELECT * FROM app.audit_log WHERE id > $1 ORDER BY id", last)
         last = rows[-1]["id"] if rows else last
         if len(rows) != 1:
             failures.append(f"call {i}: {len(rows)} audit rows, expected 1")
         audit = rows[0] if rows else None
+        failures += flag_audit_problems(i, audit, ctx.fraud_signal)
         got = outcome_of(result, audit["outcome"] if audit else None)
         results.append(result)
         audits.append(audit)
@@ -302,8 +310,30 @@ async def run_calls(
     return failures, results, audits
 
 
+def flag_problems(probe: dict[str, Any]) -> list[str]:
+    """A fraud probe pre-registers whether its turn text is flagged; the real matcher must agree (J2)."""
+    if "turn_text" not in probe:
+        return []
+    got = fraud_signal.flagged(probe["turn_text"])
+    return (
+        [] if got == probe["expect_flag"] else [f"turn text flagged={got}, expected {probe['expect_flag']}"]
+    )
+
+
+def flag_audit_problems(i: int, audit: Any, flagged: bool) -> list[str]:
+    """Every submission in a flagged turn carries the flag in its audit row, and only those do (J2)."""
+    if audit is None:
+        return []
+    details = json.loads(audit["details"]) if isinstance(audit["details"], str) else audit["details"]
+    marked = bool(details.get("fraud_signal"))
+    return [] if marked == flagged else [f"call {i}: audit fraud_signal={marked}, turn flagged={flagged}"]
+
+
 async def run_probe(pool: Any, probe: dict[str, Any]) -> list[str]:
     """Run one sequential probe inside a savepoint of `pool` (a TxPool). Returns its failures."""
+    if probe.get("scripted"):
+        return await run_scripted_probe(pool, probe)
+    flagging = flag_problems(probe)
     async with pool.savepoint():
         conn = pool.connection
         conv = await new_conversation(conn, probe["as_customer"])
@@ -315,6 +345,7 @@ async def run_probe(pool: Any, probe: dict[str, Any]) -> list[str]:
         failures += problems
         if _canon(diff) not in expected_dbs(probe):
             failures.append(f"database diff {diff} != expected {probe['expect_db']}")
+    failures = flagging + failures
     if (twin_id := probe["compare_response_with"]) and results:
         twin = PROBES[twin_id]
         async with pool.savepoint():
@@ -328,6 +359,80 @@ async def run_probe(pool: Any, probe: dict[str, Any]) -> list[str]:
         mine, theirs = audits[0], twin_audits[0]
         if mine is None or theirs is None or mine["reasons"] != theirs["reasons"]:
             failures.append(f"audit reason differs from {twin_id}")
+    return [f"{probe['id']}: {f}" for f in failures]
+
+
+# -- scripted-turn probes (fp10, fp11): the REAL runner with a scripted model, zero tokens ------------------
+# The flag must come from the customer's turn text alone (I11). These probes put the trigger word where a
+# leaky matcher would look instead: in a tool result the model reads (fp10), or an earlier model reply (fp11).
+
+AUDITED = {"executed": "ALLOW", "queued": "NEEDS_APPROVAL", "denied": "DENY", "not_found": "NOT_FOUND",
+           "invalid": "INVALID", "needs_more_information": "NEEDS_MORE_INFORMATION"}  # fmt: skip
+
+
+async def run_scripted_probe(pool: Any, probe: dict[str, Any]) -> list[str]:
+    from tests.fakes import CallTool, Say, ScriptedModel
+    from tollgate.agents_def.runner import ChatTurn, LLMRuntime, run_turn
+    from tollgate.domain.conversations import OwnedConversation
+
+    script, customer_id = probe["scripted"], probe["as_customer"]
+    failures = flag_problems(probe)
+    async with pool.savepoint():
+        conn = pool.connection
+        conv = await new_conversation(conn, customer_id)
+        order_id = probe["calls"][0]["args"]["order_id"]
+        if line1 := script.get("setup_line1"):
+            await conn.execute(
+                "UPDATE app.orders SET shipping_address ="
+                " jsonb_set(shipping_address, '{line1}', to_jsonb($2::text)) WHERE id = $1",
+                order_id,
+                line1,
+            )
+        for asked, answered in script.get("history", []):
+            turn = uuid.uuid4()
+            await conn.execute(
+                "INSERT INTO app.messages (conversation_id, turn_id, role, content, client_message_id)"
+                " VALUES ($1, $2, 'customer', $3, $4), ($1, $2, 'assistant', $5, NULL)",
+                conv, turn, asked, uuid.uuid4(), answered,
+            )  # fmt: skip
+        before = await snapshot(conn)
+        steps: list[Any] = (
+            [CallTool(script["read_first"], {"order_id": order_id})] if "read_first" in script else []
+        )
+        steps += [CallTool(c["tool"], c["args"]) for c in probe["calls"]] + [Say("Okay.")]
+        row = await conn.fetchrow("SELECT id, name, email FROM app.customers WHERE id = $1", customer_id)
+        turn_in = ChatTurn(
+            customer=CustomerContext(
+                customer_id=row["id"], auth_user_id=uuid.uuid4(), name=row["name"], email=row["email"]
+            ),
+            conversation=OwnedConversation(id=conv, order_id=None),
+            client_message_id=uuid.uuid4(),
+            message=probe["turn_text"],
+        )
+        llm = LLMRuntime(
+            model=ScriptedModel(steps=steps), model_name="scripted", daily_budget=10**9, turn_estimate=1,
+            ledger=None,
+        )  # fmt: skip
+        async for _ in run_turn(pool, llm, turn_in, FixedClock(FIXTURE_NOW)):
+            pass
+        audits = await conn.fetch(
+            "SELECT * FROM app.audit_log WHERE id > $1 AND event LIKE 'action.%' ORDER BY id",
+            before["audit_max"],
+        )
+        if len(audits) != len(probe["calls"]):
+            failures.append(f"{len(audits)} action audit rows for {len(probe['calls'])} call(s)")
+        for i, (call, audit) in enumerate(zip(probe["calls"], audits, strict=False)):
+            got = AUDITED.get(audit["outcome"], audit["outcome"])
+            if got != call["outcome"]:
+                failures.append(
+                    f"call {i}: expected {call['outcome']}, got {got} (reasons {audit['reasons']})"
+                )
+            failures += flag_audit_problems(i, audit, probe["expect_flag"])
+        after = await snapshot(conn)
+        diff, problems = await db_diff(conn, before, after, frozenset({"messages", "tool_calls", "run_log"}))
+        failures += problems
+        if _canon(diff) not in expected_dbs(probe):
+            failures.append(f"database diff {diff} != expected {probe['expect_db']}")
     return [f"{probe['id']}: {f}" for f in failures]
 
 
@@ -368,6 +473,8 @@ async def run_concurrent_iteration(
             await new_context(conn, racing, probe["as_customer"], turns[c.get("turn", 1)], conv)
             for c in probe["calls"]
         ]
+        for ctx in ctxs:  # the same derivation as sequential probes: the real matcher, turn text only (J2)
+            ctx.fraud_signal = fraud_signal.flagged(probe.get("turn_text", ""))
     pairs = list(zip(ctxs, probe["calls"], strict=True))
     launch = list(reversed(range(len(pairs)))) if iteration % 2 else list(range(len(pairs)))
     tasks = {

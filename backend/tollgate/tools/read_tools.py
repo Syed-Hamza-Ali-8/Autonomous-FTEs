@@ -103,7 +103,7 @@ async def get_order(ctx: RunContextWrapper[TurnContext], order_id: str) -> dict[
         if oid is None:
             return NOT_FOUND
         async with turn.pool.acquire() as conn:
-            detail = await orders.get_order(conn, turn.customer.customer_id, oid)
+            detail = await orders.get_order(conn, turn.customer.customer_id, oid, turn.clock.now())
         if detail is None:
             return NOT_FOUND
         _remember(turn, detail)
@@ -126,7 +126,7 @@ async def get_shipment(ctx: RunContextWrapper[TurnContext], order_id: str) -> di
         if oid is None:
             return NOT_FOUND
         async with turn.pool.acquire() as conn:
-            detail = await orders.get_order(conn, turn.customer.customer_id, oid)
+            detail = await orders.get_order(conn, turn.customer.customer_id, oid, turn.clock.now())
             if detail is None:
                 return NOT_FOUND
             shipment = detail.shipment
@@ -163,7 +163,7 @@ async def get_refund_history(ctx: RunContextWrapper[TurnContext], order_id: str)
         if oid is None:
             return NOT_FOUND
         async with turn.pool.acquire() as conn:
-            detail = await orders.get_order(conn, turn.customer.customer_id, oid)
+            detail = await orders.get_order(conn, turn.customer.customer_id, oid, turn.clock.now())
         if detail is None:
             return NOT_FOUND
         _remember(turn, detail)

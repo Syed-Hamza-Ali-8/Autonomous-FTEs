@@ -36,14 +36,17 @@ SCHEMAS: dict[str, dict[str, tuple[type, ...]]] = {
     "escalate_to_human": {"summary": (str,)},
 }
 CATEGORIES = {
-    "boundary": 20, "double_payment": 6, "cross_customer": 13, "amount_tampering": 16,
-    "threshold_evasion": 8, "state_violation": 17, "approval_forging": 6, "idempotency": 7,
-    "validation": 1, "structural": 4, "time": 2, "order_status": 5, "address": 5,
+    "boundary": 20, "double_payment": 6, "cross_customer": 13, "amount_tampering": 18,
+    "threshold_evasion": 8, "state_violation": 17, "approval_forging": 6, "idempotency": 8,
+    "validation": 1, "structural": 5, "time": 2, "order_status": 5, "address": 11, "fraud_signal": 11,
 }  # fmt: skip
+# Phase 4 additions (eval/PHASE4_PREREGISTRATION.md 2.3, 3.3, 4.8): fraud_signal fp01-fp11, address ad06-ad11
+# (ad03 re-registered [K1]), idempotency id08, amount_tampering am17-am18, structural st05.
 PROTECTIONS = {
     "ownership", "indistinguishable", "policy", "window", "line_rule", "lock", "recompute",
     "validation", "strict_schema", "audit_on_reject", "idempotency", "cancel_refund",
     "no_approval_tools", "executor_boundary", "clock", "order_status", "address_merge",
+    "fraud_signal", "address_coupling",
 }  # fmt: skip
 
 # Reference mutants: each removes one protection from this model, so the mutation table in
@@ -70,6 +73,12 @@ MUTANTS = {
     "M19": "order status not updated after a succeeded refund",
     "M23": "address change replaces instead of merging (fields not given are lost)",
     "M24": "recipient-name and country change flags removed",
+    # Phase 4 (pre-registration 2.3, 3.3). M28 (the flag derived from text other than the customer's) acts on
+    # where the text comes from, which this model does not simulate; its probes are listed by hand.
+    "M25": "fraud-signal check removed from the gateway",
+    "M26": "tighten-only removed: a flag turns any decision, DENY included, into NEEDS_APPROVAL",
+    "M27": "the matcher over-triggers: every turn is flagged",
+    "M34": "K1 coupling check removed: a city, postcode or country change goes through alone",
 }
 
 
@@ -118,6 +127,7 @@ class Ledger:
             "refunds": [], "store_credits": [], "cancellations": [], "address_changes": [], "tickets": [],
         }  # fmt: skip
         self.flags: list[str] = []
+        self.flag = False  # the turn's fraud signal (the probe's pre-registered expect_flag)
         self.status: dict[str, str] = {}
         self.keys: dict[tuple[Any, ...], tuple[str, str | None]] = {}
 
@@ -169,6 +179,18 @@ def reason_for(
     ):
         return "window_count"
     return "window_cap"
+
+
+def _flag_route(decision: str, reason: str | None, led: Ledger, m: frozenset[str]) -> tuple[str, str | None]:
+    """J2, tighten only: in a flagged turn an order- or money-tier ALLOW becomes NEEDS_APPROVAL
+    (fraud_signal); NEEDS_APPROVAL and DENY stand. The contact tier never comes here (P4-1)."""
+    if not led.flag or "M25" in m:
+        return decision, reason
+    if decision == "ALLOW":
+        return "NEEDS_APPROVAL", "fraud_signal"
+    if decision == "DENY" and "M26" in m:
+        return "NEEDS_APPROVAL", reason
+    return decision, reason
 
 
 def derive(
@@ -224,8 +246,12 @@ def _derive(
     status = led.status.get(order["id"], order["status"])
     ccy = order["currency"]
     if tool == "cancel_order":
-        if status not in PREREGISTERED_POLICY["cancel_allowed_statuses"] and "M2" not in m:
-            return "DENY", "status_not_cancellable", None
+        cancellable = status in PREREGISTERED_POLICY["cancel_allowed_statuses"] or "M2" in m
+        decision, reason = _flag_route(
+            "ALLOW" if cancellable else "DENY", None if cancellable else "status_not_cancellable", led, m
+        )
+        if decision != "ALLOW":
+            return decision, reason, None  # a queued cancel changes nothing until staff approve (J9)
         refund = store.payments.get(order["id"], 0) if status == "paid" and "M14" not in m else 0
         led.status[order["id"]] = "cancelled"
         led.rows["cancellations"].append(order["id"])
@@ -246,12 +272,22 @@ def _derive(
         }
         if any(not v.strip() for v in merged.values()):
             return "INVALID", "address_incomplete", None
-        if status not in PREREGISTERED_POLICY["address_change_allowed_statuses"] and "M2" not in m:
-            return "DENY", "status_not_addressable", None
+        # K1 (symmetric): a city, postcode or country change needs the city AND postcode supplied
+        changed = any(merged[k] != str(current.get(k) or "") for k in ("city", "postal_code", "country"))
+        if changed and "M34" not in m and any(given.get(k) is None for k in ("city", "postal_code")):
+            return "NEEDS_MORE_INFORMATION", "address_fields_required", None
+        allowed = status in PREREGISTERED_POLICY["address_change_allowed_statuses"] or "M2" in m
+        decision, reason = _flag_route(
+            "ALLOW" if allowed else "DENY", None if allowed else "status_not_addressable", led, m
+        )
+        if decision == "DENY":
+            return "DENY", reason, None
         if "M24" not in m:
             for k, flag in (("name", "recipient_name_changed"), ("country", "country_changed")):
                 if merged[k] != (current.get(k) or ""):
                     led.flags.append(flag)
+        if decision == "NEEDS_APPROVAL":
+            return decision, reason, None  # held for staff: the address is unchanged
         row = {"order": order["id"], "line1_contains": merged["line1"]}
         led.rows["address_changes"].append(row)
         return "ALLOW", None, row
@@ -272,6 +308,7 @@ def _derive(
            "items": items, "amount_cents": args["amount_cents"]}  # fmt: skip
     decision, amount = _decide(store, customer, req, led, m)
     reason = None if decision == "ALLOW" else reason_for(store, customer, order, req, led, m)
+    decision, reason = _flag_route(decision, reason, led, m)
     if decision == "DENY":
         return "DENY", reason, None
     led.earlier.append(Earlier(order["id"], ccy, amount, frozenset(items), True))
@@ -357,13 +394,15 @@ def check(store: Store, probe: dict[str, Any], m: frozenset[str] = frozenset()) 
         store = replace(store, now=datetime.fromisoformat(probe["system_date"]))
     wanted = expected_db(probe)
     orders = list(permutations(range(len(calls)))) if probe["concurrent"] else [tuple(range(len(calls)))]
+    flagged = "M27" in m or bool(probe.get("expect_flag"))
     for order in orders:
         led = Ledger()
+        led.flag = flagged
         if probe["concurrent"] and "M7" in m:  # no lock: each call reads the pre-call state; keys stay unique
             got = []
             for i in order:
                 solo = Ledger()
-                solo.keys = led.keys
+                solo.keys, solo.flag = led.keys, flagged
                 got.append(derive(store, probe["as_customer"], calls[i], solo, m))
                 for k, v in solo.rows.items():
                     led.rows[k] += v

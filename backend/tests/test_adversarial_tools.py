@@ -18,16 +18,22 @@ from tests.probe_harness import PROBES, run_concurrent_iteration, run_probe
 from tests.scratch_db import SchemaMismatchError, ScratchDatabases
 from tests.txpool import TxPool, rolled_back
 from tollgate.config import SupabaseSettings
-from tollgate.tools import write_tools
+from tollgate.tools import model_visible, write_tools
 from tollgate.tools.read_tools import READ_TOOLS
 from tollgate.tools.registry import REGISTRY
 from tollgate.tools.write_tools import WRITE_TOOLS
 
 ITERATIONS = 20
-SEQUENTIAL = sorted(p["id"] for p in PROBES.values() if p["calls"] and not p["concurrent"])
+# Probes with calls, plus flag-only fraud probes (fp08: the matcher's verdict on its turn text is the check).
+SEQUENTIAL = sorted(
+    p["id"] for p in PROBES.values() if (p["calls"] or "turn_text" in p) and not p["concurrent"]
+)
 CONCURRENT = sorted(p["id"] for p in PROBES.values() if p["concurrent"])
 PACKAGE = Path(__file__).resolve().parents[1] / "tollgate"
 EXECUTOR_IMPORTERS = {PACKAGE / "actions" / "gateway.py", PACKAGE / "approvals" / "service.py"}
+# st05 (Phase 4 pre-registration 4.2): the one module that decides, and the one module that may call it
+DECISION_WRITER = "tollgate/approvals/service.py"
+SERVICE_IMPORTERS = {PACKAGE / "api" / "staff.py"}
 IDENTITY_PARAMS = {"customer_id", "email", "auth_user_id", "user_id"}
 
 
@@ -64,24 +70,28 @@ async def test_concurrent_probe_executes_exactly_once(scratch: ScratchDatabases,
     assert failures == []
 
 
-# -- structural probes (st01-st04, af06) -------------------------------------------------------------------
+# -- structural probes (st01-st05, af06) -------------------------------------------------------------------
+
+
+def module_importers(root: Path, module: str) -> set[Path]:
+    """Every module under `root` that imports `module` (dotted), in any import form."""
+    package, _, name = module.rpartition(".")
+    found = set()
+    for path in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Import) and any(a.name.startswith(module) for a in node.names):
+                found.add(path)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                if node.module.startswith(module) or (
+                    node.module == package and any(a.name == name for a in node.names)
+                ):
+                    found.add(path)
+    return found
 
 
 def executor_importers(root: Path) -> set[Path]:
     """Every module under `root` that imports tollgate.actions.executors, in any import form."""
-    found = set()
-    for path in root.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
-            if isinstance(node, ast.Import) and any(
-                a.name.startswith("tollgate.actions.executors") for a in node.names
-            ):
-                found.add(path)
-            elif isinstance(node, ast.ImportFrom) and node.module is not None:
-                if node.module.startswith("tollgate.actions.executors") or (
-                    node.module == "tollgate.actions" and any(a.name == "executors" for a in node.names)
-                ):
-                    found.add(path)
-    return found
+    return module_importers(root, "tollgate.actions.executors")
 
 
 def actions_use_in_tools(source: str) -> list[str]:
@@ -138,6 +148,18 @@ def test_st01_only_gateway_and_approval_service_import_executors() -> None:
     assert executor_importers(PACKAGE) <= EXECUTOR_IMPORTERS
 
 
+def decision_writers(root: Path) -> dict[str, list[str]]:
+    """Modules with SQL that writes the decisions log or moves an action request (st05)."""
+    patterns = (approval_surface.APPROVALS_WRITE, approval_surface.REQUEST_WRITE)
+    return approval_surface.writers(set(root.rglob("*.py")), root, patterns)
+
+
+def test_st05_only_the_approval_service_decides_and_only_the_staff_api_calls_it() -> None:
+    writers = decision_writers(PACKAGE)
+    assert set(writers) == {DECISION_WRITER}, writers  # equality: the scan must also see the real writer
+    assert module_importers(PACKAGE, "tollgate.approvals.service") <= SERVICE_IMPORTERS
+
+
 def test_st02_write_tools_only_call_gateway_submit() -> None:
     source = Path(write_tools.__file__).read_text()
     assert actions_use_in_tools(source) == []
@@ -178,6 +200,17 @@ def tool_modules() -> list[Path]:
 
 def test_af06a_no_tool_reaches_a_write_to_approval_state() -> None:
     assert approval_surface.approval_writers_reachable(tool_modules(), PACKAGE) == {}
+
+
+def test_af06a1_no_tool_reaches_a_write_to_the_decisions_log() -> None:
+    assert approval_surface.approvals_log_writers_reachable(tool_modules(), PACKAGE) == {}
+
+
+def test_af06a2_no_tool_reaches_an_update_into_approved_or_executed() -> None:
+    assert approval_surface.deciding_updates_reachable(tool_modules(), PACKAGE) == {}
+    # the scan is live on the real tree: the approval service's own update is seen by it
+    service = [PACKAGE / "approvals" / "service.py"]
+    assert approval_surface.deciding_updates_reachable(service, PACKAGE) != {}
 
 
 async def test_af06b_no_tool_parameter_maps_to_an_approval_column(db: asyncpg.Connection) -> None:
@@ -228,13 +261,24 @@ async def test_schema_guard_is_live(scratch: ScratchDatabases) -> None:
 
 # -- the model's input is tier-safe (DECISIONS I15, change 3): it can't leak what it was never given -------
 
-RESULT_FIELDS = {
-    "status", "action", "order_id", "reference", "refund_id", "store_credit_id", "ticket_id",
-    "amount_cents", "currency", "display", "refund", "customer_message_hint",
-}  # fmt: skip
+# What a write tool's result may show the model: exactly its entry in tollgate/tools/model_visible.py (J11).
+ANY_WRITE_RESULT = frozenset().union(*model_visible.WRITE.values())
 
 
-def input_problems(probe_id: str, result: object) -> list[str]:
+# The fixed outcome vocabulary the model reads. `needs_more_information` is K1's own outcome (Phase 4
+# pre-registration 3.3); every status must actually occur across the probes.
+STATUSES = {
+    "done",
+    "pending_approval",
+    "denied",
+    "not_found",
+    "invalid",
+    "rejected",
+    "needs_more_information",
+}
+
+
+def input_problems(probe_id: str, result: object, tool: str | None = None) -> list[str]:
     """Group-C values in one tool result, ignoring the request's OWN amount (raw cents or its display string):
     a $50.00 refund is not a disclosure of a $50.00 limit."""
     from tollgate.policy.disclosure import find
@@ -242,15 +286,14 @@ def input_problems(probe_id: str, result: object) -> list[str]:
     if isinstance(result, str):  # the generic internal-error text
         return [f"{probe_id}: {hit}" for hit in find(result)]
     assert isinstance(result, dict)
-    out = [f"{probe_id}: field {k!r} is not allowed" for k in set(result) - RESULT_FIELDS]
+    allowed = model_visible.WRITE[tool] if tool else ANY_WRITE_RESULT
+    out = [
+        f"{probe_id}: {p!r} is not model-visible for {tool}"
+        for p in sorted(model_visible.paths(result) - allowed)
+    ]
     parts = [result] + ([result["refund"]] if isinstance(result.get("refund"), dict) else [])
-    for part in parts[1:]:
-        out += [
-            f"{probe_id}: refund.{k} is not allowed"
-            for k in set(part) - {"amount_cents", "currency", "display"}
-        ]
     # `status` is the fixed outcome vocabulary the model reads, not a policy reason; the rest is scanned.
-    if result.get("status") not in {"done", "pending_approval", "denied", "not_found", "invalid", "rejected"}:
+    if result.get("status") not in STATUSES:
         out.append(f"{probe_id}: unexpected status {result.get('status')!r}")
     own = {str(p.get("amount_cents")) for p in parts} | {str(p.get("display")) for p in parts}
     for hit in find(json.dumps({k: v for k, v in result.items() if k != "status"})):
@@ -267,10 +310,14 @@ async def test_model_input_is_tier_safe(txpool: TxPool) -> None:
     MODEL_INPUTS.clear()
     for probe_id in SEQUENTIAL:
         await run_probe(txpool, PROBES[probe_id])
-    statuses = {r.get("status") for _, r in MODEL_INPUTS if isinstance(r, dict)}
-    assert {"done", "pending_approval", "denied", "not_found", "invalid", "rejected"} <= statuses
-    problems = [p for probe_id, result in MODEL_INPUTS for p in input_problems(probe_id, result)]
+    statuses = {r.get("status") for _, _, r in MODEL_INPUTS if isinstance(r, dict)}
+    assert statuses >= STATUSES
+    problems = [p for probe_id, tool, result in MODEL_INPUTS for p in input_problems(probe_id, result, tool)]
     assert problems == []
+    # J11: the write tools' allowlist is not stale. Every listed path occurs in some tool's results (per tool,
+    # each result is checked against its own entry above, so a new field fails there).
+    seen = set().union(*(model_visible.paths(r) for _, _, r in MODEL_INPUTS if isinstance(r, dict)))
+    assert ANY_WRITE_RESULT - seen == set(), "listed but never returned"
 
 
 def test_model_input_audit_is_live() -> None:

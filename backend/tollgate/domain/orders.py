@@ -7,8 +7,10 @@ injection payloads, and nothing in the customer flows needs them.
 """
 
 import json
+from datetime import datetime
 from typing import Any
 
+from tollgate.approvals import expiry
 from tollgate.db import Conn
 from tollgate.domain.models import (
     Address,
@@ -51,7 +53,7 @@ async def list_orders(conn: Conn, customer_id: str, status: OrderStatus | None =
     ]
 
 
-async def get_order(conn: Conn, customer_id: str, order_id: str) -> OrderDetail | None:
+async def get_order(conn: Conn, customer_id: str, order_id: str, now: datetime) -> OrderDetail | None:
     order = await conn.fetchrow(
         """
         SELECT id, status, currency, total_cents, placed_at, paid_at, packed_at, delivered_at,
@@ -90,7 +92,7 @@ async def get_order(conn: Conn, customer_id: str, order_id: str) -> OrderDetail 
         order_id,
         customer_id,
     )
-    refunds = await _refunds(conn, customer_id, order_id)
+    refunds = await _refunds(conn, customer_id, order_id, now)
     shipment = await get_shipment(conn, customer_id, order_id)
     return OrderDetail(
         id=order["id"],
@@ -145,22 +147,34 @@ async def get_shipment(conn: Conn, customer_id: str, order_id: str) -> Shipment 
     )
 
 
-async def get_refund_history(conn: Conn, customer_id: str, order_id: str) -> list[Refund] | None:
+async def get_refund_history(
+    conn: Conn, customer_id: str, order_id: str, now: datetime
+) -> list[Refund] | None:
     """None when the order is not this customer's (or doesn't exist); [] when it has no refunds."""
     owned = await conn.fetchval(
         "SELECT 1 FROM app.orders WHERE id = $1 AND customer_id = $2", order_id, customer_id
     )
     if owned is None:
         return None
-    return await _refunds(conn, customer_id, order_id)
+    return await _refunds(conn, customer_id, order_id, now)
 
 
-async def _refunds(conn: Conn, customer_id: str, order_id: str) -> list[Refund]:
+DECIDED_AS = {"failed_recheck": "not_completed", "expired": "expired"}
+
+
+def _refund_status(status: str, created_at: datetime, now: datetime) -> str:
+    """R2 of the derived expiry predicate (J8): a refund still pending past approval expiry reads as expired.
+    Its own seam for mutation M40. (Executed and historical refunds are never pending.)"""
+    return "expired" if status == "pending_approval" and expiry.is_expired(created_at, now) else status
+
+
+async def _refunds(conn: Conn, customer_id: str, order_id: str, now: datetime) -> list[Refund]:
     rows = await conn.fetch(
         """
-        SELECT r.id, r.amount_cents, r.currency, r.status, r.reason, r.created_at
+        SELECT r.id, r.amount_cents, r.currency, r.status, r.reason, r.created_at, p.decision
           FROM app.refunds r
           JOIN app.orders o ON o.id = r.order_id
+          LEFT JOIN app.approvals p ON p.action_request_id = r.action_request_id
          WHERE r.order_id = $1 AND o.customer_id = $2
          ORDER BY r.created_at, r.id
         """,
@@ -171,7 +185,9 @@ async def _refunds(conn: Conn, customer_id: str, order_id: str) -> list[Refund]:
         Refund(
             id=r["id"],
             amount=Money(amount_cents=r["amount_cents"], currency=r["currency"]),
-            status=r["status"],
+            # Stored as rejected, but neither is a rejection: a failed re-check (J10), and an expiry whose
+            # lazy write has happened (it must read the same as before the write, J8).
+            status=DECIDED_AS.get(r["decision"]) or _refund_status(r["status"], r["created_at"], now),
             reason=r["reason"],
             created_at=r["created_at"],
         )

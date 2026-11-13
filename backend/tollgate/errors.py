@@ -54,3 +54,15 @@ class NotFoundError(TollgateError):
 
 class ActionFailedError(TollgateError):
     """An Action Gateway submission failed after validation. Its effect was rolled back and audited."""
+
+
+class ApprovalConflictError(TollgateError):
+    """A staff decision can't be applied to this request as it now stands (HTTP 409). Nothing was changed.
+
+    `reason`: already_decided (decided before, or concurrently) | amount_mismatch (the screen the staff member
+    decided on is stale). An approval that has expired is not an error: the expiry is recorded and returned.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason

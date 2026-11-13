@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 
 from tollgate.config import LLMSettings
 from tollgate.errors import ConfigError, ModelNotAvailableError, ProviderError, RateLimitError
+from tollgate.llm import fingerprints
 
 
 def make_client(settings: LLMSettings) -> AsyncOpenAI:
@@ -12,7 +13,8 @@ def make_client(settings: LLMSettings) -> AsyncOpenAI:
     if key is None or not key.get_secret_value():
         raise ConfigError(f"API key for provider '{settings.llm_provider}' is not set in .env")
     # max_retries=0: 429s surface as typed errors; retry policy lives in llm/retry.py (Rule 0.1.7).
-    return AsyncOpenAI(api_key=key.get_secret_value(), base_url=settings.base_url(), max_retries=0)
+    client = AsyncOpenAI(api_key=key.get_secret_value(), base_url=settings.base_url(), max_retries=0)
+    return fingerprints.instrument(client)  # system_fingerprint per model call (pre-registration 12.4)
 
 
 def configured_models(settings: LLMSettings) -> list[str]:

@@ -109,6 +109,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/staff/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Approvals */
+        get: operations["approvals_v1_staff_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/approvals/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Approval */
+        get: operations["approval_v1_staff_approvals__reference__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/approvals/{reference}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_v1_staff_approvals__reference__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/approvals/{reference}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject */
+        post: operations["reject_v1_staff_approvals__reference__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit */
+        get: operations["audit_v1_staff_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Conversation */
+        get: operations["conversation_v1_staff_conversations__conversation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_v1_staff_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -151,7 +270,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "completed" | "waiting_for_approval" | "not_allowed";
+            state: "completed" | "waiting_for_approval" | "not_allowed" | "not_completed" | "closed";
         };
         /**
          * ActionRecord
@@ -174,6 +293,8 @@ export interface components {
             /** Decided At */
             decided_at?: string | null;
             delivery_address?: components["schemas"]["Address"] | null;
+            /** Explanation */
+            explanation: string;
             /**
              * Kept Fields
              * @default []
@@ -187,7 +308,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "completed" | "waiting_for_approval" | "not_allowed";
+            state: "completed" | "waiting_for_approval" | "not_allowed" | "not_completed" | "closed";
         };
         /** Address */
         Address: {
@@ -201,6 +322,117 @@ export interface components {
             name: string;
             /** Postal Code */
             postal_code: string;
+        };
+        /** ApprovalDetail */
+        ApprovalDetail: {
+            approval: components["schemas"]["ApprovalItem"];
+            /** Checklist */
+            checklist: components["schemas"]["ChecklistItem"][];
+            decision: components["schemas"]["DecisionRecord"] | null;
+            order: components["schemas"]["OrderFacts"] | null;
+            transcript: components["schemas"]["Transcript"] | null;
+        };
+        /** ApprovalItem */
+        ApprovalItem: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "request_refund" | "issue_store_credit" | "cancel_order" | "update_shipping_address" | "create_ticket" | "escalate_to_human";
+            amount: components["schemas"]["Money"] | null;
+            /** Conversation Id */
+            conversation_id: string | null;
+            /** Customer Id */
+            customer_id: string;
+            /** Customer Name */
+            customer_name: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Order Id */
+            order_id: string | null;
+            /**
+             * Queued At
+             * Format: date-time
+             */
+            queued_at: string;
+            /** Reasons */
+            reasons: string[];
+            /** Reference */
+            reference: string;
+            /** Risk Tags */
+            risk_tags: components["schemas"]["RiskTag"][];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "expired" | "approved" | "rejected" | "failed_recheck";
+        };
+        /** ApprovalQueue */
+        ApprovalQueue: {
+            /** Items */
+            items: components["schemas"]["ApprovalItem"][];
+            /**
+             * Now
+             * Format: date-time
+             */
+            now: string;
+        };
+        /**
+         * ApproveBody
+         * @description Exactly what the staff member was shown (stale-screen guard). Both null for an action without one.
+         */
+        ApproveBody: {
+            /** Amount Cents */
+            amount_cents: number | null;
+            /** Currency */
+            currency: ("USD" | "PKR") | null;
+        };
+        /** AuditEntry */
+        AuditEntry: {
+            /** Actor Id */
+            actor_id: string;
+            /** Actor Type */
+            actor_type: string;
+            amount?: components["schemas"]["Money"] | null;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /** Decision */
+            decision: string | null;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+            /** Event */
+            event: string;
+            /** Id */
+            id: number;
+            /** Outcome */
+            outcome: string | null;
+            /** Reasons */
+            reasons: string[];
+            /** Target */
+            target: string | null;
+            /** Turn Id */
+            turn_id: string | null;
+        };
+        /** AuditPage */
+        AuditPage: {
+            /** Items */
+            items: components["schemas"]["AuditEntry"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
         };
         /** ChatError */
         ChatError: {
@@ -233,6 +465,25 @@ export interface components {
             /** Order Id */
             order_id?: string | null;
         };
+        /** ChecklistItem */
+        ChecklistItem: {
+            /** Code */
+            code: string;
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "deny" | "approval";
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pass" | "fail" | "not_reached" | "needs_approval";
+        };
         /** ConversationOut */
         ConversationOut: {
             /**
@@ -253,6 +504,39 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /** DecisionOut */
+        DecisionOut: {
+            /** Approval Id */
+            approval_id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approved" | "rejected" | "failed_recheck" | "expired";
+            /** Reasons */
+            reasons: string[];
+            /** Reference */
+            reference: string;
+        };
+        /** DecisionRecord */
+        DecisionRecord: {
+            /** Approval Id */
+            approval_id: string;
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /** Decided By */
+            decided_by: string | null;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approved" | "rejected" | "expired" | "failed_recheck";
+            /** Note */
+            note: string | null;
         };
         /** Done */
         Done: {
@@ -334,6 +618,18 @@ export interface components {
             status: "pending" | "paid" | "packed" | "shipped" | "delivered" | "cancelled" | "refunded" | "partially_refunded";
             total: components["schemas"]["Money"];
         };
+        /** OrderFacts */
+        OrderFacts: {
+            captured: components["schemas"]["Money"];
+            /** Id */
+            id: string;
+            /** Items */
+            items: string[];
+            refunded: components["schemas"]["Money"];
+            /** Status */
+            status: string;
+            total: components["schemas"]["Money"];
+        };
         /** OrderItem */
         OrderItem: {
             /** Category */
@@ -408,7 +704,12 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "pending_approval" | "succeeded" | "rejected";
+            status: "pending_approval" | "succeeded" | "rejected" | "expired" | "not_completed";
+        };
+        /** RejectBody */
+        RejectBody: {
+            /** Note */
+            note: string;
         };
         /** Reply */
         Reply: {
@@ -426,6 +727,13 @@ export interface components {
              * @enum {string}
              */
             type: "reply";
+        };
+        /** RiskTag */
+        RiskTag: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
         };
         /** Shipment */
         Shipment: {
@@ -454,6 +762,74 @@ export interface components {
             at: string;
             /** Description */
             description: string;
+        };
+        /** StaffProfile */
+        StaffProfile: {
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+        };
+        /** ToolTrace */
+        ToolTrace: {
+            /** Arguments */
+            arguments: {
+                [key: string]: unknown;
+            };
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Outcome */
+            outcome: string;
+            /** Tool */
+            tool: string;
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            turn_id: string;
+        };
+        /** Transcript */
+        Transcript: {
+            /** Actions */
+            actions: components["schemas"]["AuditEntry"][];
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /** Customer Id */
+            customer_id: string;
+            /** Messages */
+            messages: components["schemas"]["TranscriptMessage"][];
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolTrace"][];
+        };
+        /** TranscriptMessage */
+        TranscriptMessage: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Content */
+            content: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "customer" | "assistant" | "system";
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            turn_id: string;
         };
         /** TurnStarted */
         TurnStarted: {
@@ -657,6 +1033,215 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approvals_v1_staff_approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalQueue"];
+                };
+            };
+        };
+    };
+    approval_v1_staff_approvals__reference__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_v1_staff_approvals__reference__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApproveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_v1_staff_approvals__reference__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_v1_staff_audit_get: {
+        parameters: {
+            query?: {
+                decision?: ("ALLOW" | "NEEDS_APPROVAL" | "DENY") | null;
+                action?: ("request_refund" | "issue_store_credit" | "cancel_order" | "update_shipping_address" | "create_ticket" | "escalate_to_human") | null;
+                customer?: string | null;
+                from?: string | null;
+                to?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    conversation_v1_staff_conversations__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transcript"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_v1_staff_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfile"];
                 };
             };
         };

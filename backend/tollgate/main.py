@@ -11,11 +11,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from tollgate.agents_def.runner import LLMRuntime
-from tollgate.api import chat, orders
+from tollgate.api import chat, orders, staff
 from tollgate.auth.supabase_jwt import TokenVerifier
 from tollgate.config import AppSettings, AuthSettings, LLMSettings, SupabaseSettings
 from tollgate.db import create_pool
-from tollgate.errors import AuthError, AuthUnavailableError, ConfigError, ForbiddenError, NotFoundError
+from tollgate.errors import (
+    ApprovalConflictError,
+    AuthError,
+    AuthUnavailableError,
+    ConfigError,
+    ForbiddenError,
+    NotFoundError,
+)
 from tollgate.llm.provider import make_client
 
 log = logging.getLogger("tollgate")
@@ -88,6 +95,12 @@ async def on_not_found(_: Request, __: NotFoundError) -> JSONResponse:
     return JSONResponse({"error": "not_found"}, status_code=404)
 
 
+@app.exception_handler(ApprovalConflictError)
+async def on_approval_conflict(_: Request, exc: ApprovalConflictError) -> JSONResponse:
+    # already_decided | amount_mismatch: nothing was changed (staff only; never a customer surface)
+    return JSONResponse({"error": exc.reason}, status_code=409)
+
+
 @app.get("/healthz", include_in_schema=False)
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -95,3 +108,4 @@ async def healthz() -> dict[str, str]:
 
 app.include_router(orders.router)
 app.include_router(chat.router)
+app.include_router(staff.router)

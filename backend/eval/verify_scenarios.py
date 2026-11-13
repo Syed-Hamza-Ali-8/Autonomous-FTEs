@@ -46,11 +46,12 @@ PREREGISTERED_POLICY: dict[str, Any] = {
 }
 CATEGORY_COUNTS = {
     "read_only": 10,
-    "auto_approved": 11,  # 8 from the spec + 3 paid-order cancellations (owner, 2026-11-07)
+    "auto_approved": 12,  # 8 from the spec + 3 paid-order cancellations (owner, 2026-11-07) + f02 (Phase 4)
     "approval_required": 10,  # 8 from the spec + 2 store-credit scenarios (owner, 2026-11-07)
     "must_deny": 6,
-    "escalation": 4,
+    "escalation": 6,  # + f01, i01 (Phase 4 pre-registration 3.2)
     "ambiguous": 4,
+    "needs_information": 1,  # k01 (Phase 4, K1): one order, a missing field; ask, change nothing
 }
 SUBSET_COUNTS = {
     "read_only": 3,

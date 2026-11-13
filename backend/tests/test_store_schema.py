@@ -227,6 +227,28 @@ async def test_order_status_check_is_live(tx: asyncpg.Connection) -> None:
     await _immediate(tx)  # nothing left to object
 
 
+async def _partial_refund_marked_refunded(tx: asyncpg.Connection) -> None:
+    order_id, ccy, remaining = await _refundable_order(tx)
+    await _succeeded_refund(tx, order_id, ccy, remaining - 1)  # one cent short of the captured total
+    await tx.execute("UPDATE app.orders SET status = 'refunded' WHERE id = $1", order_id)
+
+
+async def test_a_partial_refund_cannot_be_marked_refunded(tx: asyncpg.Connection) -> None:
+    await _partial_refund_marked_refunded(tx)
+    with pytest.raises(asyncpg.CheckViolationError):
+        await _immediate(tx)
+
+
+async def test_order_status_check_is_live_for_a_partial_refund_marked_refunded(
+    tx: asyncpg.Connection,
+) -> None:
+    """M20's second planted case (Phase 4 pre-registration 4.8): without the triggers, it would commit."""
+    await tx.execute("DROP TRIGGER refunds_order_status_consistent ON app.refunds")
+    await tx.execute("DROP TRIGGER orders_status_consistent ON app.orders")
+    await _partial_refund_marked_refunded(tx)
+    await _immediate(tx)  # nothing left to object
+
+
 async def test_action_requests_are_created_undecided(tx: asyncpg.Connection) -> None:
     for status in ("approved", "rejected", "expired"):
         sp = tx.transaction()
@@ -239,3 +261,38 @@ async def test_action_requests_are_created_undecided(tx: asyncpg.Connection) -> 
                 status,
             )
         await sp.rollback()
+
+
+SEQUENCE_IDS = {  # (table, prefix, minimum width): every sequence-backed id default
+    ("refunds", "REF-", 4),
+    ("store_credits", "SC-", 4),
+    ("tickets", "TKT-", 4),
+    ("action_requests", "ACT-", 6),
+    ("approvals", "APR-", 6),
+}
+
+
+async def test_sequence_ids_grow_past_their_padding_instead_of_truncating(db: asyncpg.Connection) -> None:
+    """lpad() TRUNCATES a longer string: 'REF-' || lpad('10481', 4, '0') is 'REF-1048', so sequence values
+    10480..10489 all collide. Found 2026-11-13 when the local refund sequence (advanced by rolled-back tests;
+    setval/nextval are not transactional) passed 9999. Ids pad to a minimum width and then grow."""
+    for _table, prefix, width in SEQUENCE_IDS:
+        cases = {
+            1: "0" * (width - 1) + "1",  # padded to the minimum width
+            10**width - 1: "9" * width,  # the last padded value
+            10**width: str(10**width),  # one digit more: grows, never truncated
+            10**width + 481: str(10**width + 481),
+        }
+        for n, digits in cases.items():
+            got = await db.fetchval("SELECT app.sequence_id($1, $2, $3)", prefix, n, width)
+            assert got == prefix + digits
+    defaults = {
+        r["table_name"]: r["column_default"]
+        for r in await db.fetch(
+            "SELECT table_name, column_default FROM information_schema.columns"
+            " WHERE table_schema = 'app' AND column_name = 'id' AND column_default LIKE '%nextval%'"
+        )
+    }
+    assert set(defaults) == {t for t, _, _ in SEQUENCE_IDS}
+    for table, default in defaults.items():
+        assert "lpad" not in default and "sequence_id" in default, (table, default)

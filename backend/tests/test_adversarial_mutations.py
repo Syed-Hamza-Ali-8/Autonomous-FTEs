@@ -27,6 +27,7 @@ from tests.test_probe_set import PREREGISTERED_KILLS
 from tests.txpool import TxPool, rolled_back
 from tollgate.actions import executors, gateway, idempotency
 from tollgate.config import SupabaseSettings
+from tollgate.guardrails import fraud_signal
 from tollgate.policy import engine
 from tollgate.tools import write_tools
 
@@ -138,6 +139,20 @@ def m8c(mp: pytest.MonkeyPatch) -> None:
 
     mp.setitem(write_tools.WRITE_TOOLS, "request_refund", float_refund)
 
+    # Widened in Phase 4 (pre-registration 4.8): "typed as a number everywhere" covers store credit too.
+    @function_tool(name_override="issue_store_credit", failure_error_function=write_tools._rejected)
+    async def float_credit(
+        ctx: RunContextWrapper[Any],
+        order_id: str,
+        reason: str,
+        items: list[str] | None = None,
+        amount_cents: float | None = None,
+    ) -> dict[str, Any]:
+        """Store credit."""
+        return await gateway.submit(*write_tools._call(ctx))
+
+    mp.setitem(write_tools.WRITE_TOOLS, "issue_store_credit", float_credit)
+
 
 def m9(mp: pytest.MonkeyPatch) -> None:
     mp.setattr(gateway, "_invalid", lambda args: None)
@@ -213,16 +228,61 @@ def m18(mp: pytest.MonkeyPatch) -> None:
     )
 
 
+# -- Phase 4 (pre-registration 2.3, 3.3): fraud-signal routing and K1 coupling ----------------------------
+
+
+def m25(mp: pytest.MonkeyPatch) -> None:
+    async def never(conn: Any, ctx: Any) -> bool:
+        return False
+
+    mp.setattr(gateway, "_fraud_flag", never)
+
+
+def m26(mp: pytest.MonkeyPatch) -> None:
+    def every_decision(verdict: engine.Verdict, flagged: bool) -> engine.Verdict:
+        return engine.Verdict("NEEDS_APPROVAL", (*verdict.reasons, "fraud_signal")) if flagged else verdict
+
+    mp.setattr(gateway, "_apply_fraud_signal", every_decision)
+
+
+def m27(mp: pytest.MonkeyPatch) -> None:
+    mp.setattr(fraud_signal, "flagged", lambda text: True)
+
+
+def m28(mp: pytest.MonkeyPatch) -> None:
+    """The flag derived from everything the turn has seen (every message, of any role, and this turn's tool
+    results) instead of the customer's own text."""
+
+    async def leaky(conn: Any, ctx: Any) -> bool:
+        seen = [r["content"] for r in await conn.fetch(
+            "SELECT content FROM app.messages WHERE conversation_id = $1", ctx.conversation_id
+        )] + [r["result"] or "" for r in await conn.fetch(
+            "SELECT result::text AS result FROM app.tool_calls WHERE turn_id = $1", ctx.turn_id
+        )]  # fmt: skip
+        return fraud_signal.flagged(" ".join(seen))
+
+    mp.setattr(gateway, "_fraud_flag", leaky)
+
+
+def m34(mp: pytest.MonkeyPatch) -> None:
+    mp.setattr(gateway, "_missing_pair", lambda current, merged, given: [])
+
+
 PATCHES: dict[str, Patch] = {
     "M1": m1, "M2": m2, "M3": m3, "M3b": m3b, "M4": m4, "M5": m5, "M6": m6, "M7": m7, "M8": m8,
     "M8b": m8b, "M8c": m8c, "M9": m9, "M10": m10, "M10b": m10b, "M13": m13, "M14": m14, "M16": m16,
     "M17": m17, "M18": m18, "M19": m19, "M23": m23, "M24": m24,
+    "M25": m25, "M26": m26, "M27": m27, "M28": m28, "M34": m34,
 }  # fmt: skip
 WITH_CALLS = " ".join(sorted(p["id"] for p in PROBES.values() if p["calls"]))
 KILLS = {
     **PREREGISTERED_KILLS,
     "M10": WITH_CALLS,  # hand-listed rows of section 6
-    "M10b": "xc08 xc09 am04 am07 am08 am16 sv17 af02 af03 af04",
+    "M10b": "xc08 xc09 am04 am07 am08 am16 sv17 af02 af03 af04 am17",
+    # Phase 4 hand-listed rows: fp08 has no calls (the matcher's verdict is the check), and M28 acts on where
+    # the flag's text comes from, which the reference model does not simulate (pre-registration 2.3).
+    "M27": PREREGISTERED_KILLS["M27"] + " fp08",
+    "M28": "fp10 fp11",
 }
 
 
@@ -318,3 +378,63 @@ def test_m12_a_tool_that_accepts_an_approval_status_is_caught(tmp_path: Any) -> 
 
     # (c): the name tripwire flags it too, and only allowlisted exceptions pass.
     assert "request_refund(status)" in approval_surface.tripwire({"request_refund": refund_with_status})
+
+
+# -- A2-P4 structural mutations (M35, M36): planted tool-reachable writes of approval state ----------------
+# Each is killed by at least two planted cases with different SQL shapes (K5).
+
+M35_PLANTS = (
+    "SQL = \"INSERT INTO app.approvals (action_request_id, decision) VALUES ($1, 'approved')\"\n",
+    'SQL = """\n    insert into "app"."approvals"\n        (action_request_id, decision, decided_at)\n'
+    '    values ($1, \'approved\', now())\n"""\n',
+    "SQL = 'DELETE FROM approvals WHERE action_request_id = $1'\n",
+)
+M36_PLANTS = (
+    "SQL = \"UPDATE app.action_requests SET status = 'approved' WHERE id = $1\"\n",
+    'SQL = """\n    update "app"."action_requests"\n       set decided_at = now(),\n'
+    '           "status" = \'executed\'\n     where id = $1\n"""\n',
+    "SQL = 'UPDATE action_requests SET status = $2 WHERE id = $1'\n",
+)
+
+
+def _plant_two_hops(tmp_path: Any, source: str) -> Any:
+    """A tools/ module importing, two hops away, a module with the planted SQL. Returns the package root."""
+    pkg = tmp_path / "tollgate"
+    (pkg / "tools").mkdir(parents=True)
+    (pkg / "approvals").mkdir()
+    (pkg / "tools" / "sneaky.py").write_text("from tollgate.approvals import helper\n")
+    (pkg / "approvals" / "helper.py").write_text("from tollgate.approvals.decide import SQL\n")
+    (pkg / "approvals" / "decide.py").write_text(source)
+    return pkg
+
+
+@pytest.mark.parametrize("source", M35_PLANTS)
+def test_m35_a_tool_reachable_write_to_the_decisions_log_is_caught(tmp_path: Any, source: str) -> None:
+    pkg = _plant_two_hops(tmp_path, source)
+    hits = approval_surface.approvals_log_writers_reachable([pkg / "tools" / "sneaky.py"], pkg)
+    assert "tollgate/approvals/decide.py" in hits
+
+
+@pytest.mark.parametrize("source", M36_PLANTS)
+def test_m36_a_tool_reachable_update_into_approved_is_caught(tmp_path: Any, source: str) -> None:
+    pkg = _plant_two_hops(tmp_path, source)
+    hits = approval_surface.deciding_updates_reachable([pkg / "tools" / "sneaky.py"], pkg)
+    assert "tollgate/approvals/decide.py" in hits
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "SQL = \"UPDATE app.action_requests SET status = 'rejected' WHERE id = $1\"\n",
+        "SQL = 'SELECT status FROM app.action_requests WHERE id = $1'\n",
+    ],
+)
+def test_m36_scan_does_not_flag_non_approving_sql(tmp_path: Any, source: str) -> None:
+    """(a2) names one direction; (a) still forbids the rejected update (checked in the next test)."""
+    pkg = _plant_two_hops(tmp_path, source)
+    assert approval_surface.deciding_updates_reachable([pkg / "tools" / "sneaky.py"], pkg) == {}
+
+
+def test_a_tool_reachable_rejection_update_is_still_caught_by_check_a(tmp_path: Any) -> None:
+    pkg = _plant_two_hops(tmp_path, "SQL = \"UPDATE app.action_requests SET status = 'rejected'\"\n")
+    assert approval_surface.approval_writers_reachable([pkg / "tools" / "sneaky.py"], pkg) != {}

@@ -29,6 +29,22 @@ ALLOWED = {
         "return ctx.clock.now()",
     ): "the INJECTED Clock (G1), not a wall-clock read; the gateway's only time source",
     (
+        "api/orders.py",
+        "request.app.state.clock.now()",
+    ): "the INJECTED Clock (G1) the app was started with; derived approval expiry on read (J8)",
+    (
+        "api/chat.py",
+        "request.app.state.clock.now()",
+    ): "the INJECTED Clock (G1); derived approval expiry in the conversation (J8, J14)",
+    (
+        "api/staff.py",
+        "request.app.state.clock.now()",
+    ): "the INJECTED Clock (G1); staff decisions and derived approval expiry (B7, J8)",
+    (
+        "tools/read_tools.py",
+        "turn.clock.now()",
+    ): "the INJECTED Clock (G1) on the turn context; derived approval expiry on read (J8)",
+    (
         "domain/conversations.py",
         "updated_at = now()",
     ): "record-keeping; orders conversations, decides nothing",

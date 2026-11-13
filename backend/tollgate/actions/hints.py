@@ -20,8 +20,12 @@ REASON_CODES = (
     "not_found", "item_not_in_order", "status_not_refundable", "status_not_cancellable",
     "status_not_addressable", "outside_return_window", "final_sale", "digital_downloaded",
     "line_already_compensated", "exceeds_refundable_remainder", "above_approval_max", "auto_max",
-    "window_count", "window_cap",
+    "window_count", "window_cap", "fraud_signal", "address_fields_required",
 )  # fmt: skip
+
+# Reasons only the approval re-check produces (DECISIONS J9). Staff-only, like every reason code; kept apart
+# from REASON_CODES because the gateway never returns them and no hint exists for them.
+RECHECK_CODES = ("amount_changed", "address_changed")
 
 NOT_FOUND = "No order with that number was found on this customer's account."
 PENDING = "This needs a quick review by our support team before it goes through. Nothing has changed yet."
@@ -90,6 +94,46 @@ def hint(reason: str, order_status: str | None = None) -> str:
             return "Say which part of the delivery address should change."
         case "address_incomplete":
             return "The new delivery address would be incomplete."
+        case "address_fields_required":
+            return fields_required(["city", "postal_code"])
         # C: internal control parameters: what happened and what next, nothing about why
         case _:
             return f"This can't be completed through chat. {TEAM}"
+
+
+# K1 (DECISIONS J6, K1): a city, postcode or country change needs the city and postcode together. The hint
+# names what is missing so the agent can ask for it. A field name, not a policy value: tier-safe.
+_FIELD_WORDS = {"city": "city", "postal_code": "postcode"}
+
+
+def fields_required(missing: list[str]) -> str:
+    named = " and ".join(_FIELD_WORDS[f] for f in missing)
+    return (
+        f"Nothing was changed. A new city, postcode or country needs the city and postcode together: ask for"
+        f" the new {named}."
+    )
+
+
+# After staff decide, or after a request waited too long (spec 4.5; DECISIONS J8). Tier A only: the outcome
+# and a next step, never why (no rule, code, limit, the staff member's note, or how long requests may wait).
+NOT_APPROVED = "Our support team reviewed this and couldn't approve it, so nothing has changed."
+# A failed re-check is not a rejection (J10): nobody decided against it, it went stale. One wording for both
+# causes (the order's state changed, or a rule that now refuses it), naming neither.
+NOT_COMPLETED = (
+    "Something about this order changed after you asked, so we couldn't complete it. You can ask again, or we"
+    " can pass you to a member of our support team."
+)
+CLOSED = (
+    "This wasn't reviewed in time, so it was closed and nothing has changed. You can ask again, or ask to be"
+    " passed to a member of our support team."
+)
+# The system message posted into the conversation (an approval adds the action's completed text, cards.py).
+DECIDED: dict[str, str] = {
+    "approved": "Our support team approved your request {reference}.",
+    "rejected": "Our support team reviewed your request {reference} and couldn't approve it, so nothing has"
+    " changed.",
+    "expired": "Your request {reference} wasn't reviewed in time, so it was closed and nothing has changed."
+    " You can ask again, or ask to be passed to a member of our support team.",
+    "failed_recheck": "Something about this order changed after you asked, so we couldn't complete your"
+    " request {reference}. You can ask again, or we can pass you to a member of our support team.",
+}

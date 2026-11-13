@@ -1,9 +1,9 @@
 """Zero-token pre-flight: can each scenario's expected action be expressed through the current tools?
 
 Both p05 (an optional field advertised as required) and a04 (a required field the customer never gave) were
-this class of bug, and each cost a real-model run to find. For every expected request of every Phase 3
-scenario, this check builds the arguments a model could form from what the scenario makes available, and
-validates them against both enforcers:
+this class of bug, and each cost a real-model run to find. For every expected request of every scenario in
+the run's scope (phase <= 4), this check builds the arguments a model could form from what the scenario makes
+available, and validates them against both enforcers:
 - the PROVIDER, which checks the advertised `params_json_schema` (JSON Schema validation, as Groq does);
 - the GATEWAY, with its strict parse and validation bounds (no database needed).
 
@@ -110,7 +110,7 @@ def check(
 ) -> list[str]:
     problems = structural_problems(tools, models)
     for s in scenarios:
-        if s["phase"] > 3:
+        if s["phase"] > 4:  # the Phase 4 run's scope: phase <= 4 (pre-registration 12.4)
             continue
         text = " ".join(s["turns"])
         for request in s["requests"]:
@@ -151,9 +151,9 @@ def main() -> int:
     problems = check(load(), tools, gateway.ARGS, gateway._invalid)
     for p in problems:
         print("PROBLEM", p)
-    phase3 = [s for s in load() if s["phase"] <= 3 and s["requests"]]
-    requests = sum(len(s["requests"]) for s in phase3)
-    print(f"{requests} expected requests in {len(phase3)} scenarios, {len(problems)} problems")
+    in_scope = [s for s in load() if s["phase"] <= 4 and s["requests"]]
+    requests = sum(len(s["requests"]) for s in in_scope)
+    print(f"{requests} expected requests in {len(in_scope)} scenarios, {len(problems)} problems")
     return 1 if problems else 0
 
 

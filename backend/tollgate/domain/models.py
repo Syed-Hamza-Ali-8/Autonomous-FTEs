@@ -40,7 +40,9 @@ class OrderItem(BaseModel):
 class Refund(BaseModel):
     id: str
     amount: Money
-    status: Literal["pending_approval", "succeeded", "rejected"]
+    # Derived on read: `expired` is still pending in storage but past approval expiry (DECISIONS J8);
+    # `not_completed` is a failed approval re-check, which is not a rejection (J10)
+    status: Literal["pending_approval", "succeeded", "rejected", "expired", "not_completed"]
     reason: str | None
     created_at: datetime
 
@@ -97,7 +99,9 @@ ActionKind = Literal[
     "create_ticket",
     "escalate_to_human",
 ]
-ActionState = Literal["completed", "waiting_for_approval", "not_allowed"]
+# not_allowed: refused (by policy at request time, or by staff); not_completed: approved but stale at the
+# re-check (J10); closed: waited too long for review (J8)
+ActionState = Literal["completed", "waiting_for_approval", "not_allowed", "not_completed", "closed"]
 
 
 class ActionCard(BaseModel):
@@ -128,5 +132,6 @@ class ActionRecord(BaseModel):
     amount: Money | None = None
     delivery_address: Address | None = None  # address changes: the address now on the order
     kept_fields: list[str] = []  # address fields the merge kept from the previous address (I12)
+    explanation: str  # what the card says for the current state (tier-safe, I15)
     at: datetime
     decided_at: datetime | None = None

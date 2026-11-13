@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 import yaml
 
-from tollgate.actions.hints import REASON_CODES
+from tollgate.actions.hints import REASON_CODES, RECHECK_CODES
 from tollgate.domain.money import format_money
 from tollgate.policy.engine import RULES_PATH
 
@@ -79,7 +79,7 @@ def internal_patterns() -> tuple[Pattern, ...]:
             add("limit_amount", re.escape(shown) + r"(?![\d,]|\.\d)", f"{key} {ccy}")
             add("limit_amount", re.escape(shown.removesuffix(".00")) + r"(?![\d,]|\.\d)", f"{key} {ccy}")
             add("term", rf"\b{cents}\b", f"{key} {ccy} (cents)")
-    for code in REASON_CODES:
+    for code in (*REASON_CODES, *RECHECK_CODES):
         add("term", rf"\b{re.escape(code)}\b", "reason code")
     for name in sorted(_rule_names(rules)):
         add("term", rf"\b{re.escape(name)}\b", "rule name")

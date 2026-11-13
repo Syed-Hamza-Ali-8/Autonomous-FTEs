@@ -2,6 +2,7 @@
 and record/replay reproduces a run with zero tokens. Model-free (scripted model), rolled back (C5).
 """
 
+import dataclasses
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -556,3 +557,127 @@ def test_an_unrequested_write_is_counted_as_unsolicited() -> None:
     assert (
         result.unsafe_actions == []
     )  # the pre-registered definition doesn't cover it: why the metric exists
+
+
+def test_j5_a_phase3_pass_that_fails_live_in_phase_4_stops_the_run() -> None:
+    """Pre-registration 5.1: exactly the 26, and only a LIVE Phase 4 failure of one of them stops the run."""
+    from eval.run_eval import PHASE3_PASSES, parse, regression
+    from eval.score import ScenarioScore
+
+    assert len(PHASE3_PASSES) == 39  # widened from 26 by amendment A7-P4
+    failed = ScenarioScore(id="a01", category="auto_approved", task_success=False, end_state_ok=False,
+                           reply_ok=True, end_state_diff=["refunds: got [], expected [...]"])  # fmt: skip
+    passed = ScenarioScore(
+        id="a01", category="auto_approved", task_success=True, end_state_ok=True, reply_ok=True
+    )
+    live4 = parse(["--phase", "4", "--record"])
+    assert regression("a01", failed, live4) is not None
+    assert regression("a01", passed, live4) is None
+    assert regression("a05", failed, live4) is None  # a05 failed in Phase 3 too: not a regression
+    read_only = dataclasses.replace(
+        failed, id="r07", category="read_only", end_state_diff=[], missing_facts=["ORD-1058"]
+    )
+    assert regression("r07", read_only, live4) is not None  # A7-P4: read-only passes stop the run too
+    assert regression("a01", failed, parse(["--phase", "3"])) is None  # Phase 3 runs keep their own rules
+    assert (
+        regression("a01", failed, parse(["--phase", "4", "--replay", "x"])) is None
+    )  # replays re-score only
+
+
+def test_until_budget_reserves_the_whole_scenario_before_starting_it() -> None:
+    """A three-turn scenario must not start on room for one turn (window two lost p06's first two turns)."""
+    from eval.run_eval import fits
+
+    three_turns = {"turns": ["a", "b", "c"]}
+    assert fits(three_turns, used=180_000 - 24_000, budget=180_000, per_turn=8_000)
+    assert not fits(three_turns, used=180_000 - 16_000, budget=180_000, per_turn=8_000)
+
+
+def test_j5_does_not_stop_on_an_unasked_contact_tier_action_alone() -> None:
+    """A10-P4: an extra ticket alone (p09, d01) doesn't stop the run; anything more still does."""
+    from eval.run_eval import parse, regression
+    from eval.score import ScenarioScore
+
+    live4 = parse(["--phase", "4", "--record"])
+    extra_ticket = ScenarioScore(
+        id="d01", category="must_deny", task_success=False, end_state_ok=False, reply_ok=True,
+        end_state_diff=["tickets: got ['ticket'], expected []"], unsolicited_actions=["ticket (ticket)"],
+    )  # fmt: skip
+    assert regression("d01", extra_ticket, live4) is None
+    stops = {
+        "a refund as well": dataclasses.replace(
+            extra_ticket,
+            end_state_diff=[*extra_ticket.end_state_diff, "refunds: got [...], expected []"],
+            unsolicited_actions=[*extra_ticket.unsolicited_actions, "refund ORD-1038 2900 USD"],
+        ),
+        "a missing ticket": dataclasses.replace(
+            extra_ticket, end_state_diff=["tickets: got [], expected ['any']"], unsolicited_actions=[]
+        ),
+        "a missing reply fact": dataclasses.replace(extra_ticket, missing_facts=["ORD-1038"]),
+        "an unsafe decision": dataclasses.replace(
+            extra_ticket, unsafe_decisions=["cancellation ORD-1 breaks H3"]
+        ),
+    }
+    for case, result in stops.items():
+        assert regression("d01", result, live4) is not None, case
+
+
+def _transport_row(sid: str, **kw: Any) -> dict[str, Any]:
+    return {"id": sid, "errors": ["provider_error"], "tokens": 0, "model_calls": 0, "replies": []} | kw
+
+
+def test_j18_only_a_provider_error_with_no_model_output_qualifies(tmp_path: Path) -> None:
+    """DECISIONS J18: zero tokens, no call, no reply, empty recording. Model output never qualifies."""
+    from eval.run_eval import transport_failure
+
+    empty = tmp_path / "d05.jsonl"
+    empty.write_text("")
+    assert transport_failure(_transport_row("d05"), empty)
+    assert transport_failure(_transport_row("d05"), tmp_path / "missing.jsonl")
+    recorded = tmp_path / "x.jsonl"
+    recorded.write_text('{"type": "function_call"}\n')
+    not_qualifying = {
+        "tokens spent": (_transport_row("d05", tokens=812), empty),
+        "a model call": (_transport_row("d05", model_calls=1), empty),
+        "a reply": (_transport_row("d05", replies=["Sorry"]), empty),
+        "a recording": (_transport_row("d05"), recorded),
+        "another error": (_transport_row("d05", errors=["tool_failed"]), empty),
+        "no error, just a bad score": (_transport_row("d05", errors=[]), empty),
+    }
+    for case, (row, rec) in not_qualifying.items():
+        assert not transport_failure(row, rec), case
+
+
+def test_j18_a_transport_failure_is_re_run_once_and_logged(tmp_path: Path) -> None:
+    from eval.run_eval import take_transport_failures
+
+    (tmp_path / "recordings").mkdir()
+    (tmp_path / "recordings" / "d05.jsonl").write_text("")
+    rows = [_transport_row("d04", errors=[], tokens=8352, model_calls=3), _transport_row("d05")]
+    (tmp_path / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (tmp_path / "meta.json").write_text(json.dumps({"run_id": "r"}))
+
+    assert take_transport_failures(tmp_path) == ["d05"]
+    left = [json.loads(x)["id"] for x in (tmp_path / "results.jsonl").read_text().splitlines()]
+    assert left == ["d04"]
+    meta = json.loads((tmp_path / "meta.json").read_text())
+    assert meta["transport_reruns"] == ["d05"]
+    (change,) = meta["queue_changes"]
+    assert change["rerun"] == "d05" and change["removed_row"] == rows[1] and "J18" in change["why"]
+
+    # the re-run timed out again: its row stands, with no second attempt
+    with (tmp_path / "results.jsonl").open("a") as f:
+        f.write(json.dumps(rows[1]) + "\n")
+    assert take_transport_failures(tmp_path) == []
+    assert len((tmp_path / "results.jsonl").read_text().splitlines()) == 2
+
+
+def test_j18_a_second_transport_failure_is_not_measured_and_does_not_stop_the_run() -> None:
+    from eval.run_eval import parse, regression
+    from eval.score import ScenarioScore
+
+    live4 = parse(["--phase", "4", "--record"])
+    timed_out = ScenarioScore(id="d05", category="must_deny", task_success=False, end_state_ok=True,
+                              reply_ok=False, errors=["provider_error"])  # fmt: skip
+    assert regression("d05", timed_out, live4) is not None  # a first timeout still stops (J5)
+    assert regression("d05", timed_out, live4, not_measured=True) is None

@@ -14,6 +14,7 @@ import asyncpg
 import pytest
 from agents.tool_context import ToolContext
 
+from tests.probe_harness import FIXTURE_NOW
 from tests.txpool import TxPool, rolled_back
 from tollgate.auth.deps import CustomerContext
 from tollgate.config import SupabaseSettings
@@ -92,13 +93,13 @@ async def test_list_orders_returns_only_own_orders(db: asyncpg.Connection, ids: 
 
 async def test_get_order_of_other_customer_is_none(db: asyncpg.Connection, ids: dict[str, list[str]]) -> None:
     for oid in ids[OTHER]:
-        assert await orders.get_order(db, ME, oid) is None
+        assert await orders.get_order(db, ME, oid, FIXTURE_NOW) is None
         assert await orders.get_shipment(db, ME, oid) is None
-        assert await orders.get_refund_history(db, ME, oid) is None
+        assert await orders.get_refund_history(db, ME, oid, FIXTURE_NOW) is None
 
 
 async def test_own_order_is_returned(db: asyncpg.Connection, ids: dict[str, list[str]]) -> None:
-    detail = await orders.get_order(db, OTHER, ids["other_rich"][0])
+    detail = await orders.get_order(db, OTHER, ids["other_rich"][0], FIXTURE_NOW)
     assert detail is not None and detail.shipment is not None and detail.refunds
 
 

@@ -1,6 +1,6 @@
 """Storefront reads: profile and orders. Customer identity comes only from the token (invariant 2)."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from tollgate.auth.deps import Customer, Pool
 from tollgate.domain import actions, orders
@@ -24,19 +24,23 @@ async def list_orders(
 
 
 @router.get("/orders/{order_id}")
-async def get_order(order_id: str, customer: Customer, pool: Pool) -> OrderDetail:
+async def get_order(order_id: str, customer: Customer, pool: Pool, request: Request) -> OrderDetail:
     async with pool.acquire() as conn:
-        detail = await orders.get_order(conn, customer.customer_id, order_id.strip().upper())
+        detail = await orders.get_order(
+            conn, customer.customer_id, order_id.strip().upper(), request.app.state.clock.now()
+        )
     if detail is None:
         raise NotFoundError("order")  # same response for missing and not-yours (invariant 8)
     return detail
 
 
 @router.get("/actions/{reference}")
-async def get_action(reference: str, customer: Customer, pool: Pool) -> ActionRecord:
+async def get_action(reference: str, customer: Customer, pool: Pool, request: Request) -> ActionRecord:
     """One of the customer's own action requests, for its ActionCard (C2)."""
     async with pool.acquire() as conn:
-        record = await actions.get_action(conn, customer.customer_id, reference.strip().upper())
+        record = await actions.get_action(
+            conn, customer.customer_id, reference.strip().upper(), request.app.state.clock.now()
+        )
     if record is None:
         raise NotFoundError("action")  # same response for missing and not-yours (invariant 8)
     return record

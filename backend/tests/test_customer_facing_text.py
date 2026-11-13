@@ -13,12 +13,14 @@ in test_adversarial_tools.py) and monitored in eval runs.
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from eval.verify_scenarios import load
 from tollgate.actions import cards, gateway, hints
 from tollgate.agents_def.events import FRIENDLY
+from tollgate.domain.models import ActionState
 from tollgate.guardrails import claims
 from tollgate.policy.disclosure import find
 
@@ -48,6 +50,11 @@ def customer_strings() -> list[str]:
     assert card is not None
     texts.append(card.explanation)
     texts += [claims.CORRECTION, claims.CORRECTION_WITH_ACTIONS, *FRIENDLY.values()]
+    # Phase 4 (4.7): the system messages staff decisions post into the conversation, as approvals/service.py
+    # composes them (an approval adds the action's completed text).
+    texts += [cards.decided_message(d, "ACT-000001", a) for d in hints.DECIDED for a in cards.DONE]
+    # what a polled card says in each state (C2, J8)
+    texts += [cards.record_text(state, a, None) for state in get_args(ActionState) for a in cards.DONE]
     # Only the relayable sentence; `status` is a machine token the model reads, not customer text.
     texts += [gateway.NOT_FOUND["customer_message_hint"], gateway.REJECTED["customer_message_hint"]]
     for path in sorted(FRONTEND_CHAT.glob("*.ts*")):
@@ -121,3 +128,38 @@ def test_b3_refund_refusals_point_to_cancel_or_escalation() -> None:
     assert "cancelled instead of refunded" in hints.hint("status_not_refundable", "paid")
     for status in ("packed", "shipped"):
         assert hints.TEAM in hints.hint("status_not_refundable", status)
+
+
+def test_expiry_wording_offers_a_next_step_and_never_states_the_limit() -> None:
+    """J8: not reviewed in time, ask again or be passed to a person; the 48-hour figure is tier C."""
+    for text in (hints.CLOSED, cards.decided_message("expired", "ACT-000001", "request_refund")):
+        assert "wasn't reviewed in time" in text and "ask again" in text and "support team" in text
+        assert not re.search(r"\b48\b|hour|two days|2 days", text), text
+
+
+def test_a_failed_recheck_never_reads_as_a_rejection() -> None:
+    """J10: nobody decided against a request that went stale. The two outcomes differ in the system message
+    and on the card, and neither text names a rule, a threshold or a reason code."""
+    message = {
+        d: cards.decided_message(d, "ACT-000001", "request_refund") for d in ("rejected", "failed_recheck")
+    }
+    card = {
+        "rejected": cards.record_text("not_allowed", "request_refund", None),
+        "failed_recheck": cards.record_text("not_completed", "request_refund", None),
+    }
+    assert message["rejected"] != message["failed_recheck"]
+    assert card["rejected"] != card["failed_recheck"]
+    codes = (*hints.REASON_CODES, *hints.RECHECK_CODES)
+    for text in (*message.values(), *card.values()):
+        assert find(text) == [], text
+        assert not any(code in text for code in codes), text
+        assert not re.search(r"\d", text.replace("ACT-000001", "")), text  # no figure of any kind
+    for stale in (message["failed_recheck"], card["failed_recheck"]):
+        assert "changed after you asked" in stale and "ask again" in stale and "support team" in stale
+        assert not re.search(r"approv|reject|review|declin|den(y|ied)", stale, re.IGNORECASE), stale
+
+
+@pytest.mark.parametrize("code", hints.RECHECK_CODES)
+def test_recheck_only_reason_codes_are_group_c(code: str) -> None:
+    """Liveness: the re-check codes are caught like every other reason code."""
+    assert find(f"We couldn't complete it: {code}") != []

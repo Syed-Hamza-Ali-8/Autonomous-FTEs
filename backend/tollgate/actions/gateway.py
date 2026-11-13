@@ -9,7 +9,10 @@
 - RECOMPUTE: amounts come from the order's lines; the model's amount is only a ceiling (B4).
 - IDEMPOTENCY: after ownership, before policy. Only effects record a key (I5).
 - POLICY: policy/engine.py on facts read here with owner-filtered SQL; time from the injected clock (G1).
-- ROUTE: ALLOW -> executors; NEEDS_APPROVAL -> approvals.service.create; DENY -> nothing.
+- FRAUD SIGNAL (J2): in a turn whose customer text was flagged, an order- or money-tier ALLOW becomes
+  NEEDS_APPROVAL (`fraud_signal`). Tighten only: a NEEDS_APPROVAL or DENY stands. The contact tier is exempt.
+- ROUTE: ALLOW -> executors; NEEDS_APPROVAL -> approvals.queue (insert-only); DENY -> nothing. Deciding a
+  queued request is approvals/service.py's alone, and nothing a tool imports reaches it (J7, af06).
 - AUDIT: exactly one app.audit_log row per submission, in the same transaction as its effect.
 
 Reason codes and their order are pre-registered in eval/ADVERSARIAL_PREREGISTRATION.md section 3. Each
@@ -27,8 +30,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from tollgate.actions import cards, executors, hints, idempotency
-from tollgate.actions.executors import MoneyAction, Request
-from tollgate.approvals import service as approvals
+from tollgate.actions.records import MoneyAction, Request
+from tollgate.approvals import expiry, queue
 from tollgate.db import Conn
 from tollgate.domain.money import with_display
 from tollgate.errors import ActionFailedError
@@ -121,7 +124,9 @@ ARGS: dict[str, type[_Strict]] = {
 @dataclass
 class Outcome:
     result: dict[str, Any]
-    outcome: str  # executed | queued | denied | not_found | invalid | replayed | error
+    outcome: (
+        str  # executed | queued | denied | not_found | invalid | needs_more_information | replayed | error
+    )
     decision: str | None = None
     reasons: list[str] = field(default_factory=list)
     target: str | None = None
@@ -269,26 +274,73 @@ def _amount(line_value: int, ceiling: int | None) -> int:
     )  # B4: the model's figure only lowers it
 
 
-async def _order_facts(conn: Conn, order_id: str, customer_id: str, line_ids: list[int]) -> tuple[int, bool]:
-    """(refundable remainder, whether a pending or succeeded refund/credit covers one of the lines)."""
+async def _fraud_flag(conn: Conn, ctx: TurnContext) -> bool:
+    """Whether this turn's customer text was flagged (set by the runner from that text alone; I11). Its own
+    seam for mutations M25 (check removed) and M28 (the flag derived from other text the turn has seen)."""
+    return ctx.fraud_signal
+
+
+def _apply_fraud_signal(verdict: engine.Verdict, flagged: bool) -> engine.Verdict:
+    """Tighten only (J2): ALLOW -> NEEDS_APPROVAL. A NEEDS_APPROVAL gains the tag for staff; a DENY stands.
+    Its own seam for mutation M26 (the flag applied to every decision)."""
+    if not flagged or verdict.decision == "DENY":
+        return verdict
+    return engine.Verdict("NEEDS_APPROVAL", (*verdict.reasons, "fraud_signal"))
+
+
+# Derived approval expiry (J8): each reader of pending state takes its cutoff from its own seam, so the
+# mutation checks (M41-M43) can remove the predicate from exactly one reader. Rows created after it are live.
+def _remainder_live_after(now: datetime) -> datetime:
+    return expiry.live_after(now)
+
+
+def _lines_live_after(now: datetime) -> datetime:
+    return expiry.live_after(now)
+
+
+def _window_live_after(now: datetime) -> datetime:
+    return expiry.live_after(now)
+
+
+async def _order_facts(
+    conn: Conn,
+    order_id: str,
+    customer_id: str,
+    line_ids: list[int],
+    now: datetime,
+    exclude_request: str | None = None,
+) -> tuple[int, bool]:
+    """(refundable remainder, whether a live pending or a succeeded refund/credit covers one of the lines).
+
+    An expired pending request holds nothing (J8). `exclude_request` leaves one request's own rows out: the
+    approval re-check (B6) asks whether a queued request still fits next to everything ELSE on the order."""
     row = await conn.fetchrow(
         """
         SELECT (SELECT coalesce(sum(p.amount_cents), 0) FROM app.payments p WHERE p.order_id = o.id)
              - (SELECT coalesce(sum(r.amount_cents), 0) FROM app.refunds r
-                 WHERE r.order_id = o.id AND r.status IN ('succeeded', 'pending_approval'))
+                 WHERE r.order_id = o.id
+                   AND (r.status = 'succeeded' OR (r.status = 'pending_approval' AND r.created_at > $5))
+                   AND ($4::text IS NULL OR r.action_request_id IS DISTINCT FROM $4))
              - (SELECT coalesce(sum(c.amount_cents), 0) FROM app.store_credits c
-                 WHERE c.order_id = o.id AND c.status IN ('succeeded', 'pending_approval')) AS remainder,
+                 WHERE c.order_id = o.id
+                   AND (c.status = 'succeeded' OR (c.status = 'pending_approval' AND c.created_at > $5))
+                   AND ($4::text IS NULL OR c.action_request_id IS DISTINCT FROM $4)) AS remainder,
                EXISTS (SELECT 1 FROM app.action_requests a
                         WHERE a.order_id = o.id AND a.customer_id = o.customer_id
                           AND a.action IN ('request_refund', 'issue_store_credit')
-                          AND a.status IN ('executed', 'pending_approval', 'approved')
-                          AND a.order_item_ids && $3::bigint[]) AS compensated
+                          AND (a.status IN ('executed', 'approved')
+                               OR (a.status = 'pending_approval' AND a.created_at > $6))
+                          AND a.order_item_ids && $3::bigint[]
+                          AND ($4::text IS NULL OR a.id IS DISTINCT FROM $4)) AS compensated
           FROM app.orders o
          WHERE o.id = $1 AND o.customer_id = $2
         """,
         order_id,
         customer_id,
         line_ids,
+        exclude_request,
+        _remainder_live_after(now),
+        _lines_live_after(now),
     )
     if row is None:  # the order is locked and owned, so the row exists
         raise ActionFailedError("policy facts missing for a locked order")
@@ -296,9 +348,16 @@ async def _order_facts(conn: Conn, order_id: str, customer_id: str, line_ids: li
 
 
 async def _window(
-    conn: Conn, customer_id: str, since: datetime, currency: str, include_cancellations: bool
+    conn: Conn,
+    customer_id: str,
+    since: datetime,
+    currency: str,
+    include_cancellations: bool,
+    now: datetime,
+    exclude_request: str | None = None,
 ) -> tuple[int, int]:
-    """(refunds + credits in the rolling window, their total in `currency`); pending ones count (A7)."""
+    """(refunds + credits in the rolling window, their total in `currency`); live pending ones count (A7),
+    expired ones don't (J8). `exclude_request` leaves one request's own row out (B6)."""
     row = await conn.fetchrow(
         """
         SELECT count(*) AS n, coalesce(sum(w.amount_cents) FILTER (WHERE w.currency = $3), 0) AS total
@@ -306,18 +365,23 @@ async def _window(
                   FROM app.refunds r
                   JOIN app.orders o ON o.id = r.order_id
                   LEFT JOIN app.action_requests a ON a.id = r.action_request_id
-                 WHERE o.customer_id = $1 AND r.status IN ('succeeded', 'pending_approval')
+                 WHERE o.customer_id = $1
+                   AND (r.status = 'succeeded' OR (r.status = 'pending_approval' AND r.created_at > $6))
                    AND r.created_at >= $2 AND ($4 OR a.action IS DISTINCT FROM 'cancel_order')
+                   AND ($5::text IS NULL OR r.action_request_id IS DISTINCT FROM $5)
                 UNION ALL
                 SELECT c.amount_cents, c.currency
                   FROM app.store_credits c
-                 WHERE c.customer_id = $1 AND c.status IN ('succeeded', 'pending_approval')
-                   AND c.created_at >= $2) w
+                 WHERE c.customer_id = $1
+                   AND (c.status = 'succeeded' OR (c.status = 'pending_approval' AND c.created_at > $6))
+                   AND c.created_at >= $2 AND ($5::text IS NULL OR c.action_request_id IS DISTINCT FROM $5)) w
         """,
         customer_id,
         since,
         currency,
         include_cancellations,
+        exclude_request,
+        _window_live_after(now),
     )
     if row is None:
         raise ActionFailedError("window query returned no row")
@@ -358,9 +422,9 @@ async def _money(conn: Conn, ctx: TurnContext, action: str, args: MoneyArgs, ord
 
     # POLICY
     rules, now = engine.load_rules(), _now(ctx)
-    remainder, compensated = await _order_facts(conn, order_id, customer, line_ids)
+    remainder, compensated = await _order_facts(conn, order_id, customer, line_ids, now)
     count, total = await _window(
-        conn, customer, engine.window_start(rules, now), ccy, rules.cancellation.counts_toward_window
+        conn, customer, engine.window_start(rules, now), ccy, rules.cancellation.counts_toward_window, now
     )
     facts = engine.MoneyFacts(
         kind="refund" if kind == "request_refund" else "store_credit",
@@ -375,7 +439,7 @@ async def _money(conn: Conn, ctx: TurnContext, action: str, args: MoneyArgs, ord
         window_count=count,
         window_total_cents=total,
     )
-    verdict = engine.evaluate_money(rules, facts, now)
+    verdict = _apply_fraud_signal(engine.evaluate_money(rules, facts, now), await _fraud_flag(conn, ctx))
     if verdict.decision == "DENY":
         return await _settle(
             conn, ctx, key, _denied(list(verdict.reasons), order_id, details, order["status"])
@@ -396,7 +460,7 @@ async def _money(conn: Conn, ctx: TurnContext, action: str, args: MoneyArgs, ord
         result = {"status": "done", **base, **refs, "amount_cents": amount, "currency": ccy}
         out = Outcome(with_display(result), "executed", "ALLOW", [], order_id, details | refs)
     else:
-        refs = await approvals.create(conn, kind, req, args.reason)
+        refs = await queue.create(conn, kind, req, args.reason)
         reasons = list(verdict.reasons)
         result = {"status": "pending_approval", **base, **refs, "amount_cents": amount, "currency": ccy}
         out = Outcome(
@@ -430,25 +494,47 @@ async def _cancel(conn: Conn, ctx: TurnContext, args: CancelArgs, order: Any) ->
     key = idempotency.key(customer, "cancel_order", order_id, {}, ctx.turn_id)
     if (original := await idempotency.lookup(conn, key, customer)) is not None:
         return _replayed(original, order_id)
-    verdict = engine.evaluate_cancel(rules, order["status"])
+    verdict = _apply_fraud_signal(
+        engine.evaluate_cancel(rules, order["status"]), await _fraud_flag(conn, ctx)
+    )
     if verdict.decision == "DENY":
         return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}, order["status"]))
     flags = (
         ["high_value_cancellation"] if refund and engine.high_value_cancellation(rules, ccy, refund) else []
     )
     req = replace(
-        _request(ctx, "cancel_order", order_id, "ALLOW"),
+        _request(ctx, "cancel_order", order_id, "ALLOW" if verdict.decision == "ALLOW" else "NEEDS_APPROVAL"),
         amount_cents=refund or None,
         currency=ccy if refund else None,
+        args={"reason": args.reason},  # the approval path runs the same cancel, with this reason (J9)
+        reasons=verdict.reasons,
     )
-    refs = await executors.run_cancel(conn, req, refund, args.reason)
-    result: dict[str, Any] = {"status": "done", "action": "cancel_order", "order_id": order_id, **refs}
+    details = {"refund_cents": refund, "currency": ccy, "flags": flags}
+    if verdict.decision == "ALLOW":
+        refs = await executors.run_cancel(conn, req, refund, args.reason)
+        result: dict[str, Any] = {"status": "done", "action": "cancel_order", "order_id": order_id, **refs}
+        out = Outcome(result, "executed", "ALLOW", [], order_id, details | refs)
+    else:
+        # Queued: nothing changes and no refund row exists until staff approve (the H2 refund is part of the
+        # cancel the approval path runs).
+        refs = await queue.create_request(conn, req)
+        result = {"status": "pending_approval", "action": "cancel_order", "order_id": order_id, **refs}
+        result["customer_message_hint"] = hints.PENDING
+        out = Outcome(result, "queued", "NEEDS_APPROVAL", list(verdict.reasons), order_id, details | refs)
     if refund:
-        result["refund"] = {"amount_cents": refund, "currency": ccy}
-    details = {"refund_cents": refund, "currency": ccy, "flags": flags} | refs
-    return await _settle(
-        conn, ctx, key, Outcome(with_display(result), "executed", "ALLOW", [], order_id, details)
-    )
+        out.result["refund"] = {"amount_cents": refund, "currency": ccy}
+    out.result = with_display(out.result)
+    return await _settle(conn, ctx, key, out)
+
+
+def _missing_pair(current: dict[str, Any], merged: dict[str, str], given: NewAddress) -> list[str]:
+    """K1 (symmetric): if the city or postcode changes, both must be supplied; so must they for a country
+    change. Street-only and recipient-only changes are unaffected. Returns the missing field names. Its own
+    seam for mutation M34. Limitation: it doesn't check that the postcode belongs to the city."""
+    changed = {f for f in ("city", "postal_code", "country") if merged[f] != str(current.get(f) or "")}
+    if not changed:
+        return []
+    return [f for f in ("city", "postal_code") if getattr(given, f) is None]
 
 
 def _merge_address(current: dict[str, Any], given: NewAddress) -> dict[str, str]:
@@ -467,27 +553,56 @@ async def _address(conn: Conn, ctx: TurnContext, args: AddressArgs, order: Any) 
     if any(not v.strip() for v in new_address.values()):
         reasons = ["address_incomplete"]
         return Outcome(_hinted("invalid", reasons[0]), "invalid", reasons=reasons, target=order_id)
+    if missing := _missing_pair(current, new_address, args.new_address):
+        # Its own outcome, not INVALID (K1): audited with the field NAMES, no key, nothing changed, no card.
+        return Outcome(
+            {"status": "needs_more_information", "customer_message_hint": hints.fields_required(missing)},
+            "needs_more_information",
+            reasons=["address_fields_required"],
+            target=order_id,
+            details={"missing": missing},
+        )
     flags = [flag for f, flag in ADDRESS_FLAGS.items() if new_address[f] != (current.get(f) or "")]
     key = idempotency.key(
         customer, "update_shipping_address", order_id, {"new_address": new_address}, ctx.turn_id
     )
     if (original := await idempotency.lookup(conn, key, customer)) is not None:
         return _replayed(original, order_id)
-    verdict = engine.evaluate_address_change(engine.load_rules(), order["status"])
+    verdict = _apply_fraud_signal(
+        engine.evaluate_address_change(engine.load_rules(), order["status"]), await _fraud_flag(conn, ctx)
+    )
     if verdict.decision == "DENY":
         return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}, order["status"]))
+    allow = verdict.decision == "ALLOW"
+    change_args: dict[str, Any] = {
+        "new_address": new_address,
+        # which fields the customer gave; the rest were kept by the merge (shown on the card, I12)
+        "changed": [f for f in ADDRESS_FIELDS if getattr(args.new_address, f) is not None],
+    }
+    if not allow:
+        # the address this change was merged onto: the approval re-check requires it unchanged (J9)
+        change_args["previous_address"] = current
     req = replace(
-        _request(ctx, "update_shipping_address", order_id, "ALLOW"),
-        args={
-            "new_address": new_address,
-            # which fields the customer gave; the rest were kept by the merge (shown on the card, I12)
-            "changed": [f for f in ADDRESS_FIELDS if getattr(args.new_address, f) is not None],
-        },
+        _request(ctx, "update_shipping_address", order_id, "ALLOW" if allow else "NEEDS_APPROVAL"),
+        args=change_args,
+        reasons=verdict.reasons,
     )
-    refs = await executors.run_address_change(conn, req, new_address)
-    result = {"status": "done", "action": "update_shipping_address", "order_id": order_id, **refs}
-    details = {**refs, "flags": flags} if flags else dict(refs)
-    return await _settle(conn, ctx, key, Outcome(result, "executed", "ALLOW", [], order_id, details))
+    if allow:
+        refs = await executors.run_address_change(conn, req, new_address)
+        result = {"status": "done", "action": "update_shipping_address", "order_id": order_id, **refs}
+        details = {**refs, "flags": flags} if flags else dict(refs)
+        return await _settle(conn, ctx, key, Outcome(result, "executed", "ALLOW", [], order_id, details))
+    refs = await queue.create_request(conn, req)
+    queued = {"status": "pending_approval", "action": "update_shipping_address", "order_id": order_id, **refs}
+    out = Outcome(
+        queued | {"customer_message_hint": hints.PENDING},
+        "queued",
+        "NEEDS_APPROVAL",
+        list(verdict.reasons),
+        order_id,
+        {**refs, "flags": flags} if flags else dict(refs),
+    )
+    return await _settle(conn, ctx, key, out)
 
 
 async def _ticket(conn: Conn, ctx: TurnContext, action: str, args: TicketArgs | EscalateArgs) -> Outcome:
@@ -542,9 +657,14 @@ async def _audit(conn: Conn, ctx: TurnContext, action: str, out: Outcome) -> int
         out.outcome,
         ctx.prompt_version,
         ctx.turn_id,
-        json.dumps(out.details),
+        json.dumps(_flagged_details(ctx, out.details)),
     )
     return audit_id
+
+
+def _flagged_details(ctx: TurnContext, details: dict[str, Any]) -> dict[str, Any]:
+    """Every submission in a flagged turn carries the flag in its audit row (J2)."""
+    return details | {"fraud_signal": True} if ctx.fraud_signal else details
 
 
 async def _audit_rejection(
@@ -572,5 +692,5 @@ async def _audit_rejection(
             ctx.customer.customer_id,
             ctx.prompt_version,
             ctx.turn_id,
-            json.dumps(details),
+            json.dumps(_flagged_details(ctx, details)),
         )

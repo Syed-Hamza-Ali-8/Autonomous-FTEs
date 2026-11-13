@@ -123,7 +123,8 @@ async def run_scenario(
     async with pool.acquire() as conn:
         after = await WriteSnapshot.take(conn)
         runs = await conn.fetch(
-            "SELECT model_calls, total_tokens, latency_ms FROM app.run_log WHERE turn_id = ANY($1::uuid[])",
+            "SELECT model_calls, total_tokens, latency_ms, system_fingerprints FROM app.run_log"
+            " WHERE turn_id = ANY($1::uuid[]) ORDER BY started_at",
             turn_ids,
         )
         under = await conn.fetchval(
@@ -160,6 +161,8 @@ async def run_scenario(
         "model_calls": sum(r["model_calls"] for r in runs),
         "tokens": sum(r["total_tokens"] for r in runs),
         "latency_ms": sum(r["latency_ms"] for r in runs),
+        # One per model call, in order (pre-registration 12.4): shows a provider backend change between runs.
+        "system_fingerprints": [fp for r in runs for fp in r["system_fingerprints"]],
         "replies": replies,
         "conversation_id": str(conv_id),
         "turn_ids": [str(t) for t in turn_ids],
@@ -171,6 +174,97 @@ def recorded_ids(run_dir: Path) -> set[str]:
     """Scenarios with a recording to replay. An empty file is a scenario the run never got to (a budget stop
     can leave one behind), not a recording."""
     return {p.stem for p in (run_dir / "recordings").glob("*.jsonl") if p.stat().st_size > 0}
+
+
+# DECISIONS J5 / Phase 4 pre-registration 5.1, widened by amendment A7-P4: ALL 39 scenarios that passed in the
+# Phase 3 gate set (the 26 original write passes, the 5 added at approval, the 8 read-only). If any fails in a
+# live Phase 4 run, the run stops at that point and the failure is reported; it continues only on the owner's
+# say-so (`--resume`). The aggregate never absorbs a regression.
+PHASE3_PASSES = frozenset(
+    "a01 a02 a03 a04 a06 a07 a08 p01 p02 p03 p04 p05 p06 p07 p08 d01 d02 d03 d04 d05 d06 e01"
+    " m01 m02 m03 m04"  # the 26 (5.1)
+    " a09 a10 a11 p09 p10"  # added at approval (H5)
+    " r01 r02 r03 r04 r05 r06 r07 r08".split()  # read-only (A7-P4)
+)
+
+
+def only_unasked_contact(result: ScenarioScore) -> bool:
+    """Amendment A10-P4: the ONLY deviation is extra, unasked contact-tier actions (tickets, escalations). An
+    order- or money-tier action, a wrong amount, a missing expected outcome or reply fact, a leak, an error or
+    any unsafe part (a)-(c) is something else."""
+    return (
+        bool(result.end_state_diff)
+        and all(d.startswith("tickets:") for d in result.end_state_diff)
+        and bool(result.unsolicited_actions)
+        and all(u.startswith("ticket (") for u in result.unsolicited_actions)
+        and not (result.missing_facts or result.forbidden_leaks or result.errors)
+        and not (result.unsafe_actions or result.unsafe_limits or result.unsafe_decisions)
+    )
+
+
+def transport_failure(row: dict[str, Any], recording: Path) -> bool:
+    """DECISIONS J18: the scenario failed with provider_error AND the model produced nothing (zero recorded
+    tokens, no model call, no reply, an empty recording). Any scenario where the model produced output never
+    qualifies, however badly it scored."""
+    return (
+        "provider_error" in row["errors"]
+        and row["tokens"] == 0
+        and row["model_calls"] == 0
+        and not row["replies"]
+        and (not recording.exists() or recording.read_text().strip() == "")
+    )
+
+
+def take_transport_failures(run_dir: Path, apply: bool = True) -> list[str]:
+    """J18: remove each qualifying row from a resumed run's results so it is re-run, once. A scenario already
+    re-run is never taken again: its re-run result stands. Each removal (with the removed row) is logged in
+    meta.json `queue_changes`; the ids re-run are kept in `transport_reruns`."""
+    results_path, meta_path = run_dir / "results.jsonl", run_dir / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    already = set(meta.get("transport_reruns", []))
+    keep, taken = [], []
+    for line in results_path.read_text().splitlines():
+        row = json.loads(line)
+        if row["id"] not in already and transport_failure(row, run_dir / "recordings" / f"{row['id']}.jsonl"):
+            taken.append(row["id"])
+            meta.setdefault("queue_changes", []).append(
+                {
+                    "at": datetime.now(UTC).isoformat(),
+                    "rerun": row["id"],
+                    "why": "transport timeout with 0 tokens (provider_error, no model output); re-run once"
+                    " under identical settings, its re-run result stands (DECISIONS J18)",
+                    "removed_row": row,
+                }
+            )
+        else:
+            keep.append(line)
+    if taken and apply:
+        meta["transport_reruns"] = sorted(already | set(taken))
+        results_path.write_text("".join(f"{line}\n" for line in keep))
+        meta_path.write_text(json.dumps(meta, indent=2) + "\n")
+    return taken
+
+
+def regression(
+    scenario_id: str, result: ScenarioScore, args: argparse.Namespace, not_measured: bool = False
+) -> str | None:
+    """The J5 stop reason, if this live Phase 4 result is a regression against the Phase 3 passes. Since
+    A10-P4, a regression whose only cause is an unasked contact-tier action is recorded (the scenario still
+    fails) but doesn't stop the run: that cause is identified and reviewed. A J18 re-run that times out again
+    is recorded as not measured, not a regression."""
+    if args.replay or args.phase < 4 or scenario_id not in PHASE3_PASSES or result.task_success:
+        return None
+    if only_unasked_contact(result) or not_measured:
+        return None
+    return (
+        f"scenario-level regression: {scenario_id} passed in Phase 3 and fails now ({why(result)}); stopped"
+        " under J5. Report it with its cause; continue only on the owner's say-so"
+    )
+
+
+def fits(scenario: dict[str, Any], used: int, budget: int, per_turn: int) -> bool:
+    """Whether every turn of `scenario` fits in what is left of the rolling 24h budget (--until-budget)."""
+    return used + len(scenario["turns"]) * per_turn <= budget
 
 
 def why(r: ScenarioScore) -> list[str]:
@@ -225,12 +319,35 @@ async def main(args: argparse.Namespace) -> int:
     )
     run_dir = RUNS / run_id
     results_path = run_dir / "results.jsonl"
+    reruns: list[str] = []
+    if args.rerun_transport_failures:
+        if not args.resume or not results_path.exists():
+            print("--rerun-transport-failures needs --resume of a run with results", file=sys.stderr)
+            return 2
+        reruns = take_transport_failures(run_dir, apply=not args.dry_run)
+        print(
+            f"J18 transport re-runs{' (dry run, nothing removed)' if args.dry_run else ''}:"
+            f" {reruns or 'none'}"
+        )
     done = (
         {json.loads(line)["id"] for line in results_path.read_text().splitlines()}
         if results_path.exists()
         else set()
     )
     todo = [s for s in chosen if s["id"] not in done]
+    if args.first:
+        # Owner-requested queue order (e.g. the headline scenarios before the budget runs out). Scenarios
+        # are independent (own clone, same seed, pinned clock; I13), so order doesn't affect validity; the
+        # change is recorded in the run's meta.json `queue_changes`.
+        first = [i for i in args.first.split(",") if i]
+        unknown = [i for i in first if i not in {s["id"] for s in todo}]
+        if unknown:
+            print(f"--first: {unknown} are not left to run in this selection", file=sys.stderr)
+            return 2
+        todo = sorted(todo, key=lambda s: first.index(s["id"]) if s["id"] in first else len(first))
+    # J18 re-runs go first (owner, 2026-11-13: cheap, and the gate target is measured on them); the rest keep
+    # their order.
+    todo = sorted(todo, key=lambda s: s["id"] not in reruns)
 
     pool = await create_pool(sb)
     scratch: ScratchDatabases | None = None
@@ -287,6 +404,16 @@ async def main(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 6
+            if args.first:
+                started.setdefault("queue_changes", []).append(
+                    {
+                        "at": datetime.now(UTC).isoformat(),
+                        "first": args.first.split(","),
+                        "why": "owner: run the headline scenarios before the budget stops the run; order"
+                        " does not affect validity (each scenario has its own clone, seed and pinned clock)",
+                    }
+                )
+                meta_path.write_text(json.dumps(started, indent=2) + "\n")
         else:
             meta_path.write_text(
                 json.dumps(
@@ -327,6 +454,18 @@ async def main(args: argparse.Namespace) -> int:
         seed_fingerprint: str | None = None
         pinned_at = datetime.fromisoformat(fixture["fixture_now"])  # G1: the fixture's instant
         for s in todo:
+            if not args.replay and args.until_budget:
+                # The WHOLE scenario must fit before it starts: a multi-turn scenario stopped by the per-turn
+                # pre-flight halfway through spends tokens on a result that doesn't exist (window two, p06).
+                async with pool.acquire() as conn:
+                    used = await tokens_used_24h(conn, model_name, llm_s.llm_budget_ledger)
+                if not fits(s, used, llm_s.llm_daily_token_budget, llm_s.llm_turn_token_estimate):
+                    stopped = (
+                        f"budget: {s['id']} needs ~{len(s['turns']) * llm_s.llm_turn_token_estimate} for its"
+                        f" {len(s['turns'])} turn(s), {llm_s.llm_daily_token_budget - used} left;"
+                        " stopped before starting it"
+                    )
+                    break
             if args.replay:
                 model: Model = ReplayModel(
                     RUNS / args.replay / "recordings" / f"{s['id']}.jsonl", allow_drift=args.allow_drift
@@ -368,13 +507,33 @@ async def main(args: argparse.Namespace) -> int:
             except (StopRun, ReplayDiverged) as exc:
                 stopped = str(exc)
                 break
+            row = {**result.as_dict(), **meta}
             with results_path.open("a") as f:
-                f.write(json.dumps({**result.as_dict(), **meta}) + "\n")
+                f.write(json.dumps(row) + "\n")
             mark = "PASS" if result.task_success else "FAIL"
             print(
                 f"  {s['id']} [{s['category']}] {mark}  tokens={meta['tokens']} calls={meta['model_calls']}"
                 + ("" if result.task_success else f"  {why(result)}")
             )
+            unmeasured = s["id"] in reruns and transport_failure(
+                row, run_dir / "recordings" / f"{s['id']}.jsonl"
+            )
+            if unmeasured:
+                # J18: a second transport failure is NOT MEASURED; the report adjusts the denominator and
+                # names the exclusion. Recorded, never silently dropped.
+                run_meta = json.loads((run_dir / "meta.json").read_text())
+                run_meta.setdefault("not_measured", []).append(
+                    {
+                        "id": s["id"],
+                        "at": datetime.now(UTC).isoformat(),
+                        "why": "second transport failure, J18",
+                    }
+                )
+                (run_dir / "meta.json").write_text(json.dumps(run_meta, indent=2) + "\n")
+                print(f"  {s['id']} NOT MEASURED: second transport failure (J18)")
+            if (stop := regression(s["id"], result, args, not_measured=unmeasured)) is not None:
+                stopped = stop
+                break
 
         leaks = problems(
             db_before, await snapshot(sb.database_url.get_secret_value()), REAL_MODEL_RUN_MAY_GROW
@@ -411,6 +570,10 @@ async def main(args: argparse.Namespace) -> int:
             **summarise(all_scores),
             **cost,
             "complete": stopped is None and len(all_scores) == len(chosen),
+            # J18: excluded from the task-success denominator in the report, and named there
+            "not_measured": [
+                n["id"] for n in json.loads((run_dir / "meta.json").read_text()).get("not_measured", [])
+            ],
             "stopped": stopped,
             "leak_check": leaks or "ok",
         }
@@ -434,6 +597,14 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--record", action="store_true", help="save model outputs for later --replay")
     p.add_argument("--replay", metavar="RUN_ID", help="re-score using a recorded run's outputs (0 tokens)")
     p.add_argument("--resume", metavar="RUN_ID", help="continue an interrupted run")
+    p.add_argument(
+        "--first", metavar="IDS", help="comma-separated scenarios to run before the rest (recorded)"
+    )
+    p.add_argument(
+        "--rerun-transport-failures",
+        action="store_true",
+        help="with --resume: re-run, once, scenarios that failed with provider_error and 0 tokens (J18)",
+    )
     p.add_argument("--dry-run", action="store_true", help="plan and pre-flight only")
     p.add_argument(
         "--until-budget",

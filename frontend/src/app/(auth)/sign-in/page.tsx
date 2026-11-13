@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { apiGet } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 const POINTS: { icon: LucideIcon; text: string }[] = [
@@ -35,9 +36,20 @@ export default function SignInPage() {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
+  // Staff land on the console, customers on their orders. The role comes from the API (app tables), never
+  // from the token (invariant 22); a failed check falls back to the storefront, which gates itself.
+  const token = auth.status === "signed_in" ? auth.token : null;
   useEffect(() => {
-    if (auth.status === "signed_in") router.replace("/orders");
-  }, [auth.status, router]);
+    if (token === null) return;
+    let cancelled = false;
+    apiGet("/v1/staff/me", token).then(
+      () => !cancelled && router.replace("/console"),
+      () => !cancelled && router.replace("/orders"),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [token, router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

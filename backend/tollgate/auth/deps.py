@@ -58,5 +58,37 @@ async def customer_context(
     )
 
 
+@dataclass(frozen=True)
+class StaffContext:
+    """A support lead (Phase 4; DECISIONS E3). Loaded from app.staff_users on every request, never from token
+    claims (invariant 22). Staff have no customer row, so every customer endpoint refuses them (403)."""
+
+    staff_id: uuid.UUID
+    auth_user_id: uuid.UUID
+    name: str
+    email: str
+    role: str
+
+
+async def staff_context(
+    token: Annotated[VerifiedToken, Depends(verified_token)],
+    pool: Annotated[asyncpg.Pool, Depends(get_pool)],
+) -> StaffContext:
+    row = await pool.fetchrow(
+        "SELECT id, name, email, role FROM app.staff_users WHERE auth_user_id = $1 AND role = 'support_lead'",
+        token.auth_user_id,
+    )
+    if row is None:
+        raise ForbiddenError("authenticated user is not staff")  # same 403 body as every other refusal
+    return StaffContext(
+        staff_id=row["id"],
+        auth_user_id=token.auth_user_id,
+        name=row["name"],
+        email=row["email"],
+        role=row["role"],
+    )
+
+
 Customer = Annotated[CustomerContext, Depends(customer_context)]
+Staff = Annotated[StaffContext, Depends(staff_context)]
 Pool = Annotated[asyncpg.Pool, Depends(get_pool)]

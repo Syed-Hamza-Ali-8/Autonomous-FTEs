@@ -173,6 +173,10 @@ const REFUND_STATUS: Record<OrderDetail["refunds"][number]["status"], { decision
   succeeded: { decision: "completed", label: "Completed" },
   pending_approval: { decision: "waiting", label: "Waiting for staff approval" },
   rejected: { decision: "not_allowed", label: "Not approved" },
+  // still pending in storage but past review time: derived by the API (DECISIONS J8), not a refusal
+  expired: { decision: "info", label: "Closed, not reviewed in time" },
+  // approved, but the order had changed by then: not a rejection (DECISIONS J10)
+  not_completed: { decision: "info", label: "Couldn't complete" },
 };
 
 function toSummary(order: OrderDetail): OrderSummary {

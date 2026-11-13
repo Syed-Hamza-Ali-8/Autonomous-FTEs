@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, get_args
 
 from tollgate.actions import hints
-from tollgate.domain.models import ActionCard, ActionKind, Money
+from tollgate.domain.models import ActionCard, ActionKind, ActionState, Money
 from tollgate.domain.money import format_money
 
 DONE: dict[str, str] = {
@@ -21,10 +21,41 @@ DONE: dict[str, str] = {
     "create_ticket": "A support ticket is open. Our team will reply by email.",
     "escalate_to_human": "A member of our support team will pick this up.",
 }
+# Any queued action (refunds and credits, and from fraud routing also cancellations and address changes).
 WAITING = (
-    "This needs a quick check by our support team before it goes through. Nothing has been refunded or"
-    " credited yet; the outcome will show here."
+    "This needs a quick check by our support team before it goes through. Nothing has changed yet; the"
+    " outcome will show here."
 )
+
+
+def done_text(action: ActionKind, money: Money | None) -> str:
+    if action == "cancel_order" and money is not None:
+        paid = format_money(money.amount_cents, money.currency)
+        return f"The order is cancelled and its payment of {paid} is refunded."
+    return DONE[action]
+
+
+# The explanation for each state of an action record (DECISIONS C2, J8), read live by a card.
+def record_text(state: ActionState, action: ActionKind, money: Money | None) -> str:
+    match state:
+        case "completed":
+            return done_text(action, money)
+        case "waiting_for_approval":
+            return WAITING
+        case "not_allowed":
+            return hints.NOT_APPROVED
+        case "not_completed":
+            return hints.NOT_COMPLETED
+        case "closed":
+            return hints.CLOSED
+
+
+def decided_message(decision: str, reference: str, action: str) -> str:
+    """The system message for a staff decision or an expiry (spec 4.5 "notify"); tier-safe (I15)."""
+    text = hints.DECIDED[decision].format(reference=reference)
+    if decision == "approved" and action in get_args(ActionKind):
+        text = f"{text} {DONE[action]}"
+    return text
 
 
 def _money(result: dict[str, Any]) -> Money | None:
@@ -48,14 +79,10 @@ def card_for(
         return None
     kind: ActionKind = action  # type: ignore[assignment]
     if outcome == "executed":
-        text = DONE[kind]
         money = _money(result)
-        if kind == "cancel_order" and money is not None:
-            paid = format_money(money.amount_cents, money.currency)
-            text = f"The order is cancelled and its payment of {paid} is refunded."
         return ActionCard(
             action=kind, state="completed", order_id=result.get("order_id"), amount=money,
-            reference=result.get("reference"), explanation=text, at=at,
+            reference=result.get("reference"), explanation=done_text(kind, money), at=at,
         )  # fmt: skip
     if outcome == "queued":
         return ActionCard(

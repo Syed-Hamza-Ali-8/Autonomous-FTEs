@@ -3,7 +3,11 @@
 (a) STRUCTURAL, writes: no module a tool imports, directly or transitively, contains SQL that writes approval
     state (updates or deletes action requests, or any write to an approvals table). Creating a request is
     queueing, not deciding: the database refuses a request created already decided
-    (`action_requests_born_undecided`).
+    (`action_requests_born_undecided`). Extended by amendment A2-P4 (tightened, nothing narrowed):
+    (a1) no tool-reachable INSERT, UPDATE, DELETE or MERGE of `app.approvals`;
+    (a2) no tool-reachable UPDATE of `action_requests` that sets `status` to approved or executed, or to any
+         value that isn't a literal non-approving status (a parameter could be 'approved').
+    Identifiers match quoted or unquoted, with or without the `app.` schema, across lines.
 (b) STRUCTURAL, parameters: no tool parameter maps to an approval column. A write tool's parameters are
     exactly the fields of the gateway's strict argument model (asserted), so the mapping is exact; none of
     those fields may be an approval column. Read tools take no part in a write path (checked by (a)).
@@ -22,11 +26,26 @@ APPROVAL_TABLES = ("approvals",)  # created in Phase 4; any column of it counts
 DECISION_COLUMNS = ("status", "decision", "reasons", "decided_at")
 REFERENCE_COLUMNS = ("action_request_id", "approval_id")  # a parameter naming a request or approval
 
-APPROVAL_WRITE = re.compile(
-    r"\b(?:UPDATE\s+app\.action_requests|DELETE\s+FROM\s+app\.action_requests"
-    r"|(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+app\.approvals)\b",
-    re.IGNORECASE,
+
+def _table(name: str) -> str:
+    """`app.name`, `"app"."name"`, `app."name"` or bare `name` (search_path), never a longer identifier."""
+    return rf'(?:"?app"?\s*\.\s*)?"?{name}"?(?![\w"])'
+
+
+# (a1) any write to the decisions log
+APPROVALS_WRITE = re.compile(
+    rf"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)\s+{_table('approvals')}", re.IGNORECASE
 )
+# (a) any update or delete of an action request (creating one is queueing, not deciding)
+REQUEST_WRITE = re.compile(rf"\b(?:UPDATE|DELETE\s+FROM)\s+{_table('action_requests')}", re.IGNORECASE)
+# (a2) the dangerous direction, named explicitly: status set to approved/executed, or to anything not a
+# literal non-approving status
+DECIDING_UPDATE = re.compile(
+    rf"\bUPDATE\s+{_table('action_requests')}[^;]*?\bSET\b[^;]*?(?<![\w.])\"?status\"?\s*="
+    r"(?!\s*'(?:pending_approval|rejected|expired)')",
+    re.IGNORECASE | re.DOTALL,
+)
+APPROVAL_WRITE = (APPROVALS_WRITE, REQUEST_WRITE)  # check (a), as before: either kind of write
 TRIPWIRE_WORDS = ("approve", "reject", "approval", "override", "status", "decision", "decided")
 TRIPWIRE_ALLOWLIST = {
     ("get_my_orders", "status"): (
@@ -82,14 +101,31 @@ def sql_strings(path: Path) -> list[str]:
     ]
 
 
-def approval_writers_reachable(tool_modules: list[Path], root: Path) -> dict[str, list[str]]:
-    """(a): module -> approval-writing SQL fragments, over everything the tool modules import."""
+def writers(
+    paths: set[Path] | list[Path], root: Path, patterns: tuple[re.Pattern[str], ...]
+) -> dict[str, list[str]]:
+    """module -> SQL fragments matching any of `patterns`, over the string constants of `paths`."""
     hits: dict[str, list[str]] = {}
-    for path in sorted(import_closure(tool_modules, root)):
-        found = [m.group(0) for s in sql_strings(path) for m in APPROVAL_WRITE.finditer(s)]
+    for path in sorted(paths):
+        found = [m.group(0) for s in sql_strings(path) for p in patterns for m in p.finditer(s)]
         if found:
             hits[path.relative_to(root.parent).as_posix()] = found
     return hits
+
+
+def approval_writers_reachable(tool_modules: list[Path], root: Path) -> dict[str, list[str]]:
+    """(a): module -> approval-writing SQL fragments, over everything the tool modules import."""
+    return writers(import_closure(tool_modules, root), root, APPROVAL_WRITE)
+
+
+def approvals_log_writers_reachable(tool_modules: list[Path], root: Path) -> dict[str, list[str]]:
+    """(a1): tool-reachable writes to the decisions log."""
+    return writers(import_closure(tool_modules, root), root, (APPROVALS_WRITE,))
+
+
+def deciding_updates_reachable(tool_modules: list[Path], root: Path) -> dict[str, list[str]]:
+    """(a2): tool-reachable updates that could move a request into approved or executed."""
+    return writers(import_closure(tool_modules, root), root, (DECIDING_UPDATE,))
 
 
 def approval_columns(columns: dict[str, list[str]]) -> set[str]:

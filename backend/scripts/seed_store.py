@@ -4,6 +4,7 @@ Usage (from backend/):
   uv run python scripts/seed_store.py write [--check]   # eval/fixtures/store_seed.json -> supabase/seed.sql
   uv run python scripts/seed_store.py apply              # load seed.sql into LOCAL db + demo Auth users
   uv run python scripts/seed_store.py apply --target cloud [--reset]   # demo project; asks to confirm
+  uv run python scripts/seed_store.py staff              # (re)seed only the support lead, LOCAL (E3)
 
 `supabase db reset` also loads seed.sql (config [db.seed]); `apply` then only needs the Auth step,
 but running it in full is idempotent. Demo passwords come from .env (never committed, never printed).
@@ -15,13 +16,14 @@ import argparse
 import asyncio
 import json
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import asyncpg
 import httpx
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from pydantic_settings import BaseSettings
 
 from tollgate.config import _COMMON, REPO_ROOT
@@ -52,7 +54,13 @@ DEPENDENT_TABLES = (
 )
 
 
-class SeedSettings(BaseSettings):
+# Each subcommand loads only the settings it uses (tests/test_seed_settings.py): `staff` never needs the demo
+# customers' passwords, and `apply` never needs the support lead's.
+
+
+class _ConnectionSettings(BaseSettings):
+    """Where to seed: the database and the Auth admin API."""
+
     model_config = _COMMON
 
     database_url: SecretStr
@@ -61,10 +69,22 @@ class SeedSettings(BaseSettings):
     cloud_database_url: SecretStr | None = None
     cloud_supabase_url: str | None = None
     cloud_supabase_service_role_key: SecretStr | None = None
+
+
+class CustomerSeedSettings(_ConnectionSettings):
+    """`apply`: the store data and the two demo customers' sign-ins."""
+
     demo_customer_email: str
     demo_customer_password: SecretStr
     demo_target_email: str
     demo_target_password: SecretStr
+
+
+class StaffSeedSettings(_ConnectionSettings):
+    """`staff` (and `apply`, when set): the support lead (E3, J13), its Auth user and staff row together."""
+
+    demo_staff_email: str = "maya.chen@northwind.example"
+    demo_staff_password: SecretStr
 
 
 # --- seed.sql rendering (literal SQL file, so values are escaped, never formatted raw) -------------
@@ -319,7 +339,7 @@ async def ensure_auth_user(client: httpx.AsyncClient, email: str, password: Secr
     return str(resp.json()["id"])
 
 
-async def link_demo_users(s: SeedSettings, dsn: str, api_url: str, service_key: SecretStr) -> None:
+async def link_demo_users(s: CustomerSeedSettings, dsn: str, api_url: str, service_key: SecretStr) -> None:
     key = service_key.get_secret_value()
     demo = [
         ("CUS-001", s.demo_customer_email, s.demo_customer_password),
@@ -347,6 +367,36 @@ async def link_demo_users(s: SeedSettings, dsn: str, api_url: str, service_key: 
             await conn.close()
 
 
+STAFF_NAME = "Maya Chen"
+
+
+async def link_demo_staff(s: StaffSeedSettings, dsn: str, api_url: str, service_key: SecretStr) -> None:
+    """The support lead (E3): the Auth user (password from .env, never shown) and its staff_users row,
+    together. Its role comes from that row, never from the token (invariant 22)."""
+    password, email = s.demo_staff_password, s.demo_staff_email.strip().lower()
+    if len(password.get_secret_value()) < 12:
+        raise SystemExit("DEMO_STAFF_PASSWORD must be set in .env and be at least 12 characters")
+    key = service_key.get_secret_value()
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+    conn = await asyncpg.connect(dsn)
+    try:
+        if await conn.fetchval("SELECT 1 FROM app.customers WHERE lower(email) = $1", email):
+            raise SystemExit("refusing: the staff email belongs to a customer; one login is never both")
+        async with httpx.AsyncClient(base_url=f"{api_url}/auth/v1", headers=headers, timeout=15) as client:
+            uid = await ensure_auth_user(client, email, password)
+        await conn.execute(
+            "INSERT INTO app.staff_users (auth_user_id, name, email, role)"
+            " VALUES ($1, $2, $3, 'support_lead')"
+            " ON CONFLICT (email) DO UPDATE SET auth_user_id = EXCLUDED.auth_user_id, name = EXCLUDED.name",
+            uuid.UUID(uid),
+            STAFF_NAME,
+            email,
+        )
+        print(f"support lead {email}: Auth user and staff row linked")
+    finally:
+        await conn.close()
+
+
 def confirm_cloud(api_url: str) -> None:
     host = urlsplit(api_url).hostname or "?"
     print(f"TARGET: cloud Supabase project at {host}")
@@ -356,7 +406,7 @@ def confirm_cloud(api_url: str) -> None:
 
 
 async def cmd_apply(target: str, reset: bool, relative_dates: bool) -> None:
-    s = SeedSettings()  # values come from .env
+    s = CustomerSeedSettings()  # values come from .env
     sql = (
         render_seed_sql(json.loads(FIXTURE.read_text()), relative_dates=True)
         if relative_dates
@@ -381,6 +431,21 @@ async def cmd_apply(target: str, reset: bool, relative_dates: bool) -> None:
         await apply_sql(dsn, sql, reset=reset, guard_existing=True)
     print(f"seed.sql applied to {target}")
     await link_demo_users(s, dsn, api, key)
+    try:
+        staff = StaffSeedSettings()
+    except ValidationError:
+        print("DEMO_STAFF_PASSWORD is not set: the support lead was not created (run `staff` once it is)")
+        return
+    await link_demo_staff(staff, dsn, api, key)
+
+
+async def cmd_staff() -> None:
+    """(Re)seed only the support lead on the LOCAL stack, leaving the store data as it is."""
+    s = StaffSeedSettings()
+    dsn, api = s.database_url.get_secret_value(), s.supabase_url
+    if {urlsplit(dsn).hostname, urlsplit(api).hostname} - LOCAL_HOSTS:
+        raise SystemExit("refusing: DATABASE_URL / SUPABASE_URL are not local")
+    await link_demo_staff(s, dsn, api, s.supabase_service_role_key)
 
 
 def main() -> int:
@@ -396,8 +461,12 @@ def main() -> int:
         action="store_true",
         help="anchor dates to the real now() (live demo); default is the fixed fixture_now",
     )
+    sub.add_parser("staff", help="(re)seed only the support lead on the local stack, from .env")
     args = parser.parse_args()
 
+    if args.cmd == "staff":
+        asyncio.run(cmd_staff())
+        return 0
     if args.cmd == "write":
         text = render_seed_sql(json.loads(FIXTURE.read_text()))
         if args.check:

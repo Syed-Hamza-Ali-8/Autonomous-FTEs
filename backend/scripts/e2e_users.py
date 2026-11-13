@@ -1,6 +1,6 @@
 """Throwaway sign-ins for Playwright (LOCAL stack only, invariant 20).
 
-  uv run python scripts/e2e_users.py create <out.json>    # 2 customers, linked to seed-only customers
+  uv run python scripts/e2e_users.py create <out.json>    # 2 customers (seed-only, linked); checks the lead
   uv run python scripts/e2e_users.py teardown <out.json>  # unlink and delete them
 
 Picks the seed-only customers with the most orders (so pages have content), creates fresh Auth users
@@ -18,10 +18,17 @@ from urllib.parse import urlsplit
 
 import asyncpg
 import httpx
+from pydantic_settings import BaseSettings
 
 from tests.auth_users import purge_test_logins, test_email
 from tests.leakcheck import REAL_MODEL_RUN_MAY_GROW, problems, snapshot
-from tollgate.config import SupabaseSettings
+from tollgate.config import _COMMON, SupabaseSettings
+
+
+class StaffSettings(BaseSettings):
+    model_config = _COMMON
+    demo_staff_email: str = "maya.chen@northwind.example"
+
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -34,6 +41,16 @@ async def create() -> dict[str, object]:
     admin = {"apikey": svc, "Authorization": f"Bearer {svc}"}
     db = await asyncpg.connect(s.database_url.get_secret_value())
     try:
+        # The REAL support lead, seeded by seed_store.py from .env (DECISIONS J13). Only its email is written
+        # here; the console tests read the password from .env at run time, so it is never copied.
+        staff_email = StaffSettings().demo_staff_email.strip().lower()
+        if not await db.fetchval(
+            "SELECT 1 FROM app.staff_users WHERE email = $1 AND auth_user_id IS NOT NULL", staff_email
+        ):
+            raise SystemExit(
+                "the support lead is not seeded: set DEMO_STAFF_PASSWORD in .env, then run"
+                " `uv run python scripts/seed_store.py staff`"
+            )
         picks = await db.fetch(
             """SELECT c.id, c.name FROM app.customers c
                 WHERE c.auth_user_id IS NULL
@@ -79,7 +96,7 @@ async def create() -> dict[str, object]:
                     }
                 )
         print(f"created {len(people)} e2e customers: {[p['customer_id'] for p in people]}")
-        return {"customers": people}
+        return {"customers": people, "staff": {"email": staff_email}}
     finally:
         await db.close()
 
@@ -129,7 +146,7 @@ def main() -> int:
         out.write_text(json.dumps(asyncio.run(create()), indent=2))
         return 0
     if out.exists():
-        asyncio.run(teardown(json.loads(out.read_text())["customers"]))
+        asyncio.run(teardown(json.loads(out.read_text())["customers"]))  # the support lead stays (seeded)
         out.unlink()
     if baseline.exists():
         # Playwright runs make real model calls: only the explicitly allowed tables may grow.

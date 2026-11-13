@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { formatDate, formatMoney, formatStaffTimestamp, formatTime, formatWhen, initials } from "./format.ts";
+import { formatDate, formatMoney, formatStaffTimestamp, formatTime, formatWhen, initials, timeLeft } from "./format.ts";
 
 test("USD always shows cents", () => {
   assert.equal(formatMoney({ amount_cents: 3200, currency: "USD" }), "$32.00");
@@ -50,4 +50,12 @@ test("staff timestamps carry an explicit timezone; customer ones carry none (F2)
   for (const shown of [formatTime(iso), formatWhen(iso, new Date(2026, 0, 1))]) {
     assert.doesNotMatch(shown, /UTC|GMT|[+-]\d{2}:?\d{2}\b/);
   }
+});
+
+test("time left before an approval expires rounds down, and says Expired once it has", () => {
+  const now = new Date("2026-11-07T12:00:00Z");
+  assert.equal(timeLeft("2026-11-09T11:20:00Z", now), "Expires in 47h");
+  assert.equal(timeLeft("2026-11-07T12:59:00Z", now), "Expires in 59m");
+  assert.equal(timeLeft("2026-11-07T12:00:30Z", now), "Expired");
+  assert.equal(timeLeft("2026-11-07T11:00:00Z", now), "Expired");
 });

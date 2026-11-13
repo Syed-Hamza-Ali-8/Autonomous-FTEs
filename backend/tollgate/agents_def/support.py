@@ -13,7 +13,8 @@ from tollgate.tools.registry import allowed_tools
 from tollgate.tools.write_tools import WRITE_TOOLS
 
 AGENT_NAME = "support"
-PROMPT_VERSION = "support-v3"
+SAMPLING_SEED = 20261111  # fixed for support-v4 (J4); the provider treats it as best effort
+PROMPT_VERSION = "support-v4"
 PROMPT = (Path(__file__).parent / "prompts" / f"{PROMPT_VERSION}.md").read_text()
 
 
@@ -60,5 +61,12 @@ def build_support_agent(model: Model) -> Agent[TurnContext]:
         tools=list(tools),
         model=model,
         # include_usage: streamed Chat Completions only report tokens when asked (budget accounting).
-        model_settings=ModelSettings(temperature=0.2, parallel_tool_calls=False, include_usage=True),
+        # Temperature 0 with a fixed seed (DECISIONS J4). openai-agents 0.24.0 has no `seed` setting; its Chat
+        # Completions model passes extra_args straight into chat.completions.create (docs/sdk_surface.md).
+        model_settings=ModelSettings(
+            temperature=0,
+            parallel_tool_calls=False,
+            include_usage=True,
+            extra_args={"seed": SAMPLING_SEED},
+        ),
     )

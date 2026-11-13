@@ -58,6 +58,8 @@ async def chat(
 
 
 @router.get("/conversations/latest")
-async def latest_conversation(customer: Customer, pool: Pool) -> conv.ConversationOut | None:
+async def latest_conversation(
+    customer: Customer, pool: Pool, request: Request
+) -> conv.ConversationOut | None:
     async with pool.acquire() as conn:
-        return await conv.latest_conversation(conn, customer.customer_id)
+        return await conv.latest_conversation(conn, customer.customer_id, request.app.state.clock.now())

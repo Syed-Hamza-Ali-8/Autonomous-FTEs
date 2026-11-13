@@ -97,3 +97,12 @@ locations only.
   one (`missing properties: 'amount_cents'`, eval run 20261107T213633Z). Write tools therefore use
   `strict_mode=False` (required = only the parameters without defaults); the gateway's strict re-validation is the
   enforcement either way.
+
+## Sampling seed and system_fingerprint (Phase 4, verified 2026-11-11 against openai-agents 0.24.0)
+- `ModelSettings` has **no `seed` field** (fields checked via `ModelSettings.__dataclass_fields__`).
+- `OpenAIChatCompletionsModel._fetch_response` merges `model_settings.extra_args` into the
+  `chat.completions.create(**create_kwargs)` call (`create_kwargs.update(model_settings.extra_args or {})`), raising
+  `TypeError` on a duplicate key. So the seed is sent as `ModelSettings(extra_args={"seed": …})`.
+- The streamed path does not surface `system_fingerprint`. The SDK iterates the returned stream (`async for chunk in
+  stream`) and reads `stream.response.headers["x-request-id"]` (`_attach_stream_request_id`), so a pass-through proxy
+  that keeps `.response` is safe: `tollgate/llm/fingerprints.py`.

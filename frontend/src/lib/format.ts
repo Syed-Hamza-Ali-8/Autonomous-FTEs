@@ -64,6 +64,16 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   return "just now";
 }
 
+/**
+ * Staff queue urgency (spec 13.4): time left before an approval expires, in whole hours ("47h"), in minutes in
+ * the final hour ("35m"), and "Expired" once it has. Rounded DOWN, so it never promises more time than is left.
+ */
+export function timeLeft(expiresIso: string, now: Date = new Date()): string {
+  const minutes = Math.floor((new Date(expiresIso).getTime() - now.getTime()) / 60_000);
+  if (minutes <= 0) return "Expired";
+  return minutes < 60 ? `Expires in ${minutes}m` : `Expires in ${Math.floor(minutes / 60)}h`;
+}
+
 /** Two-letter tile text for a product name, e.g. "Electric Kettle 1.7L" -> "EK". */
 export function initials(name: string): string {
   const words = name.replace(/\(.*?\)/g, "").split(/\s+/).filter((w) => /^[A-Za-z]/.test(w));

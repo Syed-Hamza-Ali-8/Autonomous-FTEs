@@ -36,8 +36,9 @@ from tollgate.auth.deps import CustomerContext
 from tollgate.clock import Clock
 from tollgate.domain import conversations as conv
 from tollgate.errors import BudgetExceededError, ProviderError
+from tollgate.guardrails import fraud_signal
 from tollgate.guardrails.claims import check_reply, under_claims
-from tollgate.llm import budget
+from tollgate.llm import budget, fingerprints
 from tollgate.tools.context import TurnContext
 
 log = logging.getLogger(__name__)
@@ -127,6 +128,7 @@ async def run_turn(
         order_id=turn.conversation.order_id,
         clock=clock,
         prompt_version=PROMPT_VERSION,
+        fraud_signal=fraud_signal.flagged(turn.message),  # the customer's own text only (I11)
     )
     inputs: list[TResponseInputItem] = [
         {"role": "user" if m.role == "customer" else "assistant", "content": m.content} for m in past
@@ -135,6 +137,9 @@ async def run_turn(
 
     started_at, t0 = datetime.now(UTC), time.perf_counter()
     status, error_text = "error", "not finished"
+    # Set before the run starts, so the SDK's tasks (which copy this context) append to the same list.
+    called: list[str] = []
+    fingerprints.CURRENT.set(called)
     result = Runner.run_streamed(
         build_support_agent(llm.model),
         inputs,
@@ -244,6 +249,7 @@ async def run_turn(
                 usage.total_tokens,
                 round((time.perf_counter() - t0) * 1000),
                 started_at,
+                called,
             )
         )
     yield events.Done()
@@ -262,13 +268,15 @@ async def _record_run(
     tokens_total: int,
     latency_ms: int,
     started_at: datetime,
+    system_fingerprints: list[str],
 ) -> None:
     await pool.execute(
         """
         INSERT INTO app.run_log
           (turn_id, conversation_id, customer_id, agent, prompt_version, model, status, error,
-           model_calls, input_tokens, output_tokens, total_tokens, latency_ms, started_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           model_calls, input_tokens, output_tokens, total_tokens, latency_ms, started_at,
+           system_fingerprints)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         """,
         turn_id,
         turn.conversation.id,
@@ -284,4 +292,5 @@ async def _record_run(
         tokens_total,
         latency_ms,
         started_at,
+        system_fingerprints,
     )

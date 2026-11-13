@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from tollgate.actions import cards as action_cards
+from tollgate.approvals import expiry
 from tollgate.db import Conn
 from tollgate.domain.models import ActionCard, OrderSummary
 from tollgate.domain.orders import list_orders
@@ -161,7 +163,23 @@ def _message(row: Any, orders: list[OrderSummary] | None = None) -> MessageOut:
     )
 
 
-async def latest_conversation(conn: Conn, customer_id: str) -> ConversationOut | None:
+def _unannounced_expiries(pending: list[Any], now: datetime) -> list[MessageOut]:
+    """R7 of the derived expiry predicate (J8, J14): a request still pending past expiry, its decision not yet
+    recorded, shows the expiry system message the lazy write will post: the same text, timed at the expiry.
+    Its own seam for mutation M44."""
+    return [
+        MessageOut(
+            id=-int(r["id"].removeprefix("ACT-")),  # never a stored id (those are positive)
+            role="system",
+            content=action_cards.decided_message("expired", r["id"], r["action"]),
+            created_at=r["created_at"] + expiry.APPROVAL_TTL,
+        )
+        for r in pending
+        if expiry.is_expired(r["created_at"], now)
+    ]
+
+
+async def latest_conversation(conn: Conn, customer_id: str, now: datetime) -> ConversationOut | None:
     conv = await conn.fetchrow(
         "SELECT id, order_id FROM app.conversations WHERE customer_id = $1 ORDER BY updated_at DESC LIMIT 1",
         customer_id,
@@ -181,4 +199,15 @@ async def latest_conversation(conn: Conn, customer_id: str) -> ConversationOut |
     referenced = {oid for r in rows for oid in r["order_refs"]}
     owned = {o.id: o for o in await list_orders(conn, customer_id)} if referenced else {}
     messages = [_message(r, [owned[oid] for oid in r["order_refs"] if oid in owned]) for r in rows]
+    # Requests of this conversation still waiting in storage. Once a decision is recorded the request is no
+    # longer pending, so the stored message shows and the derived one doesn't: never both.
+    pending = await conn.fetch(
+        "SELECT id, action, created_at FROM app.action_requests"
+        " WHERE conversation_id = $1 AND customer_id = $2 AND status = 'pending_approval' ORDER BY id",
+        conv["id"],
+        customer_id,
+    )
+    derived = _unannounced_expiries(list(pending), now)
+    if derived:
+        messages = sorted(messages + derived, key=lambda m: m.created_at)  # stable: stored order kept on ties
     return ConversationOut(id=conv["id"], order_id=conv["order_id"], messages=messages)
