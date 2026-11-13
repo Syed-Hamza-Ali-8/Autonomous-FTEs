@@ -137,7 +137,8 @@ is already set in `.wslconfig` and takes effect at the next restart.
   existing 1440 and 390 sets.
 - **"Usable at 1024" means, asserted in the spec:**
   - no horizontal page scroll;
-  - the inbox table and the decision panel are both visible without overlap;
+  - ~~the inbox table and the decision panel are both visible without overlap;~~ *removed by the correction in
+    section 14: spec 13.4 collapses the panes below 1280px;* the decision is reachable, with the Decide bar in view;
   - the approve and reject dialogs fit the viewport;
   - every control can be reached by keyboard, with visible focus.
 - **The Phase 4 criterion "usable at 1024" stays listed as missed until this passes.** It is then recorded as met
@@ -423,3 +424,29 @@ Everything below **tightens** the pre-registration: probes were added, and none 
 - **Checks:**
   - `generate_fixture.py --check` on the existing rows;
   - the strict zero-drift replay of the 47 (section 4), which would expose any change in what the 47 read.
+
+---
+
+## 14. Correction (owner-directed, 2026-11-13): "usable at 1024" was mis-specified in section 5
+**The spec, verbatim:**
+- **13.4 Staff side:** "Inbox: three panes on desktop (≥ 1280px): … Below 1280px the panes collapse to list →
+  detail."
+- **13.6 Quality checklist:** "Works from 390px to 1440px+ with no horizontal scroll; the staff console is usable at
+  1024px."
+
+**The reading:** side by side is required only at 1280px and above. At 1024, 13.4 specifies the collapsed list →
+detail layout, and 13.6 asks only that it be usable. Section 5's condition "the inbox table and the decision panel
+are both visible without overlap" demanded side by side at 1024. **That contradicts 13.4.** The implementer added
+it; the spec never asked for it. The Phase 4 pre-registration said only "usable at 1024", as 13.6 does.
+
+**The correction:** `console-1024.spec.ts` now asserts usability in the collapsed layout:
+- no horizontal scroll on the list and on the detail;
+- the decision reachable: opening a request shows the decision panel, with the Decide bar in view;
+- the approve and reject dialogs fitting the viewport;
+- the decision controls reachable by keyboard, with a visible focus indicator.
+
+**Why this is not a loosened criterion:** the removed condition was never a requirement of the spec the criterion
+measures. It contradicted that spec's designed behaviour, so it was a mis-specified test, corrected to the spec at the
+owner's direction. **What came first:** the first run's failure, on the removed condition, is kept in EVAL_RESULTS,
+and so is the fact that it found no other defect: no horizontal scroll on the inbox, and the decision panel shown.
+Everything the corrected test asserts was either asserted by the first version or is quoted from 13.6.

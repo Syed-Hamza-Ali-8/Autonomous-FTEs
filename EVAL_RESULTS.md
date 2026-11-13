@@ -881,3 +881,17 @@ Pre-registration: `backend/eval/PHASE5_6_PREREGISTRATION.md` (revision 7, approv
 - **Not fixed and not re-defined:** fixing it is a UI change (a two-pane layout from 1024), and accepting the
   single-pane layout as "usable" would loosen a pre-registered criterion. Both are the owner's call. The Phase 4 miss
   stays open.
+
+**Follow-up, the same day (owner: "check the test's definition of 'usable' against the build spec").**
+- **The spec, verbatim:**
+  - **13.4:** "Inbox: three panes on desktop (≥ 1280px): … Below 1280px the panes collapse to list → detail."
+  - **13.6:** "the staff console is usable at 1024px."
+- **The reading:** the spec requires side by side only at 1280px and above. At 1024, the collapsed layout is the
+  designed behaviour. The failing condition (queue and decision panel side by side) was **added by the test's
+  author, not required by the spec**, and it contradicted 13.4. **The test was wrong, not the console.**
+- **The correction (pre-registration section 14):** the test now asserts usability in the collapsed layout: no
+  horizontal scroll on the list and the detail, the decision reachable with the Decide bar in view, both dialogs
+  fitting the viewport, and keyboard focus reaching Approve with a visible indicator.
+- **Re-run: PASSED** in `w1024-light` and `w1024-dark`, with screenshots 20–23 at 1024.
+- **The outcome:** Phase 4's "usable at 1024" is **evidenced as met in the merged phase**. Phase 4's own record (a
+  miss: not evidenced) is not back-dated.

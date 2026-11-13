@@ -10,11 +10,16 @@ import { customers, staffLogin } from "./helpers";
  * criterion "usable at 1024" was not evidenced; this makes it evidenced or a measured miss. Committed before any
  * console change: it runs against the console as it stands.
  *
- * "Usable at 1024" means, as pre-registered:
- * - no horizontal page scroll;
- * - the queue and the decision panel both visible without overlapping;
+ * "Usable at 1024" (spec 13.6), in the layout spec 13.4 specifies below 1280px: "the panes collapse to list ->
+ * detail". So, at 1024:
+ * - no horizontal page scroll, on the list and on the detail;
+ * - the decision is reachable: opening a request shows the decision panel with its Decide bar in view;
  * - the approve and reject dialogs fit the viewport;
  * - the decision controls are reachable by keyboard, with a visible focus indicator.
+ *
+ * Corrected 2026-11-13 (pre-registration section 14): the first version also required the queue and the decision
+ * panel side by side, which spec 13.4 does not ask for below 1280px. It contradicts the designed collapse, and
+ * was a requirement the test author added, not one the spec made.
  *
  * Data as in console.spec.ts: real API output produced model-free by backend/scripts/console_samples.py inside a
  * rolled-back transaction, served by Playwright. No tokens; nothing written.
@@ -51,9 +56,6 @@ async function box(locator: Locator) {
   return b!;
 }
 
-const overlaps = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
-  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-
 async function fitsViewport(page: Page, locator: Locator) {
   const b = await box(locator);
   const vp = page.viewportSize()!;
@@ -70,7 +72,7 @@ test.beforeAll(() => {
   staff = samples(customers()[0].customer_id);
 });
 
-test("console at 1024: no horizontal scroll, queue and decision panel side by side, dialogs fit, keyboard focus", async ({ page }) => {
+test("console at 1024 (collapsed list -> detail): no horizontal scroll, decision reachable, dialogs fit, keyboard focus", async ({ page }) => {
   await serveStaff(page, staff);
   const who = staffLogin();
   await page.goto("/sign-in");
@@ -83,14 +85,12 @@ test("console at 1024: no horizontal scroll, queue and decision panel side by si
   await expect(queue.getByRole("button").first()).toBeVisible();
   await shot(page, "20-console-inbox");
 
-  // Open the first request: the queue stays visible and the decision panel appears beside it, not over it.
+  // Open the first request (list -> detail, spec 13.4): the decision panel shows, with its Decide bar in view.
   await queue.getByRole("button").first().click();
   const checklist = page.getByRole("list", { name: "Policy checklist" });
   const decide = page.getByRole("group", { name: "Decide" });
   await expect(checklist).toBeVisible();
   await expect(decide).toBeInViewport();
-  await expect(queue).toBeVisible();
-  expect(overlaps(await box(queue), await box(checklist)), "queue and decision panel overlap").toBe(false);
   await shot(page, "21-console-detail");
 
   // Keyboard: Tab reaches the Approve control and its focus is visible.
