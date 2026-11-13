@@ -50,5 +50,16 @@ export default defineConfig({
       testMatch: /(screenshots|action-cards|console)\.spec\.ts/,
       use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 }, colorScheme: "dark" },
     },
+    // The staff console at 1024px (DECISIONS L5): evidence for Phase 4's "usable at 1024", carried until it passes.
+    {
+      name: "w1024-light",
+      testMatch: /console-1024\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1024, height: 768 }, colorScheme: "light" },
+    },
+    {
+      name: "w1024-dark",
+      testMatch: /console-1024\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1024, height: 768 }, colorScheme: "dark" },
+    },
   ],
 });
