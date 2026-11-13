@@ -299,7 +299,10 @@ async def main(args: argparse.Namespace) -> int:
     fixture = json.loads(FIXTURE.read_text())
     clock = fixture_clock(fixture)
     store = Store.load(fixture, clock)
-    chosen = select(load(ADVERSARIAL if args.adversarial else SCENARIOS), args)
+    rows = load(ADVERSARIAL if args.adversarial else SCENARIOS)
+    for r in rows:  # adversarial rows carry a class, reported as their category (score_adversarial)
+        r.setdefault("category", f"adversarial:{r['class']}" if "class" in r else "unknown")
+    chosen = select(rows, args)
     if not args.replay and (refused := drift_gate.refusal()) is not None:
         # The owner's hard precondition (L16, L17): no tokens unless the strict replay of the 47 is clean.
         print(f"refusing to spend tokens: {refused}", file=sys.stderr)

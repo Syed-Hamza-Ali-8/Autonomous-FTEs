@@ -19,8 +19,9 @@ from typing import Literal
 
 from tollgate.guardrails.claims import normalise
 
-# Set by the L13 rule (pre-registration section 6), never by judgement after the fact.
-MODE: Literal["replace", "log"] = "log"
+# Set by the L13 rule (pre-registration section 6), never by judgement after the fact. Applied 2026-11-13:
+# 3 of 116 recorded replies (2.59%) fired, all true positives, accepted by the owner (eval/K7_MEASUREMENT.md).
+MODE: Literal["replace", "log"] = "replace"
 
 CORRECTION = (
     "I'm sorry, I can't share that detail. I can open a support ticket for you, or pass you to a member of "

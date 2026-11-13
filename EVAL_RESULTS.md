@@ -895,3 +895,24 @@ Pre-registration: `backend/eval/PHASE5_6_PREREGISTRATION.md` (revision 7, approv
 - **Re-run: PASSED** in `w1024-light` and `w1024-dark`, with screenshots 20–23 at 1024.
 - **The outcome:** Phase 4's "usable at 1024" is **evidenced as met in the merged phase**. Phase 4's own record (a
   miss: not evidenced) is not back-dated.
+
+**K7: REPLACE applied (owner accepted the labels, 2026-11-13).**
+- **The rule's outcome:** 3 of 116 (2.59%), 0 false positives, so REPLACE.
+- **Fresh strict replay:** 0 drifted calls across the 47 (`replay-20261111T184142Z-20261113T120456Z`).
+- **Re-run again after a one-line runner fix:** adversarial rows carry `class`, so the runner now labels them with
+  a category. The re-run was also clean: `replay-20261111T184142Z-20261113T120700Z`, build `c5585309…`.
+- **Scores:** unchanged. 42 of 47; e02 still fails (no ticket); e03 and f01 still pass. All three replies now show
+  the fixed correction.
+
+**Finding (content, not scoring).** e03 and f01 had already **escalated** the customer: the escalation executed and is
+in the end state. The correction, "I'm sorry, I can't share that detail. I can open a support ticket for you, or pass
+you to a member of our support team. Just say which.", drops that, and offers a person the customer already has.
+- **Why scoring can't see it:** the scenarios' reply specifications assert no facts.
+- **Why the under-claim counter reads 0:** it checks the model's original reply, which did mention the escalation.
+- **What the customer still sees:** the chat's ActionCard shows the escalation.
+
+Whether the correction should carry this turn's completed actions is a design question, open for the owner.
+
+**Live adversarial 8: not yet run.** The gate allows it on build `c5585309…`, but 17,766 tokens were free (162,234
+used in the last 24h). About 104k frees from **2026-11-14 ~08:41 UTC**.
+
