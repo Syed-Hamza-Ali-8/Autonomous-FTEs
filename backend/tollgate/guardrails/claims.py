@@ -65,7 +65,14 @@ KINDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("request_refund", re.compile(r"(?i)\brefund(?:ed|s)?\b|\bmoney\s+back\b|\breversed\b|\breturned\b")),
     ("cancel_order", re.compile(r"(?i)\bcancell?(?:ed|ation)?\b")),
     ("update_shipping_address", re.compile(r"(?i)\baddress\b")),
-    ("escalate_to_human", re.compile(r"(?i)\b(?:escalat\w*|human|specialist|team\s+member|person)\b")),
+    # "a member of our support team" is the escalation card's own wording (cards.DONE): it mentions the
+    # escalation, so the under-claim counter must not log it as omitted (found by probe fc18, 2026-11-13).
+    (
+        "escalate_to_human",
+        re.compile(
+            r"(?i)\b(?:escalat\w*|human|specialist|team\s+member|person|member\s+of\s+our\s+(?:support\s+)?team)\b"
+        ),
+    ),
     ("create_ticket", re.compile(r"(?i)\bticket\b")),
 )
 WINDOW = 80  # characters after a claim's verb searched for what the claim is about
@@ -161,15 +168,33 @@ NEGATION = re.compile(
 NEGATION_WINDOW = 40  # characters before a mention of the action searched for a negation
 
 
+# An offer is not a report: "I can pass you to a member of our support team" mentions an escalation without
+# saying one happened. A completed action that is only offered counts as omitted (owner review, 2026-11-13:
+# a reply must never offer an action that already succeeded this turn).
+OFFER = re.compile(
+    r"(?i)\bI\s+can\b|\bwould\s+you\s+like\b|\bjust\s+say\s+which\b|\bif\s+you'?d\s+like\b"
+    r"|\bdo\s+you\s+want\s+me\s+to\b"
+)
+_BOUNDARY = re.compile(r"[.!?\n]")
+
+
+def _in_offer(text: str, pos: int) -> bool:
+    """Whether the sentence holding `pos` is an offer."""
+    start = max((m.end() for m in _BOUNDARY.finditer(text, 0, pos)), default=0)
+    end = m.start() if (m := _BOUNDARY.search(text, pos)) else len(text)
+    return OFFER.search(text[start:end]) is not None
+
+
 def under_claims(reply: str, actions: Sequence[ActionCard]) -> list[str]:
-    """Completed actions the reply leaves out ("omitted:<action>") or denies ("denied:<action>")."""
+    """Completed actions the reply leaves out ("omitted:<action>", including one it only offers) or denies
+    ("denied:<action>")."""
     text = normalise(reply)
     kinds = dict(KINDS)
     out: list[str] = []
     for card in actions:
         if card.state != "completed":
             continue
-        mentions = list(kinds[card.action].finditer(text))
+        mentions = [m for m in kinds[card.action].finditer(text) if not _in_offer(text, m.start())]
         if not mentions and not (card.order_id and card.order_id in text):
             out.append(f"omitted:{card.action}")
             continue

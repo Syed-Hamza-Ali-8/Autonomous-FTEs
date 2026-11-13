@@ -37,7 +37,7 @@ from tollgate.clock import Clock
 from tollgate.domain import conversations as conv
 from tollgate.errors import BudgetExceededError, ProviderError
 from tollgate.guardrails import facts, fraud_signal, injection_signal
-from tollgate.guardrails.claims import check_reply, under_claims
+from tollgate.guardrails.claims import CORRECTION, CORRECTION_WITH_ACTIONS, check_reply, under_claims
 from tollgate.llm import budget, fingerprints
 from tollgate.tools.context import TurnContext
 
@@ -192,9 +192,10 @@ async def run_turn(
                 )
             shown = checked.text
             # K7 (DECISIONS L13, L16): a contact detail or unit the store's data doesn't hold. Replace or
-            # log per facts.MODE, set by the pre-committed rule; the claim check's correction isn't checked.
+            # log per facts.MODE, set by the pre-committed rule. The replacement is composed from this turn's
+            # action log, so it states what succeeded and never offers it again.
             seen = [turn.customer.email, *ctx.seen_text]
-            fact = facts.check_facts(shown, seen) if checked.passed else None
+            fact = facts.check_facts(shown, seen, ctx.actions) if checked.passed else None
             if fact is not None and not fact.passed:
                 await conn.execute(
                     "INSERT INTO app.audit_log"
@@ -208,7 +209,25 @@ async def run_turn(
                 )
                 if facts.MODE == "replace":
                     shown = fact.text
-            if checked.passed and (under := under_claims(checked.text, ctx.actions)):
+                    # The claim check runs again on the text actually DELIVERED (owner review, 2026-11-13:
+                    # checks on the model's original reply could not see what a replacement changed).
+                    final = check_reply(shown, ctx.actions)
+                    if not final.passed:
+                        await conn.execute(
+                            "INSERT INTO app.audit_log (actor_type, actor_id, event, target, outcome,"
+                            " prompt_version, turn_id, details) VALUES ('system', 'claim_check',"
+                            " 'claim_check_replaced', $1, 'replaced', $2, $3, $4::jsonb)",
+                            str(conv_id),
+                            PROMPT_VERSION,
+                            turn_id,
+                            json.dumps({"matched": (final.matched or "")[:200], "after": "k7"}),
+                        )
+                        shown = final.text
+            # The under-claim counter, too, reads the delivered text, unless it is the claim check's own
+            # correction (which points at the ActionCards instead of restating them).
+            if shown not in (CORRECTION, CORRECTION_WITH_ACTIONS) and (
+                under := under_claims(shown, ctx.actions)
+            ):
                 # The reverse case is logged, not blocked (Phase 3); the ActionCards still show the truth.
                 await conn.execute(
                     "INSERT INTO app.audit_log"

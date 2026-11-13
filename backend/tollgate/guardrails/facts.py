@@ -7,26 +7,39 @@ named a "fraud team" the store doesn't have (e03, f01). A reply passes only if
   the text of this turn's tool results, so a detail the tools actually returned may be repeated; and
 - every named unit ("<word> team / department / desk / unit / division") is on `UNIT_ALLOWLIST`.
 
-A failing reply's replacement is the WHOLE reply (L13, Q14): `CORRECTION`, which offers a ticket or a person
-and contains no contact detail of any kind (probe fc09). Whether the runner shows the correction or only
-logs the finding is `MODE`, set by the pre-committed L13 rule after the zero-token measurement.
+A failing reply is replaced WHOLE (L13, Q14) by a correction COMPOSED from this turn's action log
+(`compose_correction`; owner, 2026-11-13, after review found that a fixed text dropped an executed
+escalation): it opens with the refusal; states the actions that SUCCEEDED this turn in the action cards' own
+words; offers the next step only if none did, so it never offers an action already done; and carries no
+contact detail of any kind (probes fc09, fc13-fc18). Whether the runner shows it or only logs the finding is
+`MODE`, set by the pre-committed L13 rule.
 """
 
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from tollgate.domain.models import ActionCard
 from tollgate.guardrails.claims import normalise
 
 # Set by the L13 rule (pre-registration section 6), never by judgement after the fact. Applied 2026-11-13:
 # 3 of 116 recorded replies (2.59%) fired, all true positives, accepted by the owner (eval/K7_MEASUREMENT.md).
 MODE: Literal["replace", "log"] = "replace"
 
-CORRECTION = (
-    "I'm sorry, I can't share that detail. I can open a support ticket for you, or pass you to a member of "
-    "our support team. Just say which."
+# The refusal avoids the under-claim counter's negation words ("can't", "unable", ...): the counter runs on
+# the delivered text, and a negation just before a completed action reads as denying it (probe fc18).
+OPENING = "I'm sorry, I don't have that detail to give you."
+NEXT_STEP = (
+    "I can open a support ticket for you, or pass you to a member of our support team. Just say which."
 )
+
+
+def compose_correction(actions: Sequence[ActionCard] = ()) -> str:
+    """The replacement for a reply that failed the check, from this turn's action log (the cards' source)."""
+    done = list(dict.fromkeys(a.explanation for a in actions if a.state == "completed"))
+    return " ".join([OPENING, *done] if done else [OPENING, NEXT_STEP])
+
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # A phone number: 9+ digits with the usual separators, not inside a longer token (an order ID or a tracking
@@ -48,7 +61,7 @@ UNIT_ALLOWLIST: frozenset[str] = frozenset({"support team"})
 @dataclass(frozen=True)
 class FactCheck:
     passed: bool
-    text: str  # what may be shown: the reply, or CORRECTION when it fails
+    text: str  # what may be shown: the reply, or the composed correction when it fails
     matched: list[str]  # what failed, for the audit log and the measurement
 
 
@@ -83,8 +96,10 @@ def findings(reply: str, allowed_contacts: Collection[str] = ()) -> list[str]:
     return out
 
 
-def check_facts(reply: str, allowed_contacts: Collection[str] = ()) -> FactCheck:
+def check_facts(
+    reply: str, allowed_contacts: Collection[str] = (), actions: Sequence[ActionCard] = ()
+) -> FactCheck:
     found = findings(reply, allowed_contacts)
     if found:
-        return FactCheck(passed=False, text=CORRECTION, matched=found)
+        return FactCheck(passed=False, text=compose_correction(actions), matched=found)
     return FactCheck(passed=True, text=normalise(reply), matched=[])
