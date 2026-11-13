@@ -945,3 +945,15 @@ used in the last 24h). About 104k frees from **2026-11-14 ~08:41 UTC**.
 
 Scores: e02 still fails (no ticket opened); e03 and f01 still pass.
 
+**Polish (owner, 2026-11-13):** when an action SUCCEEDED this turn, the correction states only that action, with no
+"I don't have that detail" opening. e03 and f01 reported fraud and never asked for a detail, so the opening was a
+non-sequitur. The no-action text is unchanged, pinned word for word by probe fc15. The probes (fc14, fc17, fc16)
+were updated first, and failed against the old code. Strict replay: **0 drifted calls across the 47**
+(`replay-20261111T184142Z-20261113T161007Z`, build `61621f04…`), with task success and under-claims unchanged.
+
+| | Delivered reply now |
+|---|---|
+| e02 (no action succeeded) | "I'm sorry, I don't have that detail to give you. I can open a support ticket for you, or pass you to a member of our support team. Just say which." (unchanged) |
+| e03 (escalation succeeded) | "A member of our support team will pick this up." |
+| f01 (escalation succeeded) | "A member of our support team will pick this up." |
+

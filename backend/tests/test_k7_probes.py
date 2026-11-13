@@ -8,10 +8,12 @@ line (L16): the check is the guarantee.
   detail present in this turn's tool results.
 - A named unit ("[name] team / department / desk / unit / division") must be on the unit allowlist.
 - A failing reply is replaced WHOLE (L13, Q14) by a correction COMPOSED from this turn's action log (owner,
-  2026-11-13, after review found the fixed text dropped an executed escalation in e03/f01): it opens with the
-  refusal; it states the actions that SUCCEEDED this turn in the action cards' own words (fc14, fc17); if none
-  did, it offers the next step (fc15); it never offers an action that already succeeded (fc14, fc17); it
-  causes no under-claim (fc18); and it carries no contact detail of any kind (fc09, fc13).
+  2026-11-13, after review found the fixed text dropped an executed escalation in e03/f01): if actions
+  SUCCEEDED this turn it states ONLY them, in the action cards' own words, with no refusal opening (the
+  customer may never have asked for a detail: e03 and f01 reported fraud) (fc14, fc17); if none did, it opens
+  with the refusal and offers the next step, in exactly the text pinned by fc15; it never offers an action
+  that already succeeded (fc14, fc17); it causes no under-claim (fc18); and it carries no contact detail of
+  any kind (fc09, fc13).
 
 fc10-fc13 were added while writing the kill table, so that every mutation is killed by at least two probes
 (K5). Adding probes tightens; nothing pre-registered was removed or loosened.
@@ -44,6 +46,12 @@ KINDS: tuple[ActionKind, ...] = (
     "request_refund", "issue_store_credit", "cancel_order", "update_shipping_address", "create_ticket",
     "escalate_to_human",
 )  # fmt: skip
+
+
+NO_ACTION_TEXT = (
+    "I'm sorry, I don't have that detail to give you. I can open a support ticket for you, or pass you to a "
+    "member of our support team. Just say which."
+)
 
 
 def done(action: ActionKind) -> ActionCard:
@@ -152,23 +160,24 @@ def fc14() -> list[str]:
     escalate again (e03, f01)."""
     result = facts.check_facts("I've escalated this to our fraud team.", (), [done("escalate_to_human")])
     out = expect("replaced", result.passed, False)
-    out += expect("mentions the escalation", cards.DONE["escalate_to_human"] in result.text, True)
+    out += expect("only the escalation, no opening", result.text, cards.DONE["escalate_to_human"])
     return out + expect("offers it again", bool(OFFER.search(result.text)), False)
 
 
 def fc15() -> list[str]:
-    """A reply replaced in a turn with no successful action offers the next step."""
+    """A reply replaced in a turn with no successful action opens with the refusal and offers the next step,
+    in the text approved on 2026-11-13 (pinned: unchanged by the owner's polish of the succeeded case)."""
     result = facts.check_facts("Our fraud team will call you.", (), [])
-    return expect("replaced", result.passed, False) + expect(
-        "offers the next step", bool(OFFER.search(result.text)), True
-    )
+    out = expect("replaced", result.passed, False)
+    out += expect("offers the next step", bool(OFFER.search(result.text)), True)
+    return out + expect("unchanged text", result.text, NO_ACTION_TEXT)
 
 
 def fc17() -> list[str]:
     """The same for a ticket opened this turn: stated, not offered again."""
     result = facts.check_facts("Our billing department will email you.", (), [done("create_ticket")])
     out = expect("replaced", result.passed, False)
-    out += expect("states the ticket", cards.DONE["create_ticket"] in result.text, True)
+    out += expect("only the ticket, no opening", result.text, cards.DONE["create_ticket"])
     return out + expect("offers it again", bool(OFFER.search(result.text)), False)
 
 

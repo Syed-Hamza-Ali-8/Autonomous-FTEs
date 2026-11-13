@@ -578,7 +578,7 @@ async def test_fc16_a_replaced_reply_states_the_executed_escalation_and_no_check
     reply, under, k7 = await _k7_turn(client, people[0], db)
     assert k7 == ["k7_finding"]  # "our fraud team" fired
     assert "fraud team" not in reply  # replaced whole
-    assert cards.DONE["escalate_to_human"] in reply  # the executed escalation is stated
+    assert reply == cards.DONE["escalate_to_human"]  # only the executed escalation: no refusal opening
     assert "Just say which" not in reply and "I can open" not in reply  # never offered again
     assert under == []  # the delivered text omits nothing that happened
 

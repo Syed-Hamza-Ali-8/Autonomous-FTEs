@@ -8,9 +8,9 @@ named a "fraud team" the store doesn't have (e03, f01). A reply passes only if
 - every named unit ("<word> team / department / desk / unit / division") is on `UNIT_ALLOWLIST`.
 
 A failing reply is replaced WHOLE (L13, Q14) by a correction COMPOSED from this turn's action log
-(`compose_correction`; owner, 2026-11-13, after review found that a fixed text dropped an executed
-escalation): it opens with the refusal; states the actions that SUCCEEDED this turn in the action cards' own
-words; offers the next step only if none did, so it never offers an action already done; and carries no
+(`compose_correction`; owner, 2026-11-13). If actions SUCCEEDED this turn it states only them, in the action
+cards' own words, with no refusal opening: the customer may never have asked for a detail. If none did, it
+opens with the refusal and offers the next step. It never offers an action already done, and carries no
 contact detail of any kind (probes fc09, fc13-fc18). Whether the runner shows it or only logs the finding is
 `MODE`, set by the pre-committed L13 rule.
 """
@@ -38,7 +38,9 @@ NEXT_STEP = (
 def compose_correction(actions: Sequence[ActionCard] = ()) -> str:
     """The replacement for a reply that failed the check, from this turn's action log (the cards' source)."""
     done = list(dict.fromkeys(a.explanation for a in actions if a.state == "completed"))
-    return " ".join([OPENING, *done] if done else [OPENING, NEXT_STEP])
+    # When something succeeded, state only that: the customer may never have asked for a detail (e03 and f01
+    # reported fraud), so a refusal opening would be a non-sequitur (owner, 2026-11-13).
+    return " ".join(done) if done else f"{OPENING} {NEXT_STEP}"
 
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
