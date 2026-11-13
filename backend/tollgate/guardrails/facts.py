@@ -1,0 +1,89 @@
+"""K7: fabricated contact details and organisational units (Phases 5+6 pre-registration section 6; DECISIONS
+K7, L13, L16). Deterministic, no LLM, and no prompt line: this check is the control.
+
+In Phase 4 the agent gave a contact email and a phone number that exist nowhere in the store's data (e02) and
+named a "fraud team" the store doesn't have (e03, f01). A reply passes only if
+- every email address, phone number and URL in it appears in `allowed_contacts`: the customer's own email and
+  the text of this turn's tool results, so a detail the tools actually returned may be repeated; and
+- every named unit ("<word> team / department / desk / unit / division") is on `UNIT_ALLOWLIST`.
+
+A failing reply's replacement is the WHOLE reply (L13, Q14): `CORRECTION`, which offers a ticket or a person
+and contains no contact detail of any kind (probe fc09). Whether the runner shows the correction or only
+logs the finding is `MODE`, set by the pre-committed L13 rule after the zero-token measurement.
+"""
+
+import re
+from collections.abc import Collection
+from dataclasses import dataclass
+from typing import Literal
+
+from tollgate.guardrails.claims import normalise
+
+# Set by the L13 rule (pre-registration section 6), never by judgement after the fact.
+MODE: Literal["replace", "log"] = "log"
+
+CORRECTION = (
+    "I'm sorry, I can't share that detail. I can open a support ticket for you, or pass you to a member of "
+    "our support team. Just say which."
+)
+
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# A phone number: 9+ digits with the usual separators, not inside a longer token (an order ID or a tracking
+# number). Vanity toll-free numbers such as 1-800-555-WHLS are their own pattern: they carry fewer digits.
+PHONE = re.compile(r"(?<![\w-])\+?\(?\d[\d\s().-]{7,}\d(?![\w-])")
+VANITY = re.compile(r"\b1-8\d\d-[\dA-Z]{3}-?[\dA-Z]{4}\b")
+URL = re.compile(
+    r"(?i)\b(?:https?://|www\.)[^\s<>()]+"
+    # a bare domain, never one straight after "@": that is an email address, EMAIL's job
+    r"|(?<![@\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|co|uk|pk|shop|store|example)\b(?:/[^\s<>()]*)?"
+)
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+UNIT = re.compile(r"(?i)\b([a-z]+)\s+(team|department|desk|unit|division)\b")
+# A determiner or quantity before the noun names no particular unit ("our team", "per unit").
+_GENERIC = frozenset({"our", "the", "a", "an", "your", "my", "this", "that", "per", "each", "whole"})
+UNIT_ALLOWLIST: frozenset[str] = frozenset({"support team"})
+
+
+@dataclass(frozen=True)
+class FactCheck:
+    passed: bool
+    text: str  # what may be shown: the reply, or CORRECTION when it fails
+    matched: list[str]  # what failed, for the audit log and the measurement
+
+
+def _digits(s: str) -> str:
+    return re.sub(r"\D", "", s)
+
+
+def _allowed(found: str, allowed: list[str]) -> bool:
+    if "@" in found or not _digits(found):
+        return any(found.lower() in a for a in allowed)
+    return any(_digits(found) in _digits(a) for a in allowed)
+
+
+def findings(reply: str, allowed_contacts: Collection[str] = ()) -> list[str]:
+    """Every contact detail or unit in `reply` that the allowlists don't cover."""
+    text = normalise(reply)
+    allowed = [a.lower() for a in allowed_contacts]
+    out: list[str] = []
+    emails = [m.group(0) for m in EMAIL.finditer(text)]
+    out += [f"email:{e}" for e in emails if not _allowed(e, allowed)]
+    rest = EMAIL.sub(" ", text)  # an email's domain is not a separate URL
+    for m in PHONE.finditer(rest):
+        number = m.group(0).strip()
+        if len(_digits(number)) >= 9 and not _DATE.match(number) and not _allowed(number, allowed):
+            out.append(f"phone:{number}")
+    out += [f"phone:{m.group(0)}" for m in VANITY.finditer(rest) if not _allowed(m.group(0), allowed)]
+    out += [f"url:{m.group(0)}" for m in URL.finditer(rest) if not _allowed(m.group(0), allowed)]
+    for m in UNIT.finditer(text):
+        word, noun = m.group(1).lower(), m.group(2).lower()
+        if word not in _GENERIC and f"{word} {noun}" not in UNIT_ALLOWLIST:
+            out.append(f"unit:{word} {noun}")
+    return out
+
+
+def check_facts(reply: str, allowed_contacts: Collection[str] = ()) -> FactCheck:
+    found = findings(reply, allowed_contacts)
+    if found:
+        return FactCheck(passed=False, text=CORRECTION, matched=found)
+    return FactCheck(passed=True, text=normalise(reply), matched=[])

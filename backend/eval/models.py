@@ -37,7 +37,7 @@ def digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(_canonical(value), sort_keys=True, default=str).encode()).hexdigest()
 
 
-def input_fingerprint(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+def model_input(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:
     """What the model is sent: instructions, conversation so far and tool definitions (not settings)."""
     instructions = args[0] if args else kwargs.get("system_instructions")
     items = args[1] if len(args) > 1 else kwargs.get("input")
@@ -46,7 +46,11 @@ def input_fingerprint(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     tool_sigs = sorted(
         (getattr(t, "name", str(t)), digest(getattr(t, "params_json_schema", {}))) for t in tools or []
     )
-    return digest({"instructions": instructions, "input": items, "tools": tool_sigs})
+    return {"instructions": instructions, "input": items, "tools": tool_sigs}
+
+
+def input_fingerprint(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    return digest(model_input(args, kwargs))
 
 
 class RecordingModel(Model):
@@ -104,6 +108,8 @@ class ReplayModel(Model):
         # The chat runner turns unexpected exceptions into a friendly error event, which would hide a
         # divergence; the harness checks this flag after every turn and stops the run instead.
         self.diverged: str | None = None
+        # On drift, what the model would now be sent, kept to diagnose which part changed.
+        self.drift_input: Any = None
 
     def _fail(self, why: str) -> ReplayDiverged:
         self.diverged = why
@@ -123,6 +129,7 @@ class ReplayModel(Model):
             raise self._fail(f"call {self.calls}: recording altered (integrity hash mismatch)")
         if "input_sha256" in entry and input_fingerprint(args, kwargs) != entry["input_sha256"]:
             if not self.allow_drift:
+                self.drift_input = _canonical(model_input(args, kwargs))
                 raise self._fail(f"call {self.calls}: input drift (the model would now see different input)")
             self.drifted += 1
         response = Response.model_validate(entry["response"])

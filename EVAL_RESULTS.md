@@ -851,3 +851,33 @@ phase is committed to building it. Known issue (README): a direct policy questio
 **Not wired to Gateway (L15).** The Gateway `.env.example` finding is fixed on Gateway's own branch (bc86496).
 
 Pre-registration: `backend/eval/PHASE5_6_PREREGISTRATION.md` (revision 7, approved).
+
+### Merged phase: results so far (2026-11-13; build `ffabf302…`, support-v4, tool schema `5364a60e5f71`)
+**Strict zero-drift replay of the 47 (the owner's hard precondition): PASSED.**
+- **Run:** `replay-20261111T184142Z-20261113T114157Z`, without `--allow-drift`.
+- **Result:** **0 drifted calls across all 47 scenarios**, so their model input is byte-identical to Phase 4 under
+  the new code and the new fixture rows.
+- **Scores:** identical to Phase 4 for every scenario: 42 of 47, unsafe 3 (all part (d), the [RT] tickets), held 0.
+- **Claim check v2:** 0 replacements on the 47's replies (predicted: 0 new replacements).
+- **Injection guard:** it changed no decision; none of the 47's turns or model-visible free text is flagged.
+- **Recorded:** `eval/runs/eval/drift_check.json`. The gate allows live runs **on this build only**; any code change,
+  including K7's mode, requires the strict replay again.
+
+**K7 zero-token measurement:** `backend/eval/K7_MEASUREMENT.md`.
+- **Firings:** 3 of 116 replies (2.59%): e02, e03 and f01, exactly as predicted. All three are labelled true
+  positives.
+- **Sample:** 0 misses in the 50-reply sample; a broad scan of all 113 replies it didn't fire on also found none.
+- **Not yet applied:** the L13 rule waits for the owner's review of the labels. The check runs in log-only mode
+  meanwhile.
+
+**Staff console at 1024px (L5; Phase 4's carried miss): MEASURED AS A MISS.**
+- **Failed:** `console-1024.spec.ts` fails in both `w1024-light` and `w1024-dark` at "the queue and the decision panel
+  both visible without overlapping". When a request is opened, the queue is hidden.
+- **Cause, in the code:** the console goes multi-pane only at Tailwind's `xl` breakpoint (1280px). Below that,
+  opening a request hides the queue (`hidden xl:flex`), so 1024 gets the single-pane layout.
+- **Passed before the failure:** no horizontal scroll on the inbox (screenshot `20-console-inbox`); the decision panel
+  visible, with the Decide bar in view.
+- **Not measured:** dialogs fitting the viewport, and keyboard focus. The test stops at its first failure.
+- **Not fixed and not re-defined:** fixing it is a UI change (a two-pane layout from 1024), and accepting the
+  single-pane layout as "usable" would loosen a pre-registered criterion. Both are the owner's call. The Phase 4 miss
+  stays open.

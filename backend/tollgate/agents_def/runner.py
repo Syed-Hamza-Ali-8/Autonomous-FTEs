@@ -36,7 +36,7 @@ from tollgate.auth.deps import CustomerContext
 from tollgate.clock import Clock
 from tollgate.domain import conversations as conv
 from tollgate.errors import BudgetExceededError, ProviderError
-from tollgate.guardrails import fraud_signal
+from tollgate.guardrails import facts, fraud_signal, injection_signal
 from tollgate.guardrails.claims import check_reply, under_claims
 from tollgate.llm import budget, fingerprints
 from tollgate.tools.context import TurnContext
@@ -129,6 +129,7 @@ async def run_turn(
         clock=clock,
         prompt_version=PROMPT_VERSION,
         fraud_signal=fraud_signal.flagged(turn.message),  # the customer's own text only (I11)
+        injection_signal=injection_signal.flagged(turn.message),  # read tools may also set it (their results)
     )
     inputs: list[TResponseInputItem] = [
         {"role": "user" if m.role == "customer" else "assistant", "content": m.content} for m in past
@@ -189,6 +190,24 @@ async def run_turn(
                     turn_id,
                     json.dumps({"matched": (checked.matched or "")[:200]}),
                 )
+            shown = checked.text
+            # K7 (DECISIONS L13, L16): a contact detail or unit the store's data doesn't hold. Replace or
+            # log per facts.MODE, set by the pre-committed rule; the claim check's correction isn't checked.
+            seen = [turn.customer.email, *ctx.seen_text]
+            fact = facts.check_facts(shown, seen) if checked.passed else None
+            if fact is not None and not fact.passed:
+                await conn.execute(
+                    "INSERT INTO app.audit_log"
+                    " (actor_type, actor_id, event, target, outcome, prompt_version, turn_id, details)"
+                    " VALUES ('system', 'k7_check', 'k7_finding', $1, $2, $3, $4, $5::jsonb)",
+                    str(conv_id),
+                    "replaced" if facts.MODE == "replace" else "logged",
+                    PROMPT_VERSION,
+                    turn_id,
+                    json.dumps({"findings": [f[:120] for f in fact.matched]}),
+                )
+                if facts.MODE == "replace":
+                    shown = fact.text
             if checked.passed and (under := under_claims(checked.text, ctx.actions)):
                 # The reverse case is logged, not blocked (Phase 3); the ActionCards still show the truth.
                 await conn.execute(
@@ -202,7 +221,7 @@ async def run_turn(
                     json.dumps({"findings": under}),
                 )
             msg = await conv.add_assistant_message(
-                conn, conv_id, turn_id, checked.text, list(ctx.referenced_orders), ctx.actions
+                conn, conv_id, turn_id, shown, list(ctx.referenced_orders), ctx.actions
             )
         status, error_text = "ok", ""
         yield events.Reply(message_id=msg.id, text=msg.content, created_at=msg.created_at)

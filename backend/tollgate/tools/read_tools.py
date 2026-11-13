@@ -16,6 +16,7 @@ from agents import FunctionTool, RunContextWrapper, function_tool
 from tollgate.domain import orders
 from tollgate.domain.models import OrderDetail, OrderSummary
 from tollgate.domain.money import with_display
+from tollgate.guardrails import injection_signal
 from tollgate.tools.context import TurnContext
 
 ORDER_ID = re.compile(r"^ORD-[0-9]{4}$")
@@ -42,6 +43,9 @@ async def _logged(
     try:
         enriched: dict[str, Any] = with_display(await run())
         result = enriched
+        if injection_signal.scan_result(tool, enriched):  # model-visible free text read as an instruction
+            ctx.injection_signal = True
+        ctx.seen_text.append(json.dumps(enriched, default=str))
         outcome = "not_found" if enriched.get("found") is False else "ok"
         return enriched
     finally:

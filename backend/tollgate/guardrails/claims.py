@@ -8,7 +8,13 @@ gateway's ActionCards for the turn (built from its own outcomes, never from the 
   of that kind;
 - a claim whose kind can't be told needs at least one such card of any kind.
 A reply that fails is replaced by a fixed correction before anything reaches the screen or the DB (C1).
-Phase 6 replaces this with the full pre-registered check and its mutation test.
+
+v2 (Phases 5+6 pre-registration section 7; C8 completed) adds, within the sentence that makes the claim:
+- an order ID named in the claim must be the order of a matching action (`_order_matches`);
+- an amount stated in the claim must equal a matching action's recomputed amount, in its currency, to the
+  display precision used (`_amount_matches`): $51.00 and $51 both match 5100 USD cents; Rs 51 never does.
+Order-state facts read from the order (tier A: "a refund of $48.00 was already issued") are not claims of this
+turn's actions and are not matched by ACTION_CLAIM at all.
 """
 
 import re
@@ -79,15 +85,65 @@ def _kind(text: str, start: int, end: int) -> str | None:
     return min(found)[1] if found else None
 
 
+ORDER_ID = re.compile(r"\bORD-\d{4}\b")
+_USD = re.compile(r"(?:\$|\bUSD\s?)(\d[\d,]*)(?:\.(\d{1,2}))?")
+_PKR = re.compile(r"(?:\bRs\.?|\bPKR)\s?(\d[\d,]*)(?:\.(\d{1,2}))?")
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)|\n")
+
+
+def _sentence(text: str, start: int) -> str:
+    """The claim's sentence: from the claim's start to the end of its sentence."""
+    end = _SENTENCE_END.search(text, start)
+    return text[start : end.end() if end else len(text)]
+
+
+def _amounts(claim: str) -> list[tuple[str, int, bool]]:
+    """(currency, minor units, exact) for every amount stated in `claim`; exact when decimals were given."""
+    out: list[tuple[str, int, bool]] = []
+    for currency, rx in (("USD", _USD), ("PKR", _PKR)):
+        for m in rx.finditer(claim):
+            whole = int(m.group(1).replace(",", ""))
+            cents = int((m.group(2) or "0").ljust(2, "0"))
+            out.append((currency, whole * 100 + cents, m.group(2) is not None))
+    return out
+
+
+def _order_matches(claim: str, card: ActionCard) -> bool:
+    """A claim that names orders is backed only by an action on one of them (v2)."""
+    named = ORDER_ID.findall(claim)
+    return not named or card.order_id in named
+
+
+def _amount_matches(claim: str, card: ActionCard) -> bool:
+    """A claim that states amounts is backed only by an action whose recomputed amount is one of them (v2)."""
+    stated = _amounts(claim)
+    if not stated:
+        return True
+    if card.amount is None:
+        return False
+    want = card.amount
+
+    def equal(minor: int, exact: bool) -> bool:
+        return minor == want.amount_cents if exact else abs(minor - want.amount_cents) < 100
+
+    return any(cur == want.currency and equal(minor, exact) for cur, minor, exact in stated)
+
+
 def _backed(claim: str, kind: str | None, actions: Sequence[ActionCard]) -> bool:
     states = {"completed", "waiting_for_approval"} if SUBMITTED.search(claim) else {"completed"}
-    return any(a.state in states and (kind is None or a.action == kind) for a in actions)
+    return any(
+        a.state in states
+        and (kind is None or a.action == kind)
+        and _order_matches(claim, a)
+        and _amount_matches(claim, a)
+        for a in actions
+    )
 
 
 def check_reply(reply: str, actions: Sequence[ActionCard] = ()) -> ClaimCheck:
     text = normalise(reply)
     for match in ACTION_CLAIM.finditer(text):
-        claim = match.group(0)
+        claim = _sentence(text, match.start())
         if not _backed(claim, _kind(text, match.start(), match.end()), actions):
             return ClaimCheck(
                 passed=False, text=CORRECTION_WITH_ACTIONS if actions else CORRECTION, matched=claim

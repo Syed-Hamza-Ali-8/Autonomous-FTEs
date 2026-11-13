@@ -11,6 +11,8 @@
 - POLICY: policy/engine.py on facts read here with owner-filtered SQL; time from the injected clock (G1).
 - FRAUD SIGNAL (J2): in a turn whose customer text was flagged, an order- or money-tier ALLOW becomes
   NEEDS_APPROVAL (`fraud_signal`). Tighten only: a NEEDS_APPROVAL or DENY stands. The contact tier is exempt.
+- INJECTION SIGNAL (Phases 5+6 section 8): the same, tagged `injection_signal`, in a turn whose customer
+  text or read-tool free text read like an instruction. Exempt tiers come from guardrails/injection_signal.py.
 - ROUTE: ALLOW -> executors; NEEDS_APPROVAL -> approvals.queue (insert-only); DENY -> nothing. Deciding a
   queued request is approvals/service.py's alone, and nothing a tool imports reaches it (J7, af06).
 - AUDIT: exactly one app.audit_log row per submission, in the same transaction as its effect.
@@ -35,6 +37,7 @@ from tollgate.approvals import expiry, queue
 from tollgate.db import Conn
 from tollgate.domain.money import with_display
 from tollgate.errors import ActionFailedError
+from tollgate.guardrails import injection_signal
 from tollgate.policy import engine
 from tollgate.tools.context import TurnContext
 
@@ -288,6 +291,19 @@ def _apply_fraud_signal(verdict: engine.Verdict, flagged: bool) -> engine.Verdic
     return engine.Verdict("NEEDS_APPROVAL", (*verdict.reasons, "fraud_signal"))
 
 
+def _injection_flag(ctx: TurnContext, tier: str) -> bool:
+    """Whether the injection signal applies to an action of `tier` in this turn."""
+    return ctx.injection_signal and tier not in injection_signal.EXEMPT_TIERS
+
+
+def _apply_injection_signal(verdict: engine.Verdict, flagged: bool) -> engine.Verdict:
+    """Tighten only (J2): ALLOW -> NEEDS_APPROVAL. A NEEDS_APPROVAL gains the tag for staff; a DENY stands.
+    Its own seam for mutation M61 (the signal loosening a decision)."""
+    if not flagged or verdict.decision == "DENY":
+        return verdict
+    return engine.Verdict("NEEDS_APPROVAL", (*verdict.reasons, "injection_signal"))
+
+
 # Derived approval expiry (J8): each reader of pending state takes its cutoff from its own seam, so the
 # mutation checks (M41-M43) can remove the predicate from exactly one reader. Rows created after it are live.
 def _remainder_live_after(now: datetime) -> datetime:
@@ -440,6 +456,7 @@ async def _money(conn: Conn, ctx: TurnContext, action: str, args: MoneyArgs, ord
         window_total_cents=total,
     )
     verdict = _apply_fraud_signal(engine.evaluate_money(rules, facts, now), await _fraud_flag(conn, ctx))
+    verdict = _apply_injection_signal(verdict, _injection_flag(ctx, "money"))
     if verdict.decision == "DENY":
         return await _settle(
             conn, ctx, key, _denied(list(verdict.reasons), order_id, details, order["status"])
@@ -497,6 +514,7 @@ async def _cancel(conn: Conn, ctx: TurnContext, args: CancelArgs, order: Any) ->
     verdict = _apply_fraud_signal(
         engine.evaluate_cancel(rules, order["status"]), await _fraud_flag(conn, ctx)
     )
+    verdict = _apply_injection_signal(verdict, _injection_flag(ctx, "order"))
     if verdict.decision == "DENY":
         return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}, order["status"]))
     flags = (
@@ -571,6 +589,7 @@ async def _address(conn: Conn, ctx: TurnContext, args: AddressArgs, order: Any) 
     verdict = _apply_fraud_signal(
         engine.evaluate_address_change(engine.load_rules(), order["status"]), await _fraud_flag(conn, ctx)
     )
+    verdict = _apply_injection_signal(verdict, _injection_flag(ctx, "order"))
     if verdict.decision == "DENY":
         return await _settle(conn, ctx, key, _denied(list(verdict.reasons), order_id, {}, order["status"]))
     allow = verdict.decision == "ALLOW"
@@ -613,7 +632,11 @@ async def _ticket(conn: Conn, ctx: TurnContext, action: str, args: TicketArgs | 
     )
     if (original := await idempotency.lookup(conn, key, customer)) is not None:
         return _replayed(original, None)
-    # No policy rule restricts opening a ticket: always ALLOW.
+    # No policy rule restricts opening a ticket: always ALLOW. The contact tier is exempt from the injection
+    # signal; were it ever not, a held ticket would have nowhere to go (the contact tier is never queued, J9).
+    held = _apply_injection_signal(engine.Verdict("ALLOW", ()), _injection_flag(ctx, "contact"))
+    if held.decision != "ALLOW":
+        raise ActionFailedError("contact-tier action held by a signal: the contact tier must stay exempt")
     req = replace(_request(ctx, action, None, "ALLOW"), args={"category": category})
     kind: Literal["ticket", "escalation"] = "escalation" if action == "escalate_to_human" else "ticket"
     refs = await executors.run_ticket(conn, req, kind, args.summary, category)
@@ -664,7 +687,8 @@ async def _audit(conn: Conn, ctx: TurnContext, action: str, out: Outcome) -> int
 
 def _flagged_details(ctx: TurnContext, details: dict[str, Any]) -> dict[str, Any]:
     """Every submission in a flagged turn carries the flag in its audit row (J2)."""
-    return details | {"fraud_signal": True} if ctx.fraud_signal else details
+    flags = {"fraud_signal": True} if ctx.fraud_signal else {}
+    return details | flags | ({"injection_signal": True} if ctx.injection_signal else {})
 
 
 async def _audit_rejection(

@@ -520,6 +520,8 @@ async def test_resume_refuses_a_run_started_under_another_prompt_or_tool_schema(
     from eval import run_eval
 
     monkeypatch.setattr(run_eval, "RUNS", tmp_path)
+    # The drift gate (test_drift_precondition) would refuse first; this test is about the version check.
+    monkeypatch.setattr(run_eval.drift_gate, "refusal", lambda path=None: None)
     old = tmp_path / "old-run"
     old.mkdir()
     (old / "meta.json").write_text(

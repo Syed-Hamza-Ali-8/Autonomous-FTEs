@@ -25,9 +25,10 @@ from urllib.parse import urlsplit
 import asyncpg
 from agents import Model, OpenAIChatCompletionsModel, set_tracing_disabled
 
+from eval import drift_gate
 from eval.isolation import carry_trace, store_fingerprint
 from eval.models import RecordingModel, ReplayDiverged, ReplayModel
-from eval.score import ScenarioScore, WriteSnapshot, score, summarise
+from eval.score import ScenarioScore, WriteSnapshot, score, score_adversarial, summarise
 from eval.throttle import ThrottledModel, TokenThrottle
 from eval.verify_scenarios import FIXTURE, SCENARIOS, Store, fixture_clock, load
 from tests.leakcheck import REAL_MODEL_RUN_MAY_GROW, problems, snapshot
@@ -47,6 +48,9 @@ RUNS = Path(__file__).resolve().parent / "runs" / "eval"
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 MAX_RETRY_AFTER_S = 60.0  # longer waits mean a per-day limit: stop and resume later
 MAX_RETRIES = 5  # per-minute limits: keep honouring retry-after this many times per turn
+
+
+ADVERSARIAL = SCENARIOS.parent / "adversarial_llm.jsonl"  # the LLM adversarial set (L14)
 
 
 class StopRun(Exception):
@@ -141,7 +145,10 @@ async def run_scenario(
             "SELECT coalesce(sum(total_tokens), 0) FROM app.run_log WHERE turn_id = ANY($1::uuid[])",
             failed_turn_ids,
         )
-    result = score(scenario, store, before, after, replies, errors, int(replaced))
+    scorer = (
+        score_adversarial if "class" in scenario else score
+    )  # eval/adversarial_llm.jsonl rows have a class
+    result = scorer(scenario, store, before, after, replies, errors, int(replaced))
     replay = llm.model if isinstance(llm.model, ReplayModel) else None
     meta = {
         # Provider-reported tokens of attempts that were rate-limited and retried, plus the over-counted
@@ -292,7 +299,12 @@ async def main(args: argparse.Namespace) -> int:
     fixture = json.loads(FIXTURE.read_text())
     clock = fixture_clock(fixture)
     store = Store.load(fixture, clock)
-    chosen = select(load(), args)
+    chosen = select(load(ADVERSARIAL if args.adversarial else SCENARIOS), args)
+    if not args.replay and (refused := drift_gate.refusal()) is not None:
+        # The owner's hard precondition (L16, L17): no tokens unless the strict replay of the 47 is clean.
+        print(f"refusing to spend tokens: {refused}", file=sys.stderr)
+        if not args.dry_run:
+            return 7
     if args.replay:  # replay exactly the scenarios the source run recorded, nothing else
         # Recordings are tied to the tool schemas the model saw (CLAUDE.md). A stale recording is never
         # reused silently: it must be re-recorded, or replayed knowingly with --allow-drift.
@@ -506,6 +518,12 @@ async def main(args: argparse.Namespace) -> int:
                         )
             except (StopRun, ReplayDiverged) as exc:
                 stopped = str(exc)
+                if isinstance(model, ReplayModel) and model.drift_input is not None:
+                    (run_dir / "drift_input.json").write_text(
+                        json.dumps(
+                            {"scenario": s["id"], "call": model.calls, "input": model.drift_input}, indent=1
+                        )
+                    )
                 break
             row = {**result.as_dict(), **meta}
             with results_path.open("a") as f:
@@ -578,6 +596,15 @@ async def main(args: argparse.Namespace) -> int:
             "leak_check": leaks or "ok",
         }
         (run_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        if (
+            args.replay == drift_gate.SOURCE_RUN
+            and not args.allow_drift
+            and args.phase == 4
+            and not args.only
+        ):
+            # The strict replay of the 47 (L16): its result gates every live run on this build.
+            drifted = sum(int(r.get("drifted_calls", 0)) for r in rows) + (1 if stopped else 0)
+            drift_gate.record(drift_gate.RECORD, run_id, len(all_scores), drifted, detail=stopped)
         print(json.dumps(summary, indent=2))
         if stopped:
             print(f"STOPPED: {stopped}. Resume with --resume {run_id}", file=sys.stderr)
@@ -594,6 +621,9 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--phase", type=int, default=2, help="run scenarios whose phase is <= this (default 2)")
     p.add_argument("--subset", action="store_true", help="only the 12-scenario stratified subset")
     p.add_argument("--only", help="comma-separated scenario ids")
+    p.add_argument(
+        "--adversarial", action="store_true", help="run eval/adversarial_llm.jsonl (Phases 5+6, section 9)"
+    )
     p.add_argument("--record", action="store_true", help="save model outputs for later --replay")
     p.add_argument("--replay", metavar="RUN_ID", help="re-score using a recorded run's outputs (0 tokens)")
     p.add_argument("--resume", metavar="RUN_ID", help="continue an interrupted run")

@@ -24,6 +24,12 @@ class TurnContext:
     # Set once per turn from the customer's own message (guardrails/fraud_signal.py; DECISIONS J2). The
     # gateway routes order- and money-tier actions that policy would ALLOW to staff approval while it is set.
     fraud_signal: bool = False
+    # Set from the customer's own message by the runner, and ORed in by the read tools when a model-visible
+    # free-text field in their result reads like an instruction (guardrails/injection_signal.py). Tighten
+    # only: the gateway routes order- and money-tier ALLOWs to staff approval while it is set.
+    injection_signal: bool = False
+    # The text of every read-tool result this turn: a contact detail the tools returned may be repeated (K7).
+    seen_text: list[str] = field(default_factory=list)
     prompt_version: str | None = None  # recorded on every Action Gateway audit row (spec 6.2 step 7)
     # What this turn's write submissions did, appended by the gateway: the source for ActionCards and for
     # the claim check (invariant 10), never the model's text.
