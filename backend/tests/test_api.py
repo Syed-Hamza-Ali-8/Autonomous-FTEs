@@ -542,3 +542,58 @@ async def test_action_record_shows_the_resulting_address_and_is_owner_only(
     missing = await client.get("/v1/actions/ACT-999999", headers=a.headers)
     assert foreign.status_code == missing.status_code == 404
     assert foreign.content == missing.content  # indistinguishable (invariant 8)
+
+
+# -- K7 replacement through the runner: probe fc16 (Phases 5+6 section 6; owner review 2026-11-13) ---------
+# The claim check and the under-claim counter run on the text actually DELIVERED, after any K7 replacement.
+# Found in review: they ran on the model's original reply, so a replacement that dropped an executed
+# escalation (e03, f01) was seen by no check. With the ordering fixed, the under-claim counter catches
+# exactly that.
+
+ESCALATED_THEN_INVENTED = [
+    CallTool("escalate_to_human", {"summary": "Customer reports an order they never placed."}),
+    Say("I've escalated this to our fraud team, who will be in touch shortly."),
+]
+
+
+async def _k7_turn(
+    client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection
+) -> tuple[str, list[str], list[str]]:
+    script(list(ESCALATED_THEN_INVENTED))
+    status, events = await chat(client, who, {"message": "I never placed this order."})
+    assert status == 200
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    rows = await db.fetch("SELECT event, details FROM app.audit_log WHERE turn_id = $1", turn_id)
+    under = [json.loads(r["details"])["findings"] for r in rows if r["event"] == "claim_check_under_claim"]
+    k7 = [r["event"] for r in rows if r["event"] == "k7_finding"]
+    reply = next(e for e in events if e["type"] == "reply")["text"]
+    return reply, [f for fs in under for f in fs], k7
+
+
+async def test_fc16_a_replaced_reply_states_the_executed_escalation_and_no_check_objects(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    from tollgate.actions import cards
+
+    reply, under, k7 = await _k7_turn(client, people[0], db)
+    assert k7 == ["k7_finding"]  # "our fraud team" fired
+    assert "fraud team" not in reply  # replaced whole
+    assert cards.DONE["escalate_to_human"] in reply  # the executed escalation is stated
+    assert "Just say which" not in reply and "I can open" not in reply  # never offered again
+    assert under == []  # the delivered text omits nothing that happened
+
+
+async def test_fc16_under_m66_the_under_claim_counter_on_the_delivered_text_catches_the_dropped_escalation(
+    client: httpx.AsyncClient,
+    people: tuple[SignedIn, SignedIn, str],
+    db: asyncpg.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M66 (the fixed text back): the defect the review found. Checked on the DELIVERED text, it is logged."""
+    from tests.test_k7_probes import m66
+    from tollgate.guardrails import facts
+
+    m66(monkeypatch)
+    reply, under, _ = await _k7_turn(client, people[0], db)
+    assert reply == facts.compose_correction([])  # the fixed text
+    assert under == ["omitted:escalate_to_human"]

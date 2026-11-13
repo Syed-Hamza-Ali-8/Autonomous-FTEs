@@ -7,8 +7,11 @@ line (L16): the check is the guarantee.
 - Any email address, phone number or URL must be in the allowlist: the customer's own email and any contact
   detail present in this turn's tool results.
 - A named unit ("[name] team / department / desk / unit / division") must be on the unit allowlist.
-- A failing reply is replaced WHOLE by a fixed correction (L13, Q14). That correction offers a ticket or a
-  person and contains no contact detail of any kind (fc09, fc13).
+- A failing reply is replaced WHOLE (L13, Q14) by a correction COMPOSED from this turn's action log (owner,
+  2026-11-13, after review found the fixed text dropped an executed escalation in e03/f01): it opens with the
+  refusal; it states the actions that SUCCEEDED this turn in the action cards' own words (fc14, fc17); if none
+  did, it offers the next step (fc15); it never offers an action that already succeeded (fc14, fc17); it
+  causes no under-claim (fc18); and it carries no contact detail of any kind (fc09, fc13).
 
 fc10-fc13 were added while writing the kill table, so that every mutation is killed by at least two probes
 (K5). Adding probes tightens; nothing pre-registered was removed or loosened.
@@ -16,10 +19,13 @@ fc10-fc13 were added while writing the kill table, so that every mutation is kil
 
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import pytest
 
-from tollgate.guardrails import facts
+from tollgate.actions import cards
+from tollgate.domain.models import ActionCard, ActionKind
+from tollgate.guardrails import claims, facts
 
 CUSTOMER_EMAIL = "amina.khan@example.com"
 TRACKING = "NW9585258397"  # a real fixture tracking number (ORD-1042): digits that look like a phone number
@@ -29,6 +35,27 @@ ANY_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 ANY_PHONE = re.compile(r"(?:\+?\d[\d\s().-]{6,}\d|\b1-8\d\d-[\dA-Z-]{7,}\b)")
 ANY_URL = re.compile(r"(?i)\b(?:https?://|www\.)\S+|\b[\w-]+\.(?:com|net|org|io|co|example)\b")
 ANY_POSTAL = re.compile(r"(?i)\b\d{1,5}\s+\w+(?:\s+\w+)?\s+(?:street|st|road|rd|avenue|ave|lane|ln|blvd)\b")
+
+
+OFFER = re.compile(
+    r"(?i)\bI can (?:open|pass|escalate|connect|hand)\b|\bjust say which\b|\bwould you like me to\b"
+)
+KINDS: tuple[ActionKind, ...] = (
+    "request_refund", "issue_store_credit", "cancel_order", "update_shipping_address", "create_ticket",
+    "escalate_to_human",
+)  # fmt: skip
+
+
+def done(action: ActionKind) -> ActionCard:
+    """A completed card, built as the gateway builds one (cards.DONE is its explanation)."""
+    return ActionCard(
+        action=action,
+        state="completed",
+        order_id="ORD-1042",
+        reference="ACT-000001",
+        explanation=cards.DONE[action],
+        at=datetime(2026, 11, 7, tzinfo=UTC),
+    )
 
 
 def fires(reply: str, allowed: tuple[str, ...] = ()) -> bool:
@@ -102,18 +129,57 @@ def fc08() -> list[str]:
     )
 
 
-# -- the fixed correction (L13, Q14) ---------------------------------------------------------------------
+# -- the composed correction (L13, Q14; composed from the action log, owner 2026-11-13) ------------------
 
 
 def fc09() -> list[str]:
-    """The correction contains no contact detail of any kind, and offers a real next step."""
-    text = facts.CORRECTION
-    found = [rx.pattern for rx in (ANY_EMAIL, ANY_PHONE, ANY_URL, ANY_POSTAL) if rx.search(text)]
-    out = expect("contact details in the correction", found, [])
-    out += expect(
+    """No correction, with or without completed actions, contains a contact detail of any kind; the one for a
+    turn with no completed action offers a real next step."""
+    out: list[str] = []
+    for actions in ([], *([done(k)] for k in KINDS)):
+        text = facts.compose_correction(actions)
+        found = [rx.pattern for rx in (ANY_EMAIL, ANY_PHONE, ANY_URL, ANY_POSTAL) if rx.search(text)]
+        out += expect(f"contact details ({[a.action for a in actions]})", found, [])
+        out += expect(f"passes its own check ({[a.action for a in actions]})", fires(text), False)
+    text = facts.compose_correction([])
+    return out + expect(
         "offers a ticket or a person", bool(re.search(r"(?i)\bticket\b|\bperson\b|support team", text)), True
     )
-    return out + expect("passes its own check", fires(text), False)
+
+
+def fc14() -> list[str]:
+    """A reply replaced in a turn where an escalation SUCCEEDED mentions the escalation and does not offer to
+    escalate again (e03, f01)."""
+    result = facts.check_facts("I've escalated this to our fraud team.", (), [done("escalate_to_human")])
+    out = expect("replaced", result.passed, False)
+    out += expect("mentions the escalation", cards.DONE["escalate_to_human"] in result.text, True)
+    return out + expect("offers it again", bool(OFFER.search(result.text)), False)
+
+
+def fc15() -> list[str]:
+    """A reply replaced in a turn with no successful action offers the next step."""
+    result = facts.check_facts("Our fraud team will call you.", (), [])
+    return expect("replaced", result.passed, False) + expect(
+        "offers the next step", bool(OFFER.search(result.text)), True
+    )
+
+
+def fc17() -> list[str]:
+    """The same for a ticket opened this turn: stated, not offered again."""
+    result = facts.check_facts("Our billing department will email you.", (), [done("create_ticket")])
+    out = expect("replaced", result.passed, False)
+    out += expect("states the ticket", cards.DONE["create_ticket"] in result.text, True)
+    return out + expect("offers it again", bool(OFFER.search(result.text)), False)
+
+
+def fc18() -> list[str]:
+    """A composed correction causes no under-claim for any completed action: it states every one, and its
+    refusal does not read as denying them (the under-claim counter runs on the delivered text)."""
+    out: list[str] = []
+    for kind in KINDS:
+        card = done(kind)
+        out += expect(kind, claims.under_claims(facts.compose_correction([card]), [card]), [])
+    return out
 
 
 def fc13() -> list[str]:
@@ -126,7 +192,26 @@ def fc13() -> list[str]:
 
 
 PROBES: dict[str, Callable[[], list[str]]] = {
-    f.__name__: f for f in (fc01, fc02, fc03, fc04, fc05, fc06, fc07, fc08, fc09, fc10, fc11, fc12, fc13)
+    f.__name__: f
+    for f in (
+        fc01,
+        fc02,
+        fc03,
+        fc04,
+        fc05,
+        fc06,
+        fc07,
+        fc08,
+        fc09,
+        fc10,
+        fc11,
+        fc12,
+        fc13,
+        fc14,
+        fc15,
+        fc17,
+        fc18,
+    )
 }
 
 
@@ -148,8 +233,22 @@ def m57(mp: pytest.MonkeyPatch) -> None:  # "fraud team" is put on the unit allo
     mp.setattr(facts, "UNIT_ALLOWLIST", facts.UNIT_ALLOWLIST | {"fraud team"})
 
 
-def m64(mp: pytest.MonkeyPatch) -> None:  # the fixed correction gains a support email address
-    mp.setattr(facts, "CORRECTION", facts.CORRECTION + " You can also email help@northwindgoods.example.")
+def m64(mp: pytest.MonkeyPatch) -> None:  # the correction gains a support email address
+    mp.setattr(facts, "NEXT_STEP", facts.NEXT_STEP + " You can also email help@northwindgoods.example.")
+
+
+FIXED = (
+    "I'm sorry, I can't share that detail. I can open a support ticket for you, or pass you to a member of "
+    "our support team. Just say which."
+)  # the fixed correction K7 first shipped with (before the owner's review, 2026-11-13)
+
+
+def m66(mp: pytest.MonkeyPatch) -> None:  # the correction reverts to fixed text, ignoring the action log
+    mp.setattr(facts, "compose_correction", lambda actions=(): FIXED)
+
+
+def m67(mp: pytest.MonkeyPatch) -> None:  # a turn with no completed action is no longer offered a next step
+    mp.setattr(facts, "NEXT_STEP", "")
 
 
 KILLS: dict[str, tuple[Patch, tuple[str, ...]]] = {
@@ -157,6 +256,8 @@ KILLS: dict[str, tuple[Patch, tuple[str, ...]]] = {
     "M56": (m56, ("fc03", "fc11")),
     "M57": (m57, ("fc04", "fc12")),
     "M64": (m64, ("fc09", "fc13")),
+    "M66": (m66, ("fc14", "fc17", "fc18")),  # plus test_api's fc16, through the runner
+    "M67": (m67, ("fc15", "fc09")),
 }
 OTHERS = {"fc02", "fc05"}  # positives guarded by test_probe; their patterns have no pre-registered mutation
 NEGATIVES = {"fc06", "fc07", "fc08"}
