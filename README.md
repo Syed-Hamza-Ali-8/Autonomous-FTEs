@@ -13,10 +13,27 @@ changes, store credit), and every one of them passes a checkpoint the model cann
 
 *A refund above the automatic limit: the agent submitted it, the gateway routed it to staff, and the chat says so.*
 
-![The staff console: the queue, the conversation, and the policy checklist re-checked on current data](docs/images/staff-inbox-policy-checklist.png)
+**Demo video:** link to be added once recorded.
 
-*The staff console: the queue, the conversation, and a policy checklist re-checked on current data before anyone
-approves.*
+![The staff console: approval queue, conversation and policy checklist](docs/images/staff-inbox-policy-checklist.png)
+
+*Nothing is approved on the model's word: before a person decides, every policy rule is checked again on the
+current data.*
+
+## Contents
+- [What this is and isn't](#what-this-is-and-isnt)
+- [How this was built](#how-this-was-built)
+- [How it works](#how-it-works)
+- [What was measured](#what-was-measured)
+- [The strongest finding: the attack moved to the human approver](#the-strongest-finding-the-attack-moved-to-the-human-approver)
+- [The staff dashboard](#the-staff-dashboard)
+- [Known issues](#known-issues)
+- [Never built or never measured](#never-built-or-never-measured)
+- [Reproducibility is bounded by the provider](#reproducibility-is-bounded-by-the-provider)
+- [Running it locally](#running-it-locally)
+- [Try this first](#try-this-first)
+- [Licence](#licence)
+- [Where everything is](#where-everything-is)
 
 ## What this is and isn't
 - **It is a reference implementation,** built to demonstrate and measure the architecture: a store with synthetic
@@ -27,6 +44,13 @@ approves.*
 
 Every number below comes from a run file in this repository; its path is given beside it. Failures, features that
 were never built and things that were never measured are listed as prominently as the results.
+
+## How this was built
+The work ran in gated phases, numbered 0 to 7; "Phase 4" below is one of them. Each gate's pass criteria were
+committed to git before the code they measured, and were never loosened after the results came in: Phase 4's gate
+failed, and is reported as failed. Every safety suite carries named mutations that each remove one protection, so a
+suite that passes because the code under test does nothing is caught. Every model call is recorded, so any result
+can be re-scored at zero tokens, and a strict replay must show zero drift before any new tokens are spent.
 
 ## How it works
 - **The agent:** a single LLM agent (OpenAI Agents SDK; `openai/gpt-oss-120b` on Groq's free tier; prompt
@@ -100,7 +124,8 @@ moved.**
 ### The model-free adversarial suite: what it proves
 A malicious-model stub replaces the LLM and makes attacker-chosen tool calls: other customers' orders, tampered
 amounts, forged approvals, replayed requests, state violations and more. It ignores every prompt, so a pass shows
-the tool layer holds **whatever the model does**. It uses zero tokens.
+the tool layer holds **whatever the model does**. It uses zero tokens. In all: **208 probes across six suites**,
+and **63 named mutations**.
 
 | Suite | Probes | Source |
 |---|---|---|
@@ -111,9 +136,9 @@ the tool layer holds **whatever the model does**. It uses zero tokens.
 | K7: invented contact details and units, and what its correction offers | 24 (fc01–fc24) | `backend/tests/test_k7_probes.py`, `backend/tests/test_api.py` (fc16, fc24) |
 | Claim check v2: order IDs and amounts | 10 (cc01–cc10) | `backend/tests/test_claim_check_v2_probes.py` |
 
-**Every suite proves it is live.** Named mutations (M1–M73, defined in the test files and listed in
-`EVAL_RESULTS.md`) each remove one protection (for example, the gateway's ownership check, a database trigger, or
-the injection signal's tool-result scan). Every probe-based mutation must
+**Every suite proves it is live.** The 63 named mutations (numbered M1–M73; M45–M54 were never assigned; defined in
+the test files and listed in `EVAL_RESULTS.md`) each remove one protection: for example, the gateway's ownership
+check, a database trigger, or the injection signal's tool-result scan. Every probe-based mutation must
 make at least two probes fail; the few that act on audit rows or code shape are caught by dedicated liveness tests.
 A suite that passes only because the code under test does nothing is caught. The full backend suite
 is 1,155 tests, all passing (2026-11-14).
@@ -244,15 +269,18 @@ exactly:** each run records the model's outputs, and the replay uses them at zer
      `PUBLISHABLE_KEY` and a `SECRET_KEY`; use `ANON_KEY` and `SERVICE_ROLE_KEY`, the pair that was tested;
    - `DOCKER_DATABASE_URL`: the same as `DATABASE_URL`, with `127.0.0.1` replaced by `host.docker.internal`;
    - `DEMO_CUSTOMER_PASSWORD`, `DEMO_TARGET_PASSWORD` and `DEMO_STAFF_PASSWORD`: passwords of your choice for the
-     demo sign-ins, at least 12 characters each (the emails are already filled in).
-3. **Models and demo sign-ins.** In `backend/`:
+     demo sign-ins, at least 12 characters each (the emails are already filled in);
+   - `MODEL_STRONG=openai/gpt-oss-120b` and `MODEL_FAST=openai/gpt-oss-20b`. Every measured result in this README
+     used `openai/gpt-oss-120b`, the model chat runs on (every run file's `meta.json` records it); `MODEL_FAST` is
+     used only by the setup probes.
+3. **Check the models and load the demo store.** In `backend/`:
    - `uv sync`;
-   - set `MODEL_STRONG=openai/gpt-oss-120b` and `MODEL_FAST=openai/gpt-oss-20b` in `.env`. Every measured result in
-     this README used `openai/gpt-oss-120b`, the model chat runs on (every run file's `meta.json` records it);
-     `MODEL_FAST` is used only by the setup probes. Then run `uv run python scripts/resolve_models.py`: it lists the models your
-     key can use and should report both as served;
-   - `uv run python scripts/seed_store.py customers` and `uv run python scripts/seed_store.py staff` create the demo
-     sign-ins and link them to the seeded store. Neither changes any data.
+   - `uv run python scripts/resolve_models.py` lists the models your key can use, and should report both of yours
+     as served;
+   - `uv run python scripts/seed_store.py apply --reset --relative-dates` reloads the store with its dates counted
+     back from today, so return windows are open as the demo expects, and creates the three demo sign-ins. On a
+     fresh clone `--reset` loses nothing: it replaces the same store that `supabase start` loaded with fixed dates.
+     The seeded orders age like real ones, so re-run it if you come back to the demo weeks later.
 4. **Run it.** From the repo root, run `docker compose up -d --build`. The store is at <http://localhost:3000>, and the
    staff console at <http://localhost:3000/console>.
 5. **Sign in** with `DEMO_CUSTOMER_EMAIL` as a customer, or `DEMO_STAFF_EMAIL` for the staff console.
@@ -261,17 +289,28 @@ exactly:** each run records the model's outputs, and the replay uses them at zer
 `uv run python scripts/seed_store.py staff` (the support lead) in `backend/`. They reset those passwords to the
 `.env` values and touch nothing else.
 
-**Re-seeding the store:** `uv run python scripts/seed_store.py apply` reloads `supabase/seed.sql`. It refuses when the
-store already has data, unless you pass `--reset`. With `--reset` it **empties** the store, the conversations, the
-audit log and the run traces (`run_log`, `tool_calls`) before reloading, so every recorded run on that database is
-lost.
+**Re-seeding the store:** `uv run python scripts/seed_store.py apply` reloads the store. It refuses when the store
+already has data, unless you pass `--reset`. With `--reset` it **empties** the store, the conversations, the audit
+log and the run traces (`run_log`, `tool_calls`) before reloading, so every recorded run on that database is lost.
 
-**Tests:** they run only against the local stack. In `backend/`: `uv run pytest -q`. The evaluation harness's options
+**Tests:** they run only against the local stack, and expect the store's fixed dates (2026-11-07), not the demo's
+relative ones. After the demo, run `uv run python scripts/seed_store.py apply --reset` in `backend/` to restore
+them, then `uv run pytest -q`. The evaluation harness's options
 (budget pre-flight, `--record`, `--replay`) are listed by `uv run python -m eval.run_eval --help`.
 
 **Without Docker:** run the API with `uv run uvicorn tollgate.main:app` in `backend/`. For the web app, create
 `frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localhost:8000`, `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, then run `npm install` and `npm run dev` in `frontend/`.
+
+## Try this first
+1. **As the customer:** sign in with `DEMO_CUSTOMER_EMAIL`. Order **ORD-1043** (a Bluetooth Speaker and a USB-C
+   Charger, Rs 32,970, delivered a day before you seeded) is in the list.
+2. **Ask for a refund above the automatic limit,** for example: "Please refund ORD-1043: the Bluetooth Speaker and the
+   USB-C Charger both arrived broken." The action card reads **Waiting for staff approval**: nothing has changed yet.
+3. **As staff:** sign out, sign in with `DEMO_STAFF_EMAIL`, and open the request from the console's inbox. Its policy
+   checklist is re-checked on current data. Approve it.
+4. **Back as the customer:** the same card now reads **Completed**. A waiting card checks for a decision every 15
+   seconds, so it updates in place.
 
 ## Licence
 MIT. See `LICENSE`.
