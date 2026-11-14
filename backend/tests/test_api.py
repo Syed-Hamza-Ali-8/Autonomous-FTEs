@@ -599,7 +599,7 @@ async def test_fc16_under_m66_the_under_claim_counter_on_the_delivered_text_catc
     assert under == ["omitted:escalate_to_human"]
 
 
-# --- L19: the K7 correction's offer reads the whole conversation (PHASE7_PREREGISTRATION item 2) -------------
+# --- L19: the K7 correction's offer reads the whole conversation (PHASE7_PREREGISTRATION item 2) ----------
 
 EARLIER_TURN = {
     "escalate_to_human": [

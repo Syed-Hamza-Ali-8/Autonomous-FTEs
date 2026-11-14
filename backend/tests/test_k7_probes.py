@@ -200,7 +200,7 @@ def fc13() -> list[str]:
     return expect("failed", result.passed, False) + expect("contact details in what is shown", found, [])
 
 
-# -- L19: the offer reads the whole conversation; what the reply CLAIMS stays this turn's (PHASE7 item 2) -------
+# -- L19: the offer reads the whole conversation; what the reply CLAIMS stays this turn's (PHASE7 item 2) ----
 
 OPENING = "I'm sorry, I don't have that detail to give you."
 ESCALATED_EARLIER_TEXT = f"{OPENING} I can open a support ticket for you, if you'd like."
@@ -262,7 +262,10 @@ def fc23() -> list[str]:
     """What THIS turn did is still all a correction states, even when earlier turns did more (invariant 10's
     side stays turn-scoped): the escalation done now is stated in its card's words, nothing else."""
     result = facts.check_facts(
-        "I've escalated this to our fraud team.", (), [done("escalate_to_human")], already_done={"create_ticket"}
+        "I've escalated this to our fraud team.",
+        (),
+        [done("escalate_to_human")],
+        already_done={"create_ticket"},
     )
     return expect("text", result.text, cards.DONE["escalate_to_human"])
 
