@@ -1192,3 +1192,46 @@ validator.
 - **Frontend:** lint, typecheck and build pass; `dashboard.spec.ts` passes (3 tests) in all four 13.6 screenshot sets.
 - **Integrity queries:** I10 and H1 moved from `eval/score.py` to `tollgate/domain/integrity.py` (shared; the
   scorer imports them).
+
+### Item 4: Dockerfiles, compose and the fresh-clone check (2026-11-14)
+**Images.** The API image carries only the eval run summaries (`meta.json` and `summary.json`: 56 files, about
+35 KB; the recordings, about 1.1 MB, are development artefacts and are left out). Compose bind-mounts
+`backend/eval/runs/` read-only, so new runs appear without a rebuild. With missing or malformed run files the
+section shows its empty state (probe db10). The web image's first build failed with ECONNRESET after two
+parallel `npm ci` runs; it now installs once (cache mount, retries) and prunes.
+
+**First check (working tree copied into a clone; interrupted when the laptop shut down at step 4).** Findings:
+- **A.** A clone cannot run alongside the development stack: both use the CLI's default ports (54321, 54322)
+  from `supabase/config.toml`. README step 1 now says to stop the other project first, or change the ports.
+- **B (had to know).** `supabase status` prints two key pairs; the README did not say which. Now it names
+  `ANON_KEY` and `SERVICE_ROLE_KEY`, the tested pair; `.env.example` matches.
+- **C (had to know).** The resolver lists 11 models, including speech and guard models; the README said "copy
+  one". Now it names `openai/gpt-oss-120b` (MODEL_STRONG; recorded by all 28 run files) and `openai/gpt-oss-20b`
+  (MODEL_FAST, used only by the setup probes).
+- **D (serious).** Local `seed_store.py apply` had no guard, and `seed.sql` TRUNCATEs `run_log` and
+  `tool_calls`; following the README on an existing database would have erased the F6 traces. Fixed as a guard
+  (owner): local `apply` refuses when store data exists unless `--reset`, as the cloud path already did (C3).
+  Tests: `test_local_apply_is_guarded_and_reset_passes_through`, `test_local_apply_refuses_a_store_with_data_unless_reset`
+  (the latter on the real local database, with seed.sql swapped for `SELECT 1`). Mutation (guard off) killed by both.
+- **E.** On the development database the demo customers CUS-001/CUS-002 had no linked sign-in. The only link
+  was `apply`. Added `seed_store.py customers`, which re-links them without touching data
+  (`test_customers_relinks_the_demo_sign_ins_and_touches_no_data`, `test_customers_refuses_a_non_local_target`),
+  and ran it on the development database: both linked, run_log 484 and tool_calls 389 unchanged.
+
+**Final check, against commit 7cdec72 (nothing copied in).** Cloned into an empty directory and followed the
+README as written. The one deviation: the clone's `project_id` was changed, so it got its own empty database
+instead of reusing the development volume. Results:
+1. `supabase start`: 9 migrations and the seed applied (33 s).
+2. `.env` filled from `supabase status` using the names the README gives: works.
+3. `uv sync`; `resolve_models.py` reports both models served; `seed_store.py customers` and `staff` link all
+   three sign-ins; a plain `apply` refused the seeded store (50 customers), as intended.
+4. `docker compose up -d --build`: both images built and started (151 s); `/healthz` 200.
+5. Browser sign-in against the containers: the customer lands on "My orders" (20 order IDs shown); the staff
+   lead lands on the Inbox. The dashboard lists the adversarial run 20261114T085006Z from the run files, and
+   the live tiles show their empty states on the fresh database.
+
+Nothing had to be known beyond the README. Not covered: a machine without this repo's caches (the Docker layer
+and npm caches were warm), and a machine other than this WSL2 + Docker Desktop setup (`host.docker.internal`
+via `host-gateway` is untested on a native Linux Docker engine).
+Afterwards the clone's containers, images, volume and directory (its `.env` held copies of the key and passwords)
+were removed; the development database's counts were unchanged (run_log 484, tool_calls 389).
