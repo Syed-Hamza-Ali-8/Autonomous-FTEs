@@ -108,14 +108,15 @@ the tool layer holds **whatever the model does**. It uses zero tokens.
 | Staff approval forging and re-checks | 16 (ap01–ap16) | `backend/tests/test_staff_api.py` |
 | Approval expiry | 14 (ex01–ex14) | `backend/tests/test_expiry_probes.py` |
 | Injection guard | 13 (in01–in13) | `backend/tests/test_injection_probes.py` |
-| K7: invented contact details and units | 18 (fc01–fc18) | `backend/tests/test_k7_probes.py`, `backend/tests/test_api.py` (fc16) |
+| K7: invented contact details and units, and what its correction offers | 24 (fc01–fc24) | `backend/tests/test_k7_probes.py`, `backend/tests/test_api.py` (fc16, fc24) |
 | Claim check v2: order IDs and amounts | 10 (cc01–cc10) | `backend/tests/test_claim_check_v2_probes.py` |
 
-**Every suite proves it is live.** 54 named mutations each remove one protection (for example, the gateway's
-ownership check, a database trigger, or the injection signal's tool-result scan). Every probe-based mutation must
+**Every suite proves it is live.** Named mutations (M1–M73, defined in the test files and listed in
+`EVAL_RESULTS.md`) each remove one protection (for example, the gateway's ownership check, a database trigger, or
+the injection signal's tool-result scan). Every probe-based mutation must
 make at least two probes fail; the few that act on audit rows or code shape are caught by dedicated liveness tests.
 A suite that passes only because the code under test does nothing is caught. The full backend suite
-is 1,124 tests, all passing.
+is 1,155 tests, all passing (2026-11-14).
 
 ### Phase 4: 42 of 47 scenarios, and a FAILED gate
 The Phase 4 run (`backend/eval/runs/eval/20261111T184142Z/summary.json`): 47 scenarios, **42 passed**, 322,828
@@ -198,8 +199,9 @@ unmeasured claim. Where there is no data, the dashboard says so rather than show
 - **The K7 correction was turn-scoped (fixed, measured by replay).** In adv08 it offered to escalate a customer who
   had been escalated one turn earlier. Now only the correction's offer reads the whole conversation; what a reply
   may claim stays turn-scoped. The strict replay of the 47 shows 0 drifted calls and every reply unchanged
-  (`replay-20261111T184142Z-20261114T161113Z`). In the adversarial replay, the only reply that changed is adv08 turn 2. It now says the case is
-  already with a member of the support team and offers a ticket, not escalation (`replay-20261114T085006Z-20261114T161134Z`). Not measured live.
+  (`replay-20261111T184142Z-20261114T161113Z`). In the adversarial replay, the only reply that changed is adv08
+  turn 2: it now says the case is already with a member of the support team and offers a ticket, not escalation
+  (`replay-20261114T085006Z-20261114T161134Z`). Not measured live.
 - **No policy source.** There is no knowledge layer, and the prompt states no policy facts, so a direct question such
   as "what's your return window?" has nothing authoritative to answer from. Policy behaviour is evidenced only
   through the gateway's refusal messages at the point of action.
@@ -209,7 +211,7 @@ unmeasured claim. Where there is no data, the dashboard says so rather than show
   RAG service, with Gateway (a separate project) as the reference implementation. **It was not wired up.** Adding
   its `search_policy` tool would change every model call's input, and so require re-running every measured scenario.
 - **Multi-agent:** the five-agent design was **never built or measured**. Tollgate is one agent holding every tool.
-  The second model slot (`MODEL_FAST`) is unused.
+  The second model slot (`MODEL_FAST`) is used only by the setup probes; no chat turn or eval run uses it.
 - **Repeatability at temperature 0 was not measured.** See the next section.
 - **The LLM tone judge** was not built (deferred).
 
@@ -246,8 +248,8 @@ exactly:** each run records the model's outputs, and the replay uses them at zer
 3. **Models and demo sign-ins.** In `backend/`:
    - `uv sync`;
    - set `MODEL_STRONG=openai/gpt-oss-120b` and `MODEL_FAST=openai/gpt-oss-20b` in `.env`. Every measured result in
-     this README used `openai/gpt-oss-120b`, the model chat runs on (all 28 run files record it); `MODEL_FAST` is
-     used only by the setup probes. Then run `uv run python scripts/resolve_models.py`: it lists the models your
+     this README used `openai/gpt-oss-120b`, the model chat runs on (every run file's `meta.json` records it);
+     `MODEL_FAST` is used only by the setup probes. Then run `uv run python scripts/resolve_models.py`: it lists the models your
      key can use and should report both as served;
    - `uv run python scripts/seed_store.py customers` and `uv run python scripts/seed_store.py staff` create the demo
      sign-ins and link them to the seeded store. Neither changes any data.
