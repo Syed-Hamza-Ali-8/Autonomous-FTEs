@@ -219,6 +219,11 @@ carried-over evidence for a01–a08, and would cost another day of budget.
   - **Eval results** go in their own clearly separated section lower on the page, never in the live row: per run, task success labelled with the run ID and date, and the pre-registered unsafe count with its definition beside it.
   - **Empty states:** with no data, a section shows an honest empty state, not a zero that reads like a measurement.
   - Definitions and probes are in backend/eval/PHASE7_PREREGISTRATION.md, item 3.
+- **L21** (owner, 2026-11-14) **A turn that fails after the gateway acted still shows what was done.** Found by the live "Try this first" run: the refund was queued, the reply call was rate-limited, and the customer saw an error and an empty chat. A correctness issue, not a known issue.
+  - The card is saved when the gateway returns (`app.turn_action_cards`, in the action's own transaction), not with the reply at the end of the turn. Only a card that changed something (completed, waiting) is saved; a refusal leaves every store table as it was.
+  - A finished turn that never replied shows "Something went wrong while writing the reply. Here is what was done." with its cards, live and after a reload. "Finished" means its run_log row exists, or no row after 10 minutes (a dead process). Live, no Retry is offered after an action, and Stop no longer says "Nothing was changed" once a card was shown.
+- **L22** (owner, 2026-11-14) **The chat is paced under the provider's per-minute limits, as eval runs are.** A turn waits for headroom before each model call instead of failing mid-turn (a rate limit mid-recording would spoil demo takes). The throttle moved from `eval/` to `tollgate/llm/throttle.py`; chat and eval share its window file.
+- **L23** (owner, 2026-11-14) **Reply text renders a strict bold/italic subset; model output never goes through a Markdown or HTML renderer.** `**bold**` and `*italic*` become React elements; everything else, HTML included, stays literal text (model output is not trusted; a renderer would be a UI injection surface).
 
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.
@@ -352,6 +357,9 @@ they start with `frontend/`.
 | L18 | ✓ | built 2026-11-14: `test_unverified_claims::test_probe` (uc01, uc02), `test_unverified_claims::test_m68_a_lookup_that_says_everything_exists_is_caught`, frontend `unverified-claims.spec.ts` (labelled quotes; "not found" / "on record") |
 | L19 | ✓ | Built in Phase 7 (2026-11-14), probes committed first: `test_k7_probes::test_probe` (fc19-fc23), `test_k7_probes::test_mutation_makes_its_probes_fail` (M71, M73), `test_api::test_fc24_a_correction_never_offers_what_an_earlier_turn_already_did`, `test_api::test_fc24_under_m72_a_runner_that_reads_only_this_turn_offers_it_again`. Completed the same day (one step done earlier: stated, then the other offered). Strict replay of the 47 (`replay-20261111T184142Z-20261114T161113Z`): 0 drifted calls, all replies identical |
 | L20 | ✓ | built 2026-11-14: `test_dashboard::test_db01_each_decision_moves_its_own_24h_count`, `test_dashboard::test_probe` (db05, db06), `test_dashboard::test_m69_a_live_check_that_finds_nothing_is_caught_by_db05_and_db06`, `test_dashboard::test_m70_a_reader_that_includes_replays_is_caught_by_db07`, `test_dashboard::test_db09_replay_turns_are_not_counted_as_replies`; frontend `dashboard.spec.ts` |
+| L21 | ✓ | built 2026-11-14, probes first: `test_api::test_turn_card_probe` (tc01-tc06), `test_api::test_turn_card_mutation_is_killed` (M74-M76); frontend `turn-failure.spec.ts` |
+| L22 | ✓ | built 2026-11-14: `test_api::test_the_chat_model_is_paced_under_the_providers_per_minute_limits`; the throttle's own tests in `test_eval_scoring.py` |
+| L23 | ✓ | built 2026-11-14: frontend `reply-text.test.ts`, `turn-failure.spec.ts` (raw HTML in a reply is never rendered) |
 
 **Also recorded but never built, outside this register:**
 - Spec 6.2's `customer_message_hint` in the tool result (built on 2026-11-09 as part of I15).

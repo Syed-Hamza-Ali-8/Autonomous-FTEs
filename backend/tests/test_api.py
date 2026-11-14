@@ -829,3 +829,19 @@ async def test_turn_card_mutation_is_killed(
     patch(monkeypatch)
     survivors = [p for p in probes if not await _run_tc(p, client, people[0], db)]
     assert survivors == [], f"{mutant}: these probes still pass under the mutation"
+
+
+async def test_the_chat_model_is_paced_under_the_providers_per_minute_limits() -> None:
+    """Owner, 2026-11-14: chat waits for per-minute headroom before each model call, as eval runs do, so a
+    refund turn's reply is not refused mid-turn. Checked on the app as it starts (not a scripted stand-in)."""
+    from tollgate.config import LLMSettings
+    from tollgate.llm.throttle import ThrottledModel
+
+    async with app.router.lifespan_context(app):
+        model = app.state.llm.model
+        assert isinstance(model, ThrottledModel)
+        limits = LLMSettings()
+        assert (model.throttle.tokens_per_minute, model.throttle.requests_per_minute) == (
+            limits.llm_tokens_per_minute,
+            limits.llm_requests_per_minute,
+        )

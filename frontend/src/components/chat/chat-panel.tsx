@@ -2,9 +2,10 @@
 
 import { ArrowUp, Check, Headset, RotateCw, Square } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { ActionCard } from "@/components/chat/action-card";
+import { inlineSegments } from "@/components/chat/reply-text";
 import { suggestionsFor } from "@/components/chat/suggestions";
 import type { ChatItem, useChat } from "@/components/chat/use-chat";
 import { StatusBadge } from "@/components/store/status";
@@ -160,9 +161,16 @@ function Message({ item }: { item: ChatItem }) {
       ))}
       <p tabIndex={0} className="max-w-prose rounded-lg text-sm leading-relaxed whitespace-pre-wrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
         <span className="sr-only">Support: </span>
-        {item.text}
+        <ReplyText text={item.text} />
       </p>
     </li>
+  );
+}
+
+/** Reply text: bold and italic only, as React text nodes; HTML in it stays literal text (reply-text.ts). */
+function ReplyText({ text }: { text: string }) {
+  return inlineSegments(text).map((seg, i) =>
+    seg.kind === "strong" ? <strong key={i} className="font-semibold">{seg.text}</strong> : seg.kind === "em" ? <em key={i}>{seg.text}</em> : <Fragment key={i}>{seg.text}</Fragment>,
   );
 }
 

@@ -1,4 +1,6 @@
-"""Token-aware pacing for real-model eval runs (owner, Phase 2 gate; tightened 2026-11-09).
+"""Token-aware pacing for real-model calls: eval runs (owner, Phase 2 gate; tightened 2026-11-09) and,
+since 2026-11-14 (owner), the chat too: a refund turn makes three calls in seconds and could hit the
+per-minute limit before its reply. Moved here from eval/ so the API image carries it.
 
 Instead of hitting the provider's per-minute limit and retrying, the runner asks the throttle for headroom
 BEFORE each model call:
@@ -133,7 +135,7 @@ class ThrottledModel(Model):
         self.rejected_charge = rejected_charge
 
     async def get_response(self, *args: Any, **kwargs: Any) -> ModelResponse:
-        raise NotImplementedError("eval runs stream; get_response is not used")
+        raise NotImplementedError("chat and eval runs stream; get_response is not used")
 
     async def stream_response(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
         entry = await self.throttle.acquire(self.throttle.estimate_for(request_chars(args, kwargs)))

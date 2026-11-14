@@ -29,7 +29,6 @@ from eval import drift_gate
 from eval.isolation import carry_trace, store_fingerprint
 from eval.models import RecordingModel, ReplayDiverged, ReplayModel
 from eval.score import ScenarioScore, WriteSnapshot, score, score_adversarial, summarise
-from eval.throttle import ThrottledModel, TokenThrottle
 from eval.verify_scenarios import FIXTURE, SCENARIOS, Store, fixture_clock, load
 from tests.leakcheck import REAL_MODEL_RUN_MAY_GROW, problems, snapshot
 from tests.scratch_db import ScratchDatabases
@@ -42,6 +41,7 @@ from tollgate.db import create_pool
 from tollgate.domain import conversations as conv
 from tollgate.llm.budget import tokens_used_24h
 from tollgate.llm.provider import make_client
+from tollgate.llm.throttle import ThrottledModel, TokenThrottle
 from tollgate.policy.disclosure import find
 
 RUNS = Path(__file__).resolve().parent / "runs" / "eval"

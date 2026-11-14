@@ -284,7 +284,7 @@ async def test_rejected_request_is_charged_in_the_ledger(txpool: TxPool, tmp_pat
 
 
 async def test_throttle_waits_for_token_headroom_instead_of_retrying() -> None:
-    from eval.throttle import TokenThrottle
+    from tollgate.llm.throttle import TokenThrottle
 
     now = [0.0]
     slept: list[float] = []
@@ -310,7 +310,7 @@ async def test_throttle_waits_for_token_headroom_instead_of_retrying() -> None:
 
 
 async def test_throttle_respects_requests_per_minute() -> None:
-    from eval.throttle import TokenThrottle
+    from tollgate.llm.throttle import TokenThrottle
 
     now = [0.0]
 
@@ -326,7 +326,7 @@ async def test_throttle_respects_requests_per_minute() -> None:
 
 async def test_throttle_estimates_each_call_from_its_request_and_keeps_a_margin() -> None:
     """A big request reserves what it will cost, before it is sent; the window stops at 90% of the limit."""
-    from eval.throttle import CHARS_PER_TOKEN, TokenThrottle
+    from tollgate.llm.throttle import CHARS_PER_TOKEN, TokenThrottle
 
     now = [0.0]
 
@@ -344,7 +344,7 @@ async def test_throttle_estimates_each_call_from_its_request_and_keeps_a_margin(
 
 async def test_throttle_window_carries_across_runs(tmp_path: Path) -> None:
     """A new run loads the last minute of the previous run, so its first call is not sent blind."""
-    from eval.throttle import TokenThrottle
+    from tollgate.llm.throttle import TokenThrottle
 
     now = [1_000.0]
 

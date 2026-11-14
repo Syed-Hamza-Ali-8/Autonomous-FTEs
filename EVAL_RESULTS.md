@@ -1284,3 +1284,26 @@ Speaker and the USB-C Charger both arrived broken."), typed as the demo customer
 - **Cause:** the chat path has no per-minute throttle (eval runs have one, `eval/throttle.py`); a refund turn
   needs three calls within seconds. One observation; not fixed (a product change, for the owner).
 - Also seen in the same chat: an earlier reply shows Markdown bold as literal asterisks (`**ORD-1148**`).
+
+### Owner fixes after the live quickstart (2026-11-14): L21, L22, L23; F6 scope
+- **F6 scope clarified** (DECISIONS F6): the live turn's refund, idempotency key and action request were deleted
+  (owner); its audit row 34390 stays.
+- **L21, a failed turn keeps its cards.** Probes committed first (bd6c9cb): tc01-tc06 and M74-M76 (each killed by
+  two probes), frontend `turn-failure.spec.ts` (3 tests). All pass. Cards are saved only for actions that changed
+  something, so the model-free adversarial suite still sees refusals change nothing; its harness now also checks
+  that every saved card points at a request that did something.
+- **L22, the chat is throttled** (`tollgate/llm/throttle.py`, moved from `eval/`). Not measured live.
+- **L23, reply text:** a strict bold/italic subset as React text nodes, never a renderer; raw HTML in a reply is
+  shown as text (unit tests and `turn-failure.spec.ts`).
+- **Strict replays after the change (0 tokens):** the 47 (`replay-20261111T184142Z-20261114T185741Z`): 0 drifted
+  calls, 42 of 47, unsafe 3, every reply identical to the previous replay. The adversarial 8
+  (`replay-20261114T085006Z-20261114T185803Z`): 8 of 8, 0 drift, every reply identical.
+- **Found while testing:** the e2e setup links test sign-ins to the first customers without one, so with the demo
+  sign-ins linked (CUS-001, CUS-002) it picks CUS-003, whose orders do not produce every card state, and
+  `action-cards.spec.ts` fails. The suite passes with the demo customers unlinked; they were re-linked afterwards.
+  Not fixed (the e2e setup and the demo share one database).
+- **Full Playwright suite:** 41 passed, 2 failed, 8 skipped (5.1 min). The 2 failures are the same test, "empty and
+  signed-in states for a second customer" (desktop-dark, mobile-light): it expects that customer's support page to
+  be empty, but eval replays leave read-only scenario conversations (e.g. m02, "Cancel my order.") on seeded
+  customers in the same database. It fails intermittently on the previous chat code too (1 of 2 runs), so it is
+  not caused by this change. Not fixed. The screenshots the runs rewrote were restored to the committed ones.

@@ -24,6 +24,7 @@ from tollgate.errors import (
     NotFoundError,
 )
 from tollgate.llm.provider import make_client
+from tollgate.llm.throttle import ThrottledModel, TokenThrottle
 
 log = logging.getLogger("tollgate")
 
@@ -38,9 +39,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.pool = await create_pool(SupabaseSettings())
     app.state.verifier = TokenVerifier(AuthSettings(), http=http)
     app.state.clock = AppSettings().clock()  # decisions read time only from here
+    # Paced under the provider's per-minute limits, as eval runs are (owner, 2026-11-14): a turn waits for
+    # headroom instead of failing mid-turn. The window file is shared with eval runs (read at start-up).
+    throttle = TokenThrottle(
+        llm_settings.llm_tokens_per_minute,
+        llm_settings.llm_requests_per_minute,
+        window_file=llm_settings.llm_budget_ledger.parent / "throttle_window.jsonl",
+    )
     app.state.llm = LLMRuntime(
-        model=OpenAIChatCompletionsModel(
-            model=llm_settings.model_strong, openai_client=make_client(llm_settings)
+        model=ThrottledModel(
+            OpenAIChatCompletionsModel(
+                model=llm_settings.model_strong, openai_client=make_client(llm_settings)
+            ),
+            throttle,
+            llm_settings.llm_rejected_request_tokens,
         ),
         model_name=llm_settings.model_strong,
         daily_budget=llm_settings.llm_daily_token_budget,

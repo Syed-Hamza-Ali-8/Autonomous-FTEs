@@ -40,7 +40,7 @@ class LLMSettings(BaseSettings):
     # consumes tokens. Unknown -> over-count: the ledger charges each rejected request this much
     # (largest observed call: 2,062 tokens). run_log keeps only what the provider reported.
     llm_rejected_request_tokens: int = 2_500
-    # Provider limits used by the eval throttle (Groq rate-limits page, verified 2026-11-07).
+    # Provider limits used by the throttle, chat and eval (Groq rate-limits page, verified 2026-11-07).
     llm_tokens_per_minute: int = 8_000
     llm_requests_per_minute: int = 30
 

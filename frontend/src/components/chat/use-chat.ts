@@ -24,6 +24,11 @@ export type ChatProblem = { message: string; retryText: string | null };
 
 type Pending = { steps: string[]; orders: OrderSummary[]; actions: ActionCard[] };
 
+// A turn that ended without a reply after the gateway acted (owner, 2026-11-14): the cards stay, with this.
+// The same text the server stores for such a turn, so a reload shows what was shown live.
+export const INTERRUPTED = "Something went wrong while writing the reply. Here is what was done.";
+const STOPPED_AFTER_ACTION = "Stopped before the reply was written. Here is what was done.";
+
 function fromHistory(m: MessageOut): ChatItem {
   const key = `m${m.id}`;
   if (m.role === "customer") return { kind: "customer", key, text: m.content, at: m.created_at };
@@ -72,6 +77,17 @@ export function useChat(orderContext: OrderSummary | null) {
       setItems((prev) => [...prev, { kind: "customer", key: crypto.randomUUID(), text, at: new Date().toISOString() }]);
       const live: Pending = { steps: [], orders: [], actions: [] };
       setPending({ ...live });
+      let replied = false;
+      // What the gateway did is a fact whatever happens to the reply: keep its cards on screen.
+      const keepCards = (text: string) => {
+        if (replied || live.actions.length === 0) return false;
+        replied = true;
+        setItems((prev) => [
+          ...prev,
+          { kind: "assistant", key: crypto.randomUUID(), text, at: new Date().toISOString(), steps: [...live.steps], orders: [...live.orders], actions: [...live.actions] },
+        ]);
+        return true;
+      };
       try {
         const body = {
           client_message_id: crypto.randomUUID(),
@@ -82,9 +98,13 @@ export function useChat(orderContext: OrderSummary | null) {
         for await (const ev of streamChat(body, token, controller.signal)) {
           handle(ev, live, text);
         }
+        keepCards(INTERRUPTED); // the stream ended with no reply after an action
       } catch (err) {
         if (controller.signal.aborted) {
-          setItems((prev) => [...prev, { kind: "system", key: crypto.randomUUID(), text: "Stopped. Nothing was changed.", at: new Date().toISOString() }]);
+          // "Nothing was changed" is true only if the gateway did nothing this turn.
+          if (!keepCards(STOPPED_AFTER_ACTION)) {
+            setItems((prev) => [...prev, { kind: "system", key: crypto.randomUUID(), text: "Stopped. Nothing was changed.", at: new Date().toISOString() }]);
+          }
         } else if (err instanceof ApiError && err.status === 404) {
           setConversationId(null); // the conversation is gone; the next message starts a new one
           setProblem({ message: "This conversation is no longer available. Send your message again to start a new one.", retryText: text });
@@ -117,17 +137,21 @@ export function useChat(orderContext: OrderSummary | null) {
             setPending({ steps: [...acc.steps], orders: [...acc.orders], actions: [...acc.actions] });
             break;
           case "reply":
+            replied = true;
             setItems((prev) => [
               ...prev,
               { kind: "assistant", key: `m${ev.message_id}`, text: ev.text, at: ev.created_at, steps: [...acc.steps], orders: [...acc.orders], actions: [...acc.actions] },
             ]);
             break;
-          case "error":
+          case "error": {
+            // After an action, no Retry: resending could ask for the same action again.
+            const acted = keepCards(INTERRUPTED) || replied;
             setProblem({
               message: ev.message,
-              retryText: ev.code === "duplicate_in_progress" ? null : sent,
+              retryText: ev.code === "duplicate_in_progress" || acted ? null : sent,
             });
             break;
+          }
           case "done":
             break;
         }
