@@ -203,8 +203,14 @@ def fc13() -> list[str]:
 # -- L19: the offer reads the whole conversation; what the reply CLAIMS stays this turn's (PHASE7 item 2) ----
 
 OPENING = "I'm sorry, I don't have that detail to give you."
-ESCALATED_EARLIER_TEXT = f"{OPENING} I can open a support ticket for you, if you'd like."
-TICKET_EARLIER_TEXT = f"{OPENING} I can pass you to a member of our support team, if you'd like."
+# One step done earlier: it is stated as fact, then the other is offered (owner, 2026-11-14, completing L19:
+# offering a step to someone who already has it is misleading by omission).
+ESCALATED_FACT = "This is already with a member of our support team."
+TICKET_FACT = "A support ticket has already been opened for you."
+ESCALATED_EARLIER_TEXT = f"{OPENING} {ESCALATED_FACT} I can also open a support ticket if you'd like."
+TICKET_EARLIER_TEXT = (
+    f"{OPENING} {TICKET_FACT} I can also pass you to a member of our support team if you'd like."
+)
 BOTH_EARLIER_TEXT = (
     f"{OPENING} A support ticket has already been opened for you, and this is already with a member of our "
     "support team."
@@ -224,19 +230,22 @@ def _claims_nothing(text: str) -> list[str]:
 
 def fc19() -> list[str]:
     """adv08: replaced in a turn with no action, in a conversation whose EARLIER turn escalated: no escalation
-    is offered; the ticket still is."""
+    is offered; the escalation is stated as fact; the ticket is still offered."""
     result = _no_action_turn({"escalate_to_human"})
     out = expect("replaced", result.passed, False)
     out += expect("offers escalation again", bool(ESCALATION_OFFER.search(result.text)), False)
+    out += expect("states the earlier escalation", ESCALATED_FACT in result.text, True)
     out += expect("text", result.text, ESCALATED_EARLIER_TEXT)
     return out + _claims_nothing(result.text)
 
 
 def fc20() -> list[str]:
-    """The same with an earlier ticket: no ticket is offered; escalation still is."""
+    """The same with an earlier ticket: no ticket is offered; the ticket is stated as fact; escalation is
+    still offered."""
     result = _no_action_turn({"create_ticket"})
     out = expect("replaced", result.passed, False)
     out += expect("offers a ticket again", bool(TICKET_OFFER.search(result.text)), False)
+    out += expect("states the earlier ticket", TICKET_FACT in result.text, True)
     out += expect("text", result.text, TICKET_EARLIER_TEXT)
     return out + _claims_nothing(result.text)
 
@@ -340,6 +349,11 @@ def m71(mp: pytest.MonkeyPatch) -> None:  # L19 reverted: the offer reads only t
     mp.setattr(facts, "compose_correction", lambda actions=(), already_done=(): turn_scoped(actions))
 
 
+def m73(mp: pytest.MonkeyPatch) -> None:  # one step done earlier: the offer stays, the fact is dropped
+    mp.setattr(facts, "ESCALATED_FACT", "")
+    mp.setattr(facts, "TICKET_FACT", "")
+
+
 KILLS: dict[str, tuple[Patch, tuple[str, ...]]] = {
     "M55": (m55, ("fc01", "fc10")),
     "M56": (m56, ("fc03", "fc11")),
@@ -348,6 +362,7 @@ KILLS: dict[str, tuple[Patch, tuple[str, ...]]] = {
     "M66": (m66, ("fc14", "fc17", "fc18")),  # plus test_api's fc16, through the runner
     "M67": (m67, ("fc15", "fc09")),
     "M71": (m71, ("fc19", "fc20", "fc21")),  # plus test_api's fc24, through the runner
+    "M73": (m73, ("fc19", "fc20")),
 }
 OTHERS = {"fc02", "fc05"}  # positives guarded by test_probe; their patterns have no pre-registered mutation
 NEGATIVES = {"fc06", "fc07", "fc08", "fc22", "fc23"}  # fc22, fc23: L19 must change nothing outside the offer
