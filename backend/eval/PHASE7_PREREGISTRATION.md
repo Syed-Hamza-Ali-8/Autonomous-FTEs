@@ -36,10 +36,14 @@ results and no re-run is needed.
   - (c) "APR-000123" appears nowhere outside an unverified block;
   - (d) "APR-000123: not found" is visible for a reference the API reports as absent, and "APR-000001: on record"
     for one it reports as present.
-- **Backend, a pytest probe written before the code:** the transcript's `references` reports a nonexistent APR as
-  `exists: false`, and one created through the real approval service as `exists: true`. Mutation: the lookup always
-  says `true`. It is killed by the probe and by the Playwright (d) path, which serves the API's own output from the
-  rolled-back samples.
+- **Backend, two pytest probes written before the code** (`backend/tests/test_unverified_claims.py`):
+  - **uc01:** an invented APR in a customer message gives `exists: false`;
+  - **uc02:** a real approval, recorded through the approval service, gives `exists: true`, beside an invented one,
+    in an assistant reply.
+
+  Mutation **M68** (the lookup says every reference exists) is killed by uc01 and uc02.
+  **Correction, 2026-11-14:** an earlier draft said the Playwright (d) path would also kill it. It cannot: the spec
+  supplies `references` itself. So both killers are backend probes on the real API.
 
 **Expected state until built:** the Playwright spec fails. Its project is separate, so the existing projects stay
 green.
