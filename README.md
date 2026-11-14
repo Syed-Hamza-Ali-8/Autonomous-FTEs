@@ -198,8 +198,8 @@ unmeasured claim. Where there is no data, the dashboard says so rather than show
 - **The K7 correction was turn-scoped (fixed, measured by replay).** In adv08 it offered to escalate a customer who
   had been escalated one turn earlier. Now only the correction's offer reads the whole conversation; what a reply
   may claim stays turn-scoped. The strict replay of the 47 shows 0 drifted calls and every reply unchanged
-  (`replay-20261111T184142Z-20261114T160402Z`). In the adversarial replay, the only reply that changed is adv08
-  turn 2, which no longer offers escalation (`replay-20261114T085006Z-20261114T160507Z`). Not measured live.
+  (`replay-20261111T184142Z-20261114T161113Z`). In the adversarial replay, the only reply that changed is adv08 turn 2. It now says the case is
+  already with a member of the support team and offers a ticket, not escalation (`replay-20261114T085006Z-20261114T161134Z`). Not measured live.
 - **No policy source.** There is no knowledge layer, and the prompt states no policy facts, so a direct question such
   as "what's your return window?" has nothing authoritative to answer from. Policy behaviour is evidenced only
   through the gateway's refusal messages at the point of action.

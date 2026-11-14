@@ -15,9 +15,9 @@ contact detail of any kind (probes fc09, fc13-fc18). Whether the runner shows it
 `MODE`, set by the pre-committed L13 rule.
 
 L19 (Phase 7): only the OFFER reads the whole conversation (`already_done`: the ticket and escalation kinds
-completed in any turn of it), so a step done in an earlier turn is never offered again; when both are done it
-says so as fact instead (probes fc19-fc21, fc24). What a correction STATES stays this turn's action log:
-invariant 10 is unchanged (fc22, fc23).
+completed in any turn of it). A step done in an earlier turn is never offered again: it is stated as fact,
+and only the other is offered (probes fc19-fc21, fc24). What the correction says THIS turn did stays this
+turn's action log: invariant 10 is unchanged (fc22, fc23).
 """
 
 import re
@@ -40,9 +40,14 @@ NEXT_STEP = (
 )
 
 
-# The next step offered when only one of the two is still open, and the facts stated when neither is (L19).
-OFFER_TICKET = "I can open a support ticket for you, if you'd like."
-OFFER_PERSON = "I can pass you to a member of our support team, if you'd like."
+# L19: a step done in an earlier turn is never offered again. When one of the two is done, it is stated
+# as fact and the other offered (owner, 2026-11-14: offering a step to someone who already has it is
+# misleading by omission); when both are, both are stated and nothing is offered. These sentences report the
+# conversation's action log; what THIS turn did comes only from this turn's cards (invariant 10 unchanged).
+ESCALATED_FACT = "This is already with a member of our support team."
+TICKET_FACT = "A support ticket has already been opened for you."
+OFFER_TICKET = "I can also open a support ticket if you'd like."
+OFFER_PERSON = "I can also pass you to a member of our support team if you'd like."
 BOTH_DONE = (
     "A support ticket has already been opened for you, and this is already with a member of our support team."
 )
@@ -53,9 +58,9 @@ def _next_step(already_done: Collection[ActionKind]) -> str:
     if ticket and person:
         return BOTH_DONE
     if person:
-        return OFFER_TICKET
+        return f"{ESCALATED_FACT} {OFFER_TICKET}"
     if ticket:
-        return OFFER_PERSON
+        return f"{TICKET_FACT} {OFFER_PERSON}"
     return NEXT_STEP
 
 

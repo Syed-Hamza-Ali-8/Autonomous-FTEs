@@ -1,10 +1,10 @@
 {
-  "run_id": "replay-20261111T184142Z-20261114T160402Z",
+  "run_id": "replay-20261111T184142Z-20261114T161113Z",
   "scenarios": 47,
   "drifted_calls": 0,
   "detail": null,
-  "build": "38b5e2578b6c40586e14c8c29dc3e22050b3f4692dda04153759db4d084d5f1e",
+  "build": "67fb3df4bb1fdffc0c45e488d0cb885bfe6d9b14554248d4a504afbb6d2e16a7",
   "prompt_version": "support-v4",
   "tool_schema_version": "5364a60e5f71",
-  "at": "2026-11-14T16:04:21.476922+00:00"
+  "at": "2026-11-14T16:11:30.312729+00:00"
 }

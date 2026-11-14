@@ -1248,6 +1248,8 @@ escalation completed in an earlier turn of the conversation. Details: PHASE7_PRE
   turn 1. It now offers only a ticket.
 - **Also on file:** `replay-20261111T184142Z-20261114T160341Z` is the same replay run first without `--phase 4`, so it
   scored only the default 8 scenarios (0 drift). It is kept as a run file, not used for any number here.
-- **Not measured:** a live run. No model input changed, so a replay is the measurement. Turns where only one of
-  the two steps was done earlier now get only the other step offered, with no statement about the done one;
-  that wording was not pre-registered beyond "never offer what is done".
+- **Completed the same day (owner, part of L19):** when one of the two steps was done earlier, the correction states
+  it as fact, then offers the other. Probes first (fc19 and fc20 now require the fact; M73 killed by both). Strict
+  replay of the 47 again (`replay-20261111T184142Z-20261114T161113Z`): **0 drifted calls**, 42 of 47, unsafe 3, every reply identical. Adversarial 8
+  replayed again (`replay-20261114T085006Z-20261114T161134Z`): 8 of 8, 0 drift; adv08 turn 2 now reads "I'm sorry, I don't have that detail to give you. This is already with a member of our support team. I can also open a support ticket if you'd like."
+- **Not measured:** a live run. No model input changed, so a replay is the measurement.

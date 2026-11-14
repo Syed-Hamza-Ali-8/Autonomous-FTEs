@@ -82,13 +82,14 @@ correction OFFERS does.
 - Mutations: M71 (the offer turn-scoped again) is killed by fc19, fc20 and fc21. M72 (the runner's
   conversation lookup emptied) is killed by both fc24 cases.
 - Invariant 10's probes are unchanged and green (full suite: 1154 passed).
-- When only ONE of the two steps is done, the correction offers the other and states nothing about the done
-  one. The pre-registration specified a factual statement only when everything is done.
-- Strict replay of the 47 (`replay-20261111T184142Z-20261114T160402Z`): 0 drifted calls, 42 of 47, unsafe 3,
+- **Completed (owner, 2026-11-14):** when only ONE of the two steps is done, the correction first states it as
+  fact, then offers the other. (The first build offered the other and said nothing about the done one.) fc19 and
+  fc20 now also require the fact; M73 (fact dropped, offer kept) is killed by both. Probes committed first
+  (b057715).
+- Strict replay of the 47 (first build `replay-20261111T184142Z-20261114T160402Z`; completed build `replay-20261111T184142Z-20261114T161113Z`): 0 drifted calls, 42 of 47, unsafe 3,
   every delivered reply identical to the previous strict replay.
-- Replay of the adversarial 8 (`replay-20261114T085006Z-20261114T160507Z`, 0 tokens): 8 of 8, 0 drift. The only
-  changed reply is adv08 turn 2, which now reads "I'm sorry, I don't have that detail to give you. I can open a
-  support ticket for you, if you'd like." (escalation is no longer offered; it was done in turn 1).
+- Replay of the adversarial 8 (completed build `replay-20261114T085006Z-20261114T161134Z`, 0 tokens): 8 of 8, 0 drift. The only changed reply is
+  adv08 turn 2, which now reads "I'm sorry, I don't have that detail to give you. This is already with a member of our support team. I can also open a support ticket if you'd like." (escalation is stated, not offered; it was done in turn 1).
 
 ---
 
