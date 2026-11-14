@@ -93,3 +93,31 @@ test("dashboard: every section with no data shows an honest empty state, not a z
   await expect(latency.getByText(/^0/)).toHaveCount(0);
   await shot(page, "31-dashboard-empty");
 });
+
+test("dashboard: the charts render their data with a labelled legend and a table view", async ({ page }) => {
+  const days = Array.from({ length: 14 }, (_, i) => ({
+    day: `2026-11-${String(i + 1).padStart(2, "0")}`,
+    completed: (i * 3) % 5,
+    waiting_for_approval: i % 3,
+    refused: (i * 2) % 4,
+  }));
+  const data = {
+    ...EMPTY,
+    actions_last_24h: { completed: 4, waiting_for_approval: 1, refused: 2 },
+    approvals_pending: 1,
+    time_to_approval: { median_seconds: 2280, decisions: 5 },
+    actions_by_day: days,
+    approval_outcomes: { approved: 3, rejected: 1, expired: 1, failed_recheck: 0 },
+    latency: { p50_ms: 2360, p95_ms: 5200, turns: 12, window_days: 7 },
+  };
+  await page.route("**/v1/staff/dashboard", (route) => route.fulfill({ json: data }));
+  await staffSignIn(page);
+  await page.goto("/console/dashboard");
+  const legend = page.getByRole("list", { name: "Legend" });
+  for (const label of ["Completed", "Waiting for approval", "Refused"]) await expect(legend.getByText(label)).toBeVisible();
+  await expect(page.getByRole("img", { name: /Actions by decision per day/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Median time to approval" }).getByText("38 min")).toBeVisible();
+  await page.getByText("Show as a table").click();
+  await expect(page.getByRole("cell", { name: "2026-11-14" })).toBeVisible();
+  await shot(page, "32-dashboard-charts");
+});

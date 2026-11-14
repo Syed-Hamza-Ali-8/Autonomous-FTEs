@@ -99,6 +99,11 @@ section shows an honest empty state, not a zero that reads like a measurement.
 - **Approval outcomes:** counts of approved, rejected, expired and failed re-check.
 - **Reply latency:** p50 and p95 of `run_log.latency_ms` for successful turns in the last 7 days, with the number of
   turns.
+  - **Correction (2026-11-14):** replay turns (model `replay:…`) and scripted turns are excluded. The first render
+    showed 416 replay turns at about 80 ms among 483: re-scorings of recorded outputs, not replies to anyone.
+  - **Probe db09** was added before the fix.
+  - **The tile also says** that evaluation runs are paced to the free-tier rate limit, so their turns include waiting
+    time. The 66 real-model turns on record had a median of about 119 s.
 
 ### 3.3 Evaluation runs (a separate section, from the run files)
 Every non-replay run in `backend/eval/runs/eval/` with a `summary.json`:

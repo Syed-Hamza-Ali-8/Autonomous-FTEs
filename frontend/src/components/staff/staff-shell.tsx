@@ -1,6 +1,6 @@
 "use client";
 
-import { Inbox, LogOut, Moon, PanelLeftClose, PanelLeftOpen, ScrollText, Search, Sun, UserRound } from "lucide-react";
+import { ChartColumn, Inbox, LogOut, Moon, PanelLeftClose, PanelLeftOpen, ScrollText, Search, Sun, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -27,6 +27,7 @@ export const useStaffSearch = () => useContext(SearchContext);
 const NAV = [
   { href: "/console", label: "Inbox", icon: Inbox, exact: true },
   { href: "/console/audit", label: "Audit log", icon: ScrollText, exact: false },
+  { href: "/console/dashboard", label: "Dashboard", icon: ChartColumn, exact: false },
 ];
 
 /**

@@ -127,6 +127,13 @@
   --warning-muted: oklch(98.7% 0.022 95.277); /* amber-50 */
   --warning-border: oklch(92.4% 0.12 95.746); /* amber-200 */
   --danger: oklch(58.6% 0.253 17.585); /* rose-600 */
+  /* Chart fills for the decision states (dashboard, spec 13.5): the -600 steps in BOTH modes. Validated with the
+     dataviz palette checker: light and dark lightness bands, chroma, normal-vision separation and contrast pass;
+     CVD separation 7.7 is in the 6-8 band, legal only with secondary encoding, which the chart gives (a labelled
+     legend with icons, 2px gaps, a table view). The dark tokens' -400 steps fail the dark lightness band. */
+  --chart-completed: oklch(59.6% 0.145 163.225); /* emerald-600 */
+  --chart-waiting: oklch(66.6% 0.179 58.318); /* amber-600 */
+  --chart-refused: oklch(58.6% 0.253 17.585); /* rose-600 */
   --danger-foreground: oklch(51.4% 0.222 16.935); /* rose-700 */
   --danger-muted: oklch(96.9% 0.015 12.422); /* rose-50 */
   --danger-border: oklch(89.2% 0.058 10.001); /* rose-200 */

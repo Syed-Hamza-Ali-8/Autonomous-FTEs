@@ -6,6 +6,7 @@ import {
   type ApprovalDetail,
   type ApprovalQueue,
   type AuditPage,
+  type Dashboard,
   type DecisionOut,
   type StaffProfile,
   type Transcript,
@@ -108,3 +109,14 @@ export function useDecide() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: [userId, "staff"] }),
   });
 }
+
+/** The dashboard (spec 13.5; L20): live metrics from the database, eval runs from the run files. */
+export function useDashboard() {
+  const { userId, token } = useSignedIn();
+  return useQuery({
+    queryKey: [userId, "staff", "dashboard"],
+    queryFn: () => apiGet<Dashboard>("/v1/staff/dashboard", token),
+    refetchInterval: 30_000,
+  });
+}
+

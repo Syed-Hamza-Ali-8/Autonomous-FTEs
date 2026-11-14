@@ -16,9 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tollgate.approvals import service
 from tollgate.auth.deps import Pool, Staff
+from tollgate.domain import dashboard as dashboard_domain
 from tollgate.domain import staff as staff_domain
 from tollgate.domain.models import ActionKind, Currency
 from tollgate.errors import NotFoundError
+from tollgate.llm.budget import tokens_used_24h
 
 router = APIRouter(prefix="/v1/staff", tags=["staff"])
 
@@ -157,3 +159,16 @@ async def conversation(conversation_id: uuid.UUID, staff: Staff, pool: Pool) -> 
     if found is None:
         raise NotFoundError("conversation")
     return found
+
+
+@router.get("/dashboard")
+async def dashboard(staff: Staff, pool: Pool, request: Request) -> dashboard_domain.Dashboard:
+    """Spec 13.5 (DECISIONS L20): live metrics from the database, eval results from the run files, kept
+    apart."""
+    llm = request.app.state.llm
+    async with pool.acquire() as conn:
+        used = await tokens_used_24h(conn, llm.model_name, llm.ledger)  # the pre-flight's own figure
+        return await dashboard_domain.build(
+            conn, _now(request), dashboard_domain.RUNS_DIR, used, llm.daily_budget, llm.model_name
+        )
+

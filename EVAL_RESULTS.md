@@ -1150,3 +1150,45 @@ approval.
 
 **No model input changed.** The code under the drift gate changed (`domain/staff.py`), so any later live run needs
 the strict replay first (zero tokens).
+
+### Item 3: the dashboard, spec 13.5 (built 2026-11-14; DECISIONS L20)
+**Built:**
+- **API:** `GET /v1/staff/dashboard`, staff only.
+- **Page:** `/console/dashboard`, linked from the console's sidebar.
+- **The live row, from the database:** actions by decision in the last 24 hours; approvals pending; median time to a
+  staff decision; tokens in the last 24 hours against the budget (the pre-flight's own figure); and a live unsafe
+  check of parts (a)–(c), whose tile states that (d) cannot be checked live.
+- **Live charts:** stacked bars of actions by decision for 14 days; approval outcomes; reply latency p50/p95.
+- **Evaluation runs:** from the run files, in their own section below; replays are excluded.
+- **Not shown:** "resolution rate", which the spec never defined.
+
+**Probes, before the code:**
+- **Backend, db01–db08** with M69 (killed by db05 and db06) and M70 (killed by db07, and by `dashboard.spec.ts`
+  reading the real list): committed in `54c0f05`.
+- **Frontend, `dashboard.spec.ts`:** committed in `6f487ac`.
+- **All pass now,** plus a populated-chart test added after the code. It shows the chart's drawn path (labelled
+  legend with icons, 2px segment gaps, a table view), which the local data, having no recent actions, never
+  exercised.
+
+**Corrections found while building, recorded:**
+- **Reply latency excluded nothing at first.** 416 of the 483 turns it counted were zero-token **replays**: about
+  80 ms, replies to no one. Replays and scripted turns are now excluded (probe db09, written first). The 66
+  real-model turns on record are eval turns paced to the free-tier rate limit (median about 119 s), and the tile
+  says so.
+- **The db05 plant was unrealistic.** An executed refund planted without the order's status change also broke I10,
+  giving two findings where the probe expects one. The plant now updates the order's status as the executor would,
+  and the probe's assertion is unchanged.
+- **The live check never counts the seed's historical refunds:** they aren't actions of this system. db04 confirms
+  0 on the database as it stands.
+
+**Colours:** the decision states are drawn with the -600 steps in both modes, checked by the dataviz palette
+validator.
+- **Pass, light and dark:** lightness band, chroma, normal-vision separation, contrast.
+- **CVD separation 7.7:** legal only with secondary encoding, which the chart gives.
+- **The dark tokens' -400 steps** fail the dark lightness band.
+
+**Checks:**
+- **Backend:** 1,138 tests pass; ruff, mypy, smoke and the OpenAPI check are clean.
+- **Frontend:** lint, typecheck and build pass; `dashboard.spec.ts` passes (3 tests) in all four 13.6 screenshot sets.
+- **Integrity queries:** I10 and H1 moved from `eval/score.py` to `tollgate/domain/integrity.py` (shared; the
+  scorer imports them).

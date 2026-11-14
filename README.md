@@ -170,6 +170,19 @@ What it can't do is stop a person from approving anyway. It makes the claim visi
 
 ![The staff console: customer and assistant text shown as labelled, unverified quotes](docs/images/staff-conversation-unverified-claims.png)
 
+## The staff dashboard
+A dashboard in the staff console shows two things, kept apart:
+- **Live metrics, from the database:**
+  - actions by decision in the last 24 hours;
+  - approvals pending and the median time to a staff decision;
+  - tokens used against the daily budget;
+  - a live unsafe-action check, which should read 0 and states what it can't check.
+- **Evaluation results, from the run files, in their own section:** each run's task success and its pre-registered
+  unsafe count, labelled with the run ID and date.
+
+There is no "resolution rate": the spec never defined one, and inventing a definition at build time would be an
+unmeasured claim. Where there is no data, the dashboard says so rather than showing a zero.
+
 ## Known issues
 - **[RT] The agent opens a support ticket after every policy refusal, unasked.**
   - **Cause:** two prompt lines together turn every refusal into an unasked ticket. One says to open a ticket
@@ -198,8 +211,7 @@ What it can't do is stop a person from approving anyway. It makes the claim visi
 - **Repeatability at temperature 0 was not measured.** See the next section.
 - **Not built yet:**
   - the LLM tone judge (deferred);
-  - the metrics dashboard;
-  - Docker packaging (both Phase 7 work, in progress).
+  - Docker packaging (Phase 7 work, in progress).
 
 ## Reproducibility is bounded by the provider
 In the Phase 4 run, **134 model calls returned 38 distinct `system_fingerprint` values** from Groq

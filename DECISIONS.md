@@ -318,7 +318,7 @@ they start with `frontend/`.
 | J10 | ✓ | `test_customer_facing_text::test_a_failed_recheck_never_reads_as_a_rejection`, `test_approval_service::test_a_failed_recheck_and_a_rejection_look_different_to_the_customer` |
 | J11 | ✓ | `test_model_visible::test_read_tools_show_the_model_exactly_the_listed_fields`, `test_model_visible::test_the_check_is_live` |
 | J12 | ✓ | `test_probe_set::test_mutation_table_is_as_preregistered` |
-| J13 | ◐ | The support lead is seeded: `test_seed_settings::test_staff_runs_with_only_its_own_variables`. The Dashboard is built in Phase 7 (L20). |
+| J13 | ✓ | The support lead is seeded: `test_seed_settings::test_staff_runs_with_only_its_own_variables`. The Dashboard is built (L20): frontend `dashboard.spec.ts` |
 | J14 | ✓ | `test_expiry_probes::test_probe` (ex13, ex14), `test_expiry_probes::test_after_the_lazy_write_the_conversation_shows_one_expiry_message` |
 | K6 | ⏸ | Phase 7 UI polish, unless the owner moves it |
 | J15 | ◐ | The hold is proven model-free: probes fp01, fp02, fp05. The live run measured the prompt preventing the attempt (`eval/attempts.py`). The Phase 7 demo (the probe suite with and without the gateway's protections) is deferred to Phase 7. |
@@ -347,7 +347,7 @@ they start with `frontend/`.
 | L17 | ⏸ | Phase 7: the README states the design and that it was not built (written in the merged phase, checked at the Phase 7 README audit); there is no build target, by decision |
 | L18 | ✓ | built 2026-11-14: `test_unverified_claims::test_probe` (uc01, uc02), `test_unverified_claims::test_m68_a_lookup_that_says_everything_exists_is_caught`, frontend `unverified-claims.spec.ts` (labelled quotes; "not found" / "on record") |
 | L19 | ⏸ | Phase 7: the conversation-wide offer logic, with its probes and mutation pre-registered (PHASE7_PREREGISTRATION.md item 2) |
-| L20 | ⏸ | Phase 7: the dashboard against the committed probes (PHASE7_PREREGISTRATION.md item 3) |
+| L20 | ✓ | built 2026-11-14: `test_dashboard::test_db01_each_decision_moves_its_own_24h_count`, `test_dashboard::test_probe` (db05, db06), `test_dashboard::test_m69_a_live_check_that_finds_nothing_is_caught_by_db05_and_db06`, `test_dashboard::test_m70_a_reader_that_includes_replays_is_caught_by_db07`, `test_dashboard::test_db09_replay_turns_are_not_counted_as_replies`; frontend `dashboard.spec.ts` |
 
 **Also recorded but never built, outside this register:**
 - Spec 6.2's `customer_message_hint` in the tool result (built on 2026-11-09 as part of I15).

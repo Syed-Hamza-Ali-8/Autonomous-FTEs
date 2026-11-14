@@ -115,6 +115,8 @@ async def _plant_executed_refund(pool: TxPool, customer: str, order: str, cents:
     )
     rid = await insert_request(conn, req)
     await insert_compensation(conn, "request_refund", rid, req, "succeeded", "planted")
+    # as the executor would, so the plant breaks only what the probe means it to (not I10 as well)
+    await conn.execute("UPDATE app.orders SET status = 'partially_refunded' WHERE id = $1", order)
 
 
 async def db05(pool: TxPool) -> list[str]:
@@ -196,3 +198,21 @@ def test_m70_a_reader_that_includes_replays_is_caught_by_db07(
     """M70's second killer is dashboard.spec.ts, which reads the API's real list (no replay may appear)."""
     monkeypatch.setattr(dashboard, "_is_replay", lambda name, meta: False)
     assert db07(tmp_path) != [], "M70: db07 still passes when replays are listed"
+
+
+async def test_db09_replay_turns_are_not_counted_as_replies(pool: TxPool) -> None:
+    """Added 2026-11-14, before the fix (correction to pre-registration 3.2): a zero-token replay re-scores
+    recorded outputs, so its turns are not replies to anyone and must not enter reply latency."""
+    now = _now()
+    before = await dashboard.reply_latencies(pool.connection, now)
+    conn = pool.connection
+    conv = await new_conversation(conn, "CUS-017")
+    for model, ms in (("replay:openai/gpt-oss-120b", 50), ("openai/gpt-oss-120b", 4321)):
+        await conn.execute(
+            "INSERT INTO app.run_log (turn_id, conversation_id, customer_id, agent, prompt_version, model,"
+            " status, latency_ms, started_at)"
+            " VALUES ($1, $2, 'CUS-017', 'support', 'support-v4', $3, 'ok', $4, $5)",
+            uuid.uuid4(), conv, model, ms, now - timedelta(minutes=5),
+        )  # fmt: skip
+    after = await dashboard.reply_latencies(pool.connection, now)
+    assert sorted(after) == sorted([*before, 4321.0]), "only the real-model turn is a reply"

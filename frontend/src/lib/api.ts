@@ -18,6 +18,7 @@ export type ApprovalItem = Schemas["ApprovalItem"];
 export type ApprovalDetail = Schemas["ApprovalDetail"];
 export type ChecklistItem = Schemas["ChecklistItem"];
 export type Transcript = Schemas["Transcript"];
+export type Dashboard = Schemas["Dashboard"];
 export type AuditEntry = Schemas["AuditEntry"];
 export type AuditPage = Schemas["AuditPage"];
 export type DecisionOut = Schemas["DecisionOut"];
