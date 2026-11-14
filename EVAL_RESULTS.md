@@ -1084,3 +1084,32 @@ approval.
 
 **Gate commit:** on approval, the merged phase is marked complete in CLAUDE.md, and Phase 7 starts from
 `backend/eval/PHASE7_PREREGISTRATION.md` (items 1 and 2 are already pre-registered).
+
+---
+
+## Phase 7
+
+### Item 6: secrets scan of the ENTIRE git history (2026-11-14), before anything is pushed
+**Result: clean. No secret in any commit; nothing needs rotating, and no history rewrite is needed.**
+- **What was scanned:** all 35 commits reachable from any ref, plus the reflog (amended or orphaned commits), every
+  file in each, including files later deleted.
+- **gitleaks v8.30.1** (Docker image, repo mounted read-only, `--log-opts="--all --reflog"`, findings redacted):
+  **0 findings** across about 4.06 MB of history.
+- **Exact-value sweep:** each real value from `.env`, `frontend/.env.local` and `supabase status` (15 values,
+  printed nowhere) was searched for in every commit.
+  - **Never in history:** the Groq API key, the Supabase anon and service-role keys (in `.env` and from the local
+    stack), the local JWT secret, and all three `DEMO_*_PASSWORD` values.
+  - **Found, but not secrets:**
+    - the local `DATABASE_URL`, whose password is the Supabase CLI's documented local default (`postgres`, on
+      127.0.0.1:54322; unreachable from outside the machine);
+    - the localhost `SUPABASE_URL` and `NEXT_PUBLIC_API_URL`.
+  - **Not set,** so nothing to leak: no `CLOUD_*` values and no `GEMINI_API_KEY`.
+- **Pattern sweep of every commit:**
+  - Groq keys (`gsk_`), three-part JWTs, Supabase `sb_secret_` / `sb_publishable_` keys, private-key blocks and
+    generic key assignments: **none**.
+  - Connection strings with a password: only the local default and one-character placeholders on example hosts
+    (`db.example.supabase.co`, `aws-0-region.pooler.supabase.com`) in tests of the local-URL guard.
+- **Every version of `.env.example`** (3 in history): every key, password, token and URL is **empty**. The only
+  values are `LLM_PROVIDER=groq` and three demo emails on the fictional `northwind.example` domain.
+- **No real env file was ever committed:** 0 commits touch `.env` or `frontend/.env.local`, and both are ignored.
+- **Not covered:** the separate Gateway repository (`/mnt/d/hamza/RAG_Projects/gateway`), which has its own history.
