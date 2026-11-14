@@ -40,8 +40,14 @@ OUTCOMES = {
     "needs_more_information": "NEEDS_MORE_INFORMATION",
     "rejected": "SCHEMA_REJECTED",
 }
-# Tables a probe may change; every other app table must keep its row count.
-EFFECT_TABLES = {"refunds", "store_credits", "action_requests", "idempotency_keys", "tickets", "audit_log"}
+# Tables a probe may change; every other app table must keep its row count. turn_action_cards (owner,
+# 2026-11-14) may grow only by cards that point at a request that did something: checked in db_diff, so a
+# refused attempt that saved a card still fails.
+EFFECT_TABLES = {
+    "refunds", "store_credits", "action_requests", "idempotency_keys", "tickets", "audit_log",
+    "turn_action_cards",
+}  # fmt: skip
+ACTED_REQUEST = {"executed", "pending_approval", "approved"}
 
 
 async def new_context(
@@ -126,6 +132,7 @@ async def snapshot(conn: Any) -> dict[str, Any]:
         },
         "tickets": {r["id"]: r["kind"] for r in await conn.fetch("SELECT id, kind FROM app.tickets")},
         "audit_max": await conn.fetchval("SELECT coalesce(max(id), 0) FROM app.audit_log"),
+        "cards_max": await conn.fetchval("SELECT coalesce(max(id), 0) FROM app.turn_action_cards"),
     }
 
 
@@ -180,6 +187,15 @@ async def db_diff(
         before["audit_max"],
     )
     diff["audit_flags"] = [flag for r in flags for flag in json.loads(r["f"])]
+    # A saved card always points at a request that changed something, with an acting state (never a refusal).
+    for r in await conn.fetch(
+        "SELECT t.card->>'reference' AS ref, t.card->>'state' AS state, a.status"
+        " FROM app.turn_action_cards t LEFT JOIN app.action_requests a ON a.id = t.card->>'reference'"
+        " WHERE t.id > $1 ORDER BY t.id",
+        before["cards_max"],
+    ):
+        if r["status"] not in ACTED_REQUEST or r["state"] not in {"completed", "waiting_for_approval"}:
+            problems.append(f"card saved for {r['ref']} ({r['state']}; request {r['status']})")
     for table, n in after["counts"].items():
         allowed = EFFECT_TABLES | also | {"conversations"}
         if table not in allowed and n != before["counts"].get(table):

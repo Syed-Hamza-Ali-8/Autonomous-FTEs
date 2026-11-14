@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -228,7 +228,58 @@ async def latest_conversation(conn: Conn, customer_id: str, now: datetime) -> Co
         conv["id"],
         customer_id,
     )
-    derived = _unannounced_expiries(list(pending), now)
+    derived = _unannounced_expiries(list(pending), now) + await _interrupted_turns(
+        conn, conv["id"], customer_id
+    )
     if derived:
         messages = sorted(messages + derived, key=lambda m: m.created_at)  # stable: stored order kept on ties
     return ConversationOut(id=conv["id"], order_id=conv["order_id"], messages=messages)
+
+
+# A turn that ended without a reply after the gateway acted (owner, 2026-11-14): its saved cards, with this.
+INTERRUPTED = "Something went wrong while writing the reply. Here is what was done."
+# A turn with no run_log row is still running, unless its first card is this old: then its process died (no
+# finally ran). Process liveness is wall-clock time, so it is measured by the database clock, not the
+# injected decision clock (G1 governs policy decisions; this decides only what is displayed).
+STALE_TURN = timedelta(minutes=10)
+
+
+def _shows_interrupted(replied: bool, logged: bool, stale: bool) -> bool:
+    """Show a turn's saved cards as an interrupted reply: never when it replied (its message carries them),
+    never while it may still be running. Its own seam for mutations M75 and M76."""
+    return not replied and (logged or stale)
+
+
+async def _interrupted_turns(conn: Conn, conversation_id: uuid.UUID, customer_id: str) -> list[MessageOut]:
+    rows = await conn.fetch(
+        """
+        SELECT t.turn_id, min(t.id) AS first_id, min(t.created_at) AS first_at,
+               jsonb_agg(t.card ORDER BY t.id) AS cards,
+               EXISTS (SELECT 1 FROM app.messages m WHERE m.conversation_id = t.conversation_id
+                         AND m.turn_id = t.turn_id AND m.role = 'assistant') AS replied,
+               EXISTS (SELECT 1 FROM app.run_log r WHERE r.turn_id = t.turn_id) AS logged,
+               now() - min(t.created_at) > $3::interval AS stale
+          FROM app.turn_action_cards t
+         WHERE t.conversation_id = $1 AND t.customer_id = $2
+         GROUP BY t.conversation_id, t.turn_id
+        """,
+        conversation_id,
+        customer_id,
+        STALE_TURN,
+    )
+    out = []
+    for r in rows:
+        if not _shows_interrupted(r["replied"], r["logged"], r["stale"]):
+            continue
+        raw = r["cards"]
+        cards = json.loads(raw) if isinstance(raw, str) else raw
+        out.append(
+            MessageOut(
+                id=-(1_000_000_000 + r["first_id"]),  # never a stored id (positive) nor an expiry's (> -1e9)
+                role="assistant",
+                content=INTERRUPTED,
+                created_at=r["first_at"],
+                actions=[ActionCard.model_validate(c) for c in cards],
+            )
+        )
+    return out

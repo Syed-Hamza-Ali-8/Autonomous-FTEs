@@ -35,6 +35,7 @@ from tollgate.actions import cards, executors, hints, idempotency
 from tollgate.actions.records import MoneyAction, Request
 from tollgate.approvals import expiry, queue
 from tollgate.db import Conn
+from tollgate.domain.models import ActionCard
 from tollgate.domain.money import with_display
 from tollgate.errors import ActionFailedError
 from tollgate.guardrails import injection_signal
@@ -163,18 +164,21 @@ async def submit(
             await _audit(conn, ctx, action, out)
         return out.result
 
+    card: ActionCard | None = None
     try:
         async with ctx.pool.acquire() as conn, conn.transaction():
             out = await _run(conn, ctx, action, args)
             audit_id = await _audit(conn, ctx, action, out)
+            card = await _card(conn, ctx, action, out, audit_id)
     except _ConcurrentDuplicate as dup:
         # Another submission with the same key committed first; ours was rolled back. Answer as a repeat.
-        async with ctx.pool.acquire() as conn:
+        async with ctx.pool.acquire() as conn, conn.transaction():
             original = await idempotency.lookup(conn, dup.key, ctx.customer.customer_id)
             if original is None:
                 raise ActionFailedError("idempotency conflict without a recorded result") from None
             out = _replayed(original, dup.target)
             audit_id = await _audit(conn, ctx, action, out)
+            card = await _card(conn, ctx, action, out, audit_id)
     except Exception as exc:
         log.exception("action %s failed", action)
         async with ctx.pool.acquire() as conn:
@@ -183,13 +187,40 @@ async def submit(
             )
             await _audit(conn, ctx, action, failed)
         raise ActionFailedError(f"{action} failed: {type(exc).__name__}") from exc
-    # Every submission is audited, so a refused one has a reference too: its audit row (never in the result).
-    audit_ref = f"AUD-{audit_id:06d}" if audit_id is not None else None
-    if (
-        card := cards.card_for(action, out.outcome, out.result, out.target, _now(ctx), audit_ref)
-    ) is not None:
+    if card is not None:
         ctx.actions.append(card)
     return out.result
+
+
+# The card states of a submission that changed something: a turn that fails afterwards must still show it.
+ACTED = frozenset({"completed", "waiting_for_approval"})
+
+
+async def _card(
+    conn: Conn, ctx: TurnContext, action: str, out: Outcome, audit_id: int | None
+) -> ActionCard | None:
+    """The submission's ActionCard. One that changed something is saved in the same transaction as the action
+    and its audit row. A refused one did nothing and is not saved: refusals leave every store table as it was
+    (the model-free adversarial suite checks this); it still streams live and is stored with the reply."""
+    # Every submission is audited, so a refused one has a reference too: its audit row (never in the result).
+    audit_ref = f"AUD-{audit_id:06d}" if audit_id is not None else None
+    card = cards.card_for(action, out.outcome, out.result, out.target, _now(ctx), audit_ref)
+    if card is not None and card.state in ACTED:
+        await _save_card(conn, ctx, card)
+    return card
+
+
+async def _save_card(conn: Conn, ctx: TurnContext, card: ActionCard) -> None:
+    """Saved when the gateway returns, not with the reply at the end of the turn: a turn that fails after
+    this point still shows what was done (owner, 2026-11-14). Its own seam for mutation M74."""
+    await conn.execute(
+        "INSERT INTO app.turn_action_cards (conversation_id, turn_id, customer_id, card)"
+        " VALUES ($1, $2, $3, $4::jsonb)",
+        ctx.conversation_id,
+        ctx.turn_id,
+        ctx.customer.customer_id,
+        card.model_dump_json(),
+    )
 
 
 # -- validation -------------------------------------------------------------------------------------------

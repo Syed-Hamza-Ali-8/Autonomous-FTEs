@@ -23,6 +23,7 @@ ALLOWED = {
     ("clock.py", "datetime.now(UTC)"): "SystemClock itself: the one sanctioned source for decisions",
     ("llm/budget.py", "now() - interval '24 hours'"): "provider token limits run on real time",
     ("llm/budget.py", "datetime.now(UTC)"): "spend ledger: provider limits run on real time",
+    ("domain/conversations.py", "now() - min(t.created_at)"): "is a turn still running (display)",
     ("agents_def/runner.py", "datetime.now(UTC)"): "run_log telemetry: when the real call happened",
     (
         "actions/gateway.py",
