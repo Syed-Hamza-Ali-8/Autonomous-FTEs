@@ -1112,7 +1112,19 @@ approval.
 - **Every version of `.env.example`** (3 in history): every key, password, token and URL is **empty**. The only
   values are `LLM_PROVIDER=groq` and three demo emails on the fictional `northwind.example` domain.
 - **No real env file was ever committed:** 0 commits touch `.env` or `frontend/.env.local`, and both are ignored.
-- **Not covered:** the separate Gateway repository (`/mnt/d/hamza/RAG_Projects/gateway`), which has its own history.
+- **The Gateway repository** (`/mnt/d/hamza/RAG_Projects`, on GitHub; owner, 2026-11-14), scanned the same way:
+  **clean.**
+  - **gitleaks:** 0 findings across 95 commits (about 5.6 MB), all refs and the reflog.
+  - **Exact-value sweep:** 16 values checked against 96 commits. Gateway's Postgres password, JWT secret and both LLM
+    API keys, and all of Tollgate's secrets, are **never in history**. The matches are Groq's public base URLs and
+    the word `postgres`.
+  - **Patterns:** no Groq key, JWT, private key or password-bearing connection string. The only key assignment is
+    `JWT_SECRET=change-me-to-a-long-random-string` in `.env.example`, a placeholder in every version.
+  - **No real env file was ever committed.**
+- **Older exposures** (a Groq key and a Postgres password pasted in chat earlier in the project): the scans can't
+  test values that are no longer held, but no Groq key of any value appears in either history. The owner verifies
+  revocation (Groq console; a `curl` with the old key should return 401). `D:\hamza\gateway_fresh` was not found
+  on D: (4 levels deep), in the Windows profile, or in the Linux home.
 
 ### Item 2: the L18 mitigation, unverified claims in the staff console (built 2026-11-14)
 **Built:**

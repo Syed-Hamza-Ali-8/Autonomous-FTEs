@@ -208,6 +208,13 @@ carried-over evidence for a01–a08, and would cost another day of budget.
     - the under-claim counter stays turn-scoped.
   - **Why it can't be read as weakening invariant 10:** nothing about what a reply may CLAIM changes.
   - **Pre-registered** with its probes and a mutation (backend/eval/PHASE7_PREREGISTRATION.md, item 2). It is built in Phase 7, followed by the strict replay of the 47.
+- **L20** (owner, 2026-11-14) **The dashboard (spec 13.5) drops "resolution rate", and keeps live metrics apart from eval results.**
+  - **Dropped:** the spec names "resolution rate" but never defines it; defining it at build time would be an unmeasured claim. Recorded as a correction to spec 13.5.
+  - **The live KPI row holds metrics the data already defines:** actions by decision in the last 24 hours (completed / waiting for approval / refused), approvals pending, median time to approval, and tokens in the last 24 hours against the budget.
+  - **Unsafe actions:** from a **live database check only**: parts (a)–(c) on data. Part (d) can't be checked live, and the tile says so.
+  - **Eval results** go in their own clearly separated section lower on the page, never in the live row: per run, task success labelled with the run ID and date, and the pre-registered unsafe count with its definition beside it.
+  - **Empty states:** with no data, a section shows an honest empty state, not a zero that reads like a measurement.
+  - Definitions and probes are in backend/eval/PHASE7_PREREGISTRATION.md, item 3.
 
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.
@@ -311,7 +318,7 @@ they start with `frontend/`.
 | J10 | ✓ | `test_customer_facing_text::test_a_failed_recheck_never_reads_as_a_rejection`, `test_approval_service::test_a_failed_recheck_and_a_rejection_look_different_to_the_customer` |
 | J11 | ✓ | `test_model_visible::test_read_tools_show_the_model_exactly_the_listed_fields`, `test_model_visible::test_the_check_is_live` |
 | J12 | ✓ | `test_probe_set::test_mutation_table_is_as_preregistered` |
-| J13 | ◐ | The support lead is seeded: `test_seed_settings::test_staff_runs_with_only_its_own_variables`. The Dashboard is deferred to Phase 7. |
+| J13 | ◐ | The support lead is seeded: `test_seed_settings::test_staff_runs_with_only_its_own_variables`. The Dashboard is built in Phase 7 (L20). |
 | J14 | ✓ | `test_expiry_probes::test_probe` (ex13, ex14), `test_expiry_probes::test_after_the_lazy_write_the_conversation_shows_one_expiry_message` |
 | K6 | ⏸ | Phase 7 UI polish, unless the owner moves it |
 | J15 | ◐ | The hold is proven model-free: probes fp01, fp02, fp05. The live run measured the prompt preventing the attempt (`eval/attempts.py`). The Phase 7 demo (the probe suite with and without the gateway's protections) is deferred to Phase 7. |
@@ -340,6 +347,7 @@ they start with `frontend/`.
 | L17 | ⏸ | Phase 7: the README states the design and that it was not built (written in the merged phase, checked at the Phase 7 README audit); there is no build target, by decision |
 | L18 | ✓ | built 2026-11-14: `test_unverified_claims::test_probe` (uc01, uc02), `test_unverified_claims::test_m68_a_lookup_that_says_everything_exists_is_caught`, frontend `unverified-claims.spec.ts` (labelled quotes; "not found" / "on record") |
 | L19 | ⏸ | Phase 7: the conversation-wide offer logic, with its probes and mutation pre-registered (PHASE7_PREREGISTRATION.md item 2) |
+| L20 | ⏸ | Phase 7: the dashboard against the committed probes (PHASE7_PREREGISTRATION.md item 3) |
 
 **Also recorded but never built, outside this register:**
 - Spec 6.2's `customer_message_hint` in the tool result (built on 2026-11-09 as part of I15).

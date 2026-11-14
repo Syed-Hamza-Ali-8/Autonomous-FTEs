@@ -5,7 +5,7 @@
 **Core principle: the model *proposes* actions; deterministic code *decides* them.**
 
 **Source of truth:** `TOLLGATE_BUILD_SPEC.md`. Before each phase, re-read Section 10 for that phase plus every section it touches. This file is the short manual; the spec is the reference.
-**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, J1–J20, K1–K7, L1–L19, T1). They override spec defaults where they differ. Never change one without owner approval.
+**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, J1–J20, K1–K7, L1–L20, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
 - **Phase:** 7 (Packaging and demo), started 2026-11-14. Owner's order: (1) README, measured results only, every number traceable to a run file; (2) L18 console mitigation (UI-only; unverified-claims.spec.ts committed, failing until built); (3) Dashboard 13.5, real data, honest empty states; (4) Dockerfiles + compose, then a fresh-clone check; (5) L19 conversation-scoped offer; (6) a full-git-history secrets scan before anything is pushed (owner's message was cut off at item 6: ask for the rest)

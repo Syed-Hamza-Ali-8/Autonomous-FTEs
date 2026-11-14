@@ -74,3 +74,66 @@ correction OFFERS does.
 - a mutation reverting to turn-scoped offers is killed by both new probes.
 
 **Also deterministic: no model input changes.** It is built in Phase 7, followed by the strict replay of the 47.
+
+---
+
+## 3. The dashboard, spec 13.5 (DECISIONS L20; pre-registered 2026-11-14, before any of its code)
+**The owner's decision (L20):** "resolution rate" is **dropped**. The spec names it but never defines it, and defining
+it at build time would be an unmeasured claim. This is a correction to spec 13.5. The live row holds only metrics the
+data already defines. Eval results sit in their own section lower on the page, never in the live row. With no data, a
+section shows an honest empty state, not a zero that reads like a measurement.
+
+**Served by** `GET /v1/staff/dashboard` (staff only). Time comes from the injected clock (G1).
+
+### 3.1 The live KPI row (all from the database)
+| Tile | Definition |
+|---|---|
+| Actions by decision, last 24 hours | the gateway's audit rows for customer submissions (`action.*`) in the last 24h, by outcome: **completed** (executed), **waiting for approval** (queued), **refused** (denied). Not-found and invalid requests are not counted |
+| Approvals pending | requests in `pending_approval` that are not derived-expired (J8, the same predicate as the inbox) |
+| Median time to approval | over every **staff decision** on record (approved, rejected, failed re-check): decided_at minus the request's created_at, shown with the count. Expiries are excluded: nobody decided |
+| Tokens, last 24 hours, against budget | the pre-flight's own figure (`tokens_used_24h`: the higher of `run_log` and the ledger) for the configured model, against `LLM_DAILY_TOKEN_BUDGET` |
+| **Unsafe actions, live (should read 0)** | executed actions in the database that (a) touch another customer's order, (b) exceed a policy limit (the eval scorer's `_beyond_limits`), or (c) break a decision checkable on data alone (H1 double compensation, I10 order status against refunds). **(d), unasked actions, cannot be checked live: it needs what the customer asked for.** The tile says so beside the number (owner: live database check only) |
+
+### 3.2 Charts (live)
+- **Actions by decision over time:** UTC days, the last 14, stacked: completed, waiting for approval, refused.
+- **Approval outcomes:** counts of approved, rejected, expired and failed re-check.
+- **Reply latency:** p50 and p95 of `run_log.latency_ms` for successful turns in the last 7 days, with the number of
+  turns.
+
+### 3.3 Evaluation runs (a separate section, from the run files)
+Every non-replay run in `backend/eval/runs/eval/` with a `summary.json`:
+- the run ID, its date (`meta.json` `started_at`) and prompt version;
+- scenarios, task success, and complete or stopped;
+- the pre-registered unsafe count, **with its definition beside it**, as in the README.
+
+Replays are excluded, because they are re-scorings, not runs. The latest run is labelled as such.
+
+### 3.4 Empty states
+- **Contract:** the API returns `null`, never 0, for a median or percentile with no data, and an empty list for no
+  eval runs.
+- **Rendering:** the page shows "No actions in the last 24 hours", "No staff decisions yet", "No replies in the last
+  7 days" and "No evaluation runs", instead of zeros. A count that is truly zero next to data (for example 0
+  refused, beside 2 completed) is shown as 0.
+
+### 3.5 Probes (committed before the code)
+**Backend, `backend/tests/test_dashboard.py`** (rolled back):
+- **db01:** one executed, one queued and one denied submission move the 24h counts by +1 each.
+- **db02:** queuing a request raises approvals pending by 1.
+- **db03:** a staff decision appears among the durations, with its exact duration.
+- **db04:** the live unsafe count is 0 on the database as it stands.
+- **db05:** planting an executed refund above the automatic limit, with no approval, raises it by 1 (part b).
+- **db06:** planting an executed refund on another customer's order raises it by 1 (part a).
+- **db07:** the eval-run reader excludes replays, reads the run ID, date and task success, and returns `[]` for an
+  empty directory.
+- **db08:** the median and percentile helpers return `None` with no data.
+
+**Mutations:**
+- **M69:** the live unsafe check always returns 0; killed by db05 and db06.
+- **M70:** the eval reader includes replays; killed by db07 and the Playwright eval assertion (which serves the API's
+  real list).
+
+**Frontend, `frontend/tests/e2e/dashboard.spec.ts`:**
+- **Populated (from the API):** the four live tiles and the unsafe tile with its definition text; the eval section
+  below, with the latest run's ID and date; no text "resolution rate" anywhere.
+- **Empty (served):** each empty-state sentence appears, and no "0" stands in for a missing median or percentile.
+- **13.6 screenshots:** desktop and mobile, light and dark.
