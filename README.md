@@ -227,6 +227,13 @@ unmeasured claim. Where there is no data, the dashboard says so rather than show
   (`replay-20261111T184142Z-20261114T161113Z`). In the adversarial replay, the only reply that changed is adv08
   turn 2: it now says the case is already with a member of the support team and offers a ticket, not escalation
   (`replay-20261114T085006Z-20261114T161134Z`). Not measured live.
+- **A refund turn can hit Groq's per-minute token limit before the reply.** Run live once on 2026-11-14 with the
+  "Try this first" sentence: the model looked up ORD-1043 and submitted the refund for both items, and the gateway
+  held it for staff. The third model call, which writes the reply, was then refused (8,000 tokens per minute on the
+  free tier; the first two calls used 4,787). The customer got a "rate limited" error with a retry time, and
+  because the turn failed before the reply was saved, the action card is not shown again when the chat is
+  reloaded; the request itself waits in the staff queue. Eval runs avoid this with a throttle; the chat has none.
+  Not fixed.
 - **No policy source.** There is no knowledge layer, and the prompt states no policy facts, so a direct question such
   as "what's your return window?" has nothing authoritative to answer from. Policy behaviour is evidenced only
   through the gateway's refusal messages at the point of action.
@@ -304,9 +311,10 @@ them, then `uv run pytest -q`. The evaluation harness's options
 
 ## Try this first
 1. **As the customer:** sign in with `DEMO_CUSTOMER_EMAIL`. Order **ORD-1043** (a Bluetooth Speaker and a USB-C
-   Charger, Rs 32,970, delivered a day before you seeded) is in the list.
-2. **Ask for a refund above the automatic limit,** for example: "Please refund ORD-1043: the Bluetooth Speaker and the
-   USB-C Charger both arrived broken." The action card reads **Waiting for staff approval**: nothing has changed yet.
+   Charger, delivered a day before you seeded) is in the list. Refunding both items exceeds the automatic limit.
+2. **Ask for the refund,** for example: "Please refund ORD-1043: the Bluetooth Speaker and the USB-C Charger both
+   arrived broken." The action card reads **Waiting for staff approval**: nothing has changed yet. On Groq's free
+   tier this turn can hit the 8,000 tokens-per-minute limit before the reply is written (see Known issues).
 3. **As staff:** sign out, sign in with `DEMO_STAFF_EMAIL`, and open the request from the console's inbox. Its policy
    checklist is re-checked on current data. Approve it.
 4. **Back as the customer:** the same card now reads **Completed**. A waiting card checks for a decision every 15
@@ -320,4 +328,7 @@ MIT. See `LICENSE`.
 - **`DECISIONS.md`:** every owner decision, and a register showing each one implemented (with its test), deferred,
   or superseded.
 - **`backend/eval/`:** scenarios, adversarial sets, pre-registrations, and all run files (`runs/eval/`).
+- **`frontend/tests/e2e/__screenshots__/`:** Playwright screenshots of every page at 1440px and 390px, light and
+  dark, written by each e2e run. They are not compared automatically: they are the review evidence the UI gates
+  (spec 13.6) cite, kept as committed at each gate.
 - **`TOLLGATE_BUILD_SPEC.md`:** the build specification.

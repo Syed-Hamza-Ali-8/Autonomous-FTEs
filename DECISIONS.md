@@ -41,7 +41,9 @@ Decisions on gaps in TOLLGATE_BUILD_SPEC.md, approved by the owner on 2026-11-07
 - **D4** PKR thresholds: auto ≤ Rs 15,000; approval ≤ Rs 150,000; 90-day auto cap Rs 30,000; stored in paisa. USD as in the spec.
 - **D5** Gateway changes (Phase 5) only on a separate Gateway branch, following Gateway's CLAUDE.md and invariants, isolation suites re-run green, each change shown to the owner before committing. Owner creates the service-user credentials in `.env`; never ask for secrets in chat.
 - **D6** `git init` at the start of Phase 0; local commits allowed at each passing gate with clear messages. Never push, never configure git credentials. Repo starts private; name/visibility decided before first push.
+  - **Amended (owner, 2026-11-14): intent unchanged, test corrected.** The rule binds the assistant: it never pushes and never configures credentials. The first test asserted that the repository has no remote, a side effect that fails in every clone (and in the owner's checkout once they add a remote to push). The test now checks the intent: no script, CI config or tooling in the repo performs a push or configures a credential helper, and the repo's own git config holds no credential.
 - **D7** Keep folder name `Customer_Support_Agent`; Python package is `tollgate`.
+  - **Amended (owner, 2026-11-14): narrowed to the package name.** The folder name was the owner's local working directory; a clone lands wherever the cloner puts it, so only the package name `tollgate` is asserted.
 - **D8** LLM judge deferred to Phase 6+, run on the 12-scenario subset only.
 - **D9** 12-scenario subset: 3 read-only, 2 auto-approved, 2 approval-required, 2 must-deny, 1 escalation, 2 ambiguous.
 - **D10** Cap handoffs at 3 per turn, then escalate.
@@ -262,8 +264,8 @@ they start with `frontend/`.
 | D3 | ✓ | `test_decisions_register::test_d3_only_free_tier_providers_can_be_configured`; the spend ledger `test_budget_ledger::test_ledger_appends_and_sums_the_last_24h` |
 | D4 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
 | D5 | ⏸ | Phase 7: the only Gateway change made (the `.env.example` finding, bc86496) followed D5 on its own branch. No further Gateway changes are planned unless Phase 7 wires a RAG service (L15) |
-| D6 | ✓ | `test_decisions_register::test_d6_the_repository_has_no_remote_to_push_to` |
-| D7 | ✓ | `test_decisions_register::test_d7_folder_and_package_names` |
+| D6 | ✓ | Amended 2026-11-14 (test checks the intent, not the side effect): `test_decisions_register::test_d6_no_tooling_in_the_repo_pushes_or_configures_git_credentials`, `test_decisions_register::test_d6_the_scan_is_live`, `test_decisions_register::test_d6_the_scan_reads_real_tooling` |
+| D7 | ✓ | Amended 2026-11-14 (package name only): `test_decisions_register::test_d7_package_name` |
 | D8 | ⏸ | Phase 7 (owner, 2026-11-13: the LLM tone judge stays deferred; not in the merged Phases 5 + 6 scope) |
 | D9 | ✓ | `test_eval_scoring::test_scenarios_verify_against_the_fixture` (subset counts) |
 | D10 | ↪ | superseded by L3 (no multi-agent design, so no handoffs to cap) |

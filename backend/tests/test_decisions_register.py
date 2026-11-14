@@ -234,21 +234,97 @@ def test_d3_only_free_tier_providers_can_be_configured() -> None:
     assert set(get_args(LLMSettings.model_fields["llm_provider"].annotation)) == {"groq", "gemini"}
 
 
-def test_d6_the_repository_has_no_remote_to_push_to() -> None:
-    """Local commits only, never pushed: no remote is configured."""
+# D6 (amended 2026-11-14, owner): the decision is that the assistant never pushes and never configures git
+# credentials. The first test asserted that the repository has no remote, a side effect that fails in every
+# clone (and in the owner's own checkout once they add a remote to push). The test now checks the intent: no
+# script, CI config or tooling in the repo performs a push or configures a credential helper.
+PUSH_OR_CREDENTIALS = re.compile(
+    r"(?i)\bgit\b[^\n]{0,40}?\bpush\b"  # `git push`, `git -C x push`, "git", "push" in an argv list
+    r"|credential[._-]?helper|\bgit\s+credential\b|\.git-credentials\b|\bGIT_ASKPASS\b"
+    r"|\bgh\s+auth\s+(?:login|setup-git)\b"
+)
+# Tooling and config only: Markdown may state the rule, run files hold data, images are binary.
+_TOOLING_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".cjs", ".mjs", ".json", ".toml", ".yml", ".yaml", ".sh",
+                     ".bash", ".ps1", ".cfg", ".ini", ".env", ".example"}  # fmt: skip
+_TOOLING_NAMES = {"Dockerfile", "Makefile", "Justfile", ".gitignore", ".dockerignore", ".npmrc"}
+
+
+def _tooling_files() -> list[Path]:
     import shutil
     import subprocess
 
     git = shutil.which("git")
     assert git is not None
-    out = subprocess.run([git, "remote"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
-    assert out.strip() == ""
+    listed = subprocess.run([git, "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    out = []
+    for name in listed.splitlines():
+        path = ROOT / name
+        if (
+            name.startswith(("backend/eval/runs/", "frontend/tests/e2e/__screenshots__/"))
+            or not path.is_file()
+        ):
+            continue
+        if path.resolve() == Path(__file__).resolve():
+            continue  # this test names the patterns it looks for
+        if path.suffix in _TOOLING_SUFFIXES or path.name in _TOOLING_NAMES:
+            out.append(path)
+    return out
 
 
-def test_d7_folder_and_package_names() -> None:
+def _push_or_credential_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if PUSH_OR_CREDENTIALS.search(line)]
+
+
+def test_d6_no_tooling_in_the_repo_pushes_or_configures_git_credentials() -> None:
+    """D6: nothing in the repo pushes or sets up credentials; the repo's git config holds no credential."""
+    import shutil
+    import subprocess
+
+    found = {
+        str(p.relative_to(ROOT)): hits
+        for p in _tooling_files()
+        if (hits := _push_or_credential_lines(p.read_text(errors="replace")))
+    }
+    assert found == {}
+    git = shutil.which("git")
+    assert git is not None
+    local = subprocess.run(
+        [git, "config", "--local", "--get-regexp", "credential"], cwd=ROOT, capture_output=True, text=True
+    ).stdout
+    assert local.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "planted",
+    [
+        "git push origin main",
+        "subprocess.run(['git', 'push', '--force'])",
+        "git -C repo push",
+        "git config --global credential.helper store",
+        "printf 'https://x:y@github.com' > ~/.git-credentials",
+        "export GIT_ASKPASS=/tmp/askpass.sh",
+        "gh auth login --with-token",
+        "gh auth setup-git",
+    ],
+)
+def test_d6_the_scan_is_live(planted: str) -> None:
+    """Every kind of push or credential setup the D6 scan looks for is caught when planted."""
+    assert _push_or_credential_lines(f"echo start\n{planted}\necho done") == [planted]
+
+
+def test_d6_the_scan_reads_real_tooling() -> None:
+    """The scan is not vacuous: it reads the repo's scripts, Dockerfiles, compose file and manifests."""
+    names = {str(p.relative_to(ROOT)) for p in _tooling_files()}
+    for expected in ("backend/scripts/seed_store.py", "backend/Dockerfile", "docker-compose.yml",
+                     "frontend/package.json", ".env.example"):  # fmt: skip
+        assert expected in names
+
+
+def test_d7_package_name() -> None:
+    """D7 (amended 2026-11-14, owner): the Python package is `tollgate`. The folder name was the owner's local
+    working directory; a clone lands wherever the cloner puts it, so it is no longer asserted."""
     import tollgate
 
-    assert ROOT.name == "Customer_Support_Agent"
     assert Path(tollgate.__file__).parent.name == "tollgate"
 
 

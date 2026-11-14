@@ -1271,3 +1271,16 @@ The one deviation was the same as before: the clone's `project_id`, so it got it
   decisions (D6, D7) and are left for the owner.
 - Afterwards the clone's containers, images, volume and directory were removed; the development database's counts
   were unchanged (run_log 624, tool_calls 501).
+
+### The "Try this first" refund, run live once (2026-11-14, main stack, compose, prompt support-v4)
+The owner asked for one live run of the README's quickstart sentence ("Please refund ORD-1043: the Bluetooth
+Speaker and the USB-C Charger both arrived broken."), typed as the demo customer in a browser.
+- **What the model did:** `get_order` ORD-1043, then `request_refund` for both items. The gateway held it:
+  ACT-023798, NEEDS_APPROVAL, Rs 32,970 (lines 84, 85). The model chose the right action from that sentence.
+- **What failed:** the third model call (the reply) was refused by Groq: `rate_limited` (free tier, 8,000 tokens
+  per minute; the first two calls used 4,787). run_log: status `error`, 2 model calls, 4,787 tokens. No reply was
+  saved, and after a reload the chat shows the customer's message with no reply and no action card. The request
+  waits in the staff queue (it expires after 48 hours if nobody decides).
+- **Cause:** the chat path has no per-minute throttle (eval runs have one, `eval/throttle.py`); a refund turn
+  needs three calls within seconds. One observation; not fixed (a product change, for the owner).
+- Also seen in the same chat: an earlier reply shows Markdown bold as literal asterisks (`**ORD-1148**`).
