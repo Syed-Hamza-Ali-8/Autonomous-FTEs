@@ -1307,3 +1307,19 @@ Speaker and the USB-C Charger both arrived broken."), typed as the demo customer
   be empty, but eval replays leave read-only scenario conversations (e.g. m02, "Cancel my order.") on seeded
   customers in the same database. It fails intermittently on the previous chat code too (1 of 2 runs), so it is
   not caused by this change. Not fixed. The screenshots the runs rewrote were restored to the committed ones.
+
+### L24: the Playwright suite has its own fixture customers (2026-11-15)
+- **Fixture:** CUS-051 and CUS-052 (ORD-1165 to ORD-1181) appended, copying the order histories of CUS-001 and
+  CUS-002; every existing fixture row byte-identical. In `seed.sql` only the statement-ending punctuation of each
+  table's previous last row changed. The local database received only the new rows (no reseed; run_log unchanged).
+- **Separation, checked both ways** (`tests/test_e2e_customers.py`): no eval scenario or adversarial conversation
+  names an e2e customer or order, and no customer they or the demo sign-ins use is an e2e customer. A planted ID is
+  caught.
+- **Full Playwright suite, demo customers left linked:** 43 passed, 0 failed, 8 skipped (viewport-only tests). Both
+  earlier failures are gone: the card tests no longer need the demo customers unlinked, and the second customer's
+  empty support page is no longer polluted by eval conversations.
+- **Strict replays (0 tokens):** the 47 (`replay-20261111T184142Z-20261114T192410Z`): 0 drifted calls, 42 of 47,
+  unsafe 3, every reply identical; the adversarial 8 (`replay-20261114T085006Z-20261114T192445Z`): 8 of 8, 0
+  drift, every reply identical. The new customers changed no existing input, as CUS-048 to CUS-050 did not.
+- **Committed screenshots** were left as reviewed; the e2e run's regenerated copies (now showing the e2e
+  customers' names) were not committed.

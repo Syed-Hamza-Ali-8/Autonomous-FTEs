@@ -141,7 +141,7 @@ the test files and listed in `EVAL_RESULTS.md`) each remove one protection: for 
 check, a database trigger, or the injection signal's tool-result scan. Every probe-based mutation must
 make at least two probes fail; the few that act on audit rows or code shape are caught by dedicated liveness tests.
 A suite that passes only because the code under test does nothing is caught. The full backend suite
-is 1,155 tests, all passing (2026-11-14).
+is 1,197 tests, all passing (2026-11-15).
 
 ### Phase 4: 42 of 47 scenarios, and a FAILED gate
 The Phase 4 run (`backend/eval/runs/eval/20261111T184142Z/summary.json`): 47 scenarios, **42 passed**, 322,828

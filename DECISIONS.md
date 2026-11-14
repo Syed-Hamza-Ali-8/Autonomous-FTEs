@@ -224,6 +224,10 @@ carried-over evidence for a01–a08, and would cost another day of budget.
   - A finished turn that never replied shows "Something went wrong while writing the reply. Here is what was done." with its cards, live and after a reload. "Finished" means its run_log row exists, or no row after 10 minutes (a dead process). Live, no Retry is offered after an action, and Stop no longer says "Nothing was changed" once a card was shown.
 - **L22** (owner, 2026-11-14) **The chat is paced under the provider's per-minute limits, as eval runs are.** A turn waits for headroom before each model call instead of failing mid-turn (a rate limit mid-recording would spoil demo takes). The throttle moved from `eval/` to `tollgate/llm/throttle.py`; chat and eval share its window file.
 - **L23** (owner, 2026-11-14) **Reply text renders a strict bold/italic subset; model output never goes through a Markdown or HTML renderer.** `**bold**` and `*italic*` become React elements; everything else, HTML included, stays literal text (model output is not trusted; a renderer would be a UI injection surface).
+- **L24** (owner, 2026-11-15) **The Playwright suite has its own fixture customers, not its own database.**
+  - **Why:** shared mutable state between the test suite and demo usage, the same class of problem as per-test rollback (C5) and per-scenario database copies. The suite used to link test sign-ins to whichever seeded customers had none. So the card tests depended on the demo customers being unlinked, and the "second customer" empty-state test saw conversations that eval replays had left on seeded customers.
+  - **Not a second database:** a second Supabase stack hits the port conflict the fresh-clone check found.
+  - **What:** two e2e-only customers, CUS-051 and CUS-052, each copying a demo customer's order history (ORD-1165 to ORD-1181), generated like CUS-048 to CUS-050: appended after existing data with no random draws, every existing row unchanged. The suite signs in only as them (`anchors.e2e_customers`). No eval scenario, adversarial conversation or demo flow names them, and they are none of the customers those use (checked both ways).
 
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.
@@ -360,6 +364,7 @@ they start with `frontend/`.
 | L21 | ✓ | built 2026-11-14, probes first: `test_api::test_turn_card_probe` (tc01-tc06), `test_api::test_turn_card_mutation_is_killed` (M74-M76); frontend `turn-failure.spec.ts` |
 | L22 | ✓ | built 2026-11-14: `test_api::test_the_chat_model_is_paced_under_the_providers_per_minute_limits`; the throttle's own tests in `test_eval_scoring.py` |
 | L23 | ✓ | built 2026-11-14: frontend `reply-text.test.ts`, `turn-failure.spec.ts` (raw HTML in a reply is never rendered) |
+| L24 | ✓ | built 2026-11-15: `test_e2e_customers::test_no_e2e_customer_or_order_is_named_by_an_eval_scenario_or_adversarial_conversation`, `test_e2e_customers::test_no_customer_used_elsewhere_is_an_e2e_customer`, `test_e2e_customers::test_the_e2e_setup_signs_in_only_as_the_e2e_customers`, `test_e2e_customers::test_the_scan_catches_a_planted_e2e_id` |
 
 **Also recorded but never built, outside this register:**
 - Spec 6.2's `customer_message_hint` in the tool result (built on 2026-11-09 as part of I15).

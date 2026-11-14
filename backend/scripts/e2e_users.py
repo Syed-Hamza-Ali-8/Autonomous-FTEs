@@ -3,8 +3,10 @@
   uv run python scripts/e2e_users.py create <out.json>    # 2 customers (seed-only, linked); checks the lead
   uv run python scripts/e2e_users.py teardown <out.json>  # unlink and delete them
 
-Picks the seed-only customers with the most orders (so pages have content), creates fresh Auth users
-with random passwords, links them, and writes {email, password, customer_id, order_ids} to <out.json>.
+Signs in ONLY as the fixture's e2e customers (anchors.e2e_customers; DECISIONS L24): customers nothing else
+touches, so the suite neither depends on the demo sign-ins being unlinked nor sees conversations left by eval
+replays. Creates fresh Auth users with random passwords, links them, and writes {email, password,
+customer_id, order_ids} to <out.json>.
 That file is git-ignored; the passwords are single-use and die at teardown.
 """
 
@@ -31,6 +33,12 @@ class StaffSettings(BaseSettings):
 
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+FIXTURE = Path(__file__).resolve().parents[1] / "eval" / "fixtures" / "store_seed.json"
+
+
+def e2e_customer_ids() -> list[str]:
+    """The only customers the Playwright suite signs in as (DECISIONS L24)."""
+    return list(json.loads(FIXTURE.read_text())["anchors"]["e2e_customers"])
 
 
 async def create() -> dict[str, object]:
@@ -51,16 +59,20 @@ async def create() -> dict[str, object]:
                 "the support lead is not seeded: set DEMO_STAFF_PASSWORD in .env, then run"
                 " `uv run python scripts/seed_store.py staff`"
             )
+        wanted = e2e_customer_ids()
         picks = await db.fetch(
-            """SELECT c.id, c.name FROM app.customers c
-                WHERE c.auth_user_id IS NULL
-                  AND EXISTS (SELECT 1 FROM app.orders o JOIN app.refunds r ON r.order_id = o.id
-                               WHERE o.customer_id = c.id)
-                ORDER BY (SELECT count(*) FROM app.orders o WHERE o.customer_id = c.id) DESC, c.id
-                LIMIT 2"""
+            "SELECT c.id, c.name, c.auth_user_id FROM app.customers c"
+            " WHERE c.id = ANY($1::text[]) ORDER BY c.id",
+            wanted,
         )
-        if len(picks) < 2:
-            raise SystemExit("need two seed-only customers with refunded orders")
+        if [r["id"] for r in picks] != sorted(wanted):
+            raise SystemExit(
+                f"the e2e customers {wanted} are not in the local store: load the fixture's e2e rows first"
+            )
+        if any(r["auth_user_id"] is not None for r in picks):
+            raise SystemExit(
+                "an e2e customer already has a sign-in; e2e customers are only ever linked by e2e"
+            )
         people = []
         async with httpx.AsyncClient(base_url=f"{s.supabase_url}/auth/v1", headers=admin, timeout=15) as c:
             for row in picks:

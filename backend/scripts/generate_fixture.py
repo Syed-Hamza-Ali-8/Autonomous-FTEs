@@ -350,6 +350,7 @@ def build(rng: random.Random) -> dict[str, Any]:
     }
     add_anchors(data)
     add_injection_vectors(data)
+    add_e2e_customers(data)
     return data
 
 
@@ -641,6 +642,59 @@ def add_injection_vectors(data: dict[str, Any]) -> None:
         "refund_reason": ["CUS-049", "ORD-1163"],
         "shipment_event": ["CUS-050", "ORD-1164"],
     }
+
+
+# --- E2E-only customers (owner, 2026-11-15; DECISIONS L24) ---------------------------------------------
+# The Playwright suite signs in only as these two. Nothing else touches them: no eval scenario, no
+# adversarial conversation, no demo flow (tests/test_e2e_customers.py checks both directions). Before this,
+# e2e linked test sign-ins to whichever seeded customers had none, so it clashed with the demo sign-ins and
+# with conversations left by eval replays. Each copies the order history of a demo customer (the card states
+# the specs rely on), with new IDs, its own name and address. Appended last, with no RNG draws and touching
+# no existing row.
+E2E_CUSTOMERS = [
+    ("CUS-051", "Hira Qureshi", "hira.qureshi@post.example", "CUS-001"),
+    ("CUS-052", "Tariq Mehmood", "tariq.mehmood@inbox.example", "CUS-002"),
+]
+
+
+def add_e2e_customers(data: dict[str, Any]) -> None:
+    next_order = max(int(o["id"].removeprefix("ORD-")) for o in data["orders"]) + 1
+    pay_n, ship_n, ref_n = len(data["payments"]) + 1, len(data["shipments"]) + 1, len(data["refunds"]) + 1
+    new_orders: list[str] = []
+    for cid, name, email, template in E2E_CUSTOMERS:
+        data["customers"].append(
+            {"id": cid, "name": name, "email": email, "tier": "standard", "demo_login": False}
+        )
+        for src in [o for o in data["orders"] if o["customer_id"] == template]:
+            oid = f"ORD-{next_order}"
+            next_order += 1
+            new_orders.append(oid)
+            data["orders"].append(
+                src | {"id": oid, "customer_id": cid, "notes": None, "notes_injection": False,
+                       "shipping_address": src["shipping_address"] | {"name": name}}
+            )  # fmt: skip
+            data["order_items"] += [
+                i | {"order_id": oid} for i in data["order_items"] if i["order_id"] == src["id"]
+            ]
+            for pay in [x for x in data["payments"] if x["order_id"] == src["id"]]:
+                data["payments"].append(pay | {"id": f"PAY-{pay_n:04d}", "order_id": oid})
+                pay_n += 1
+            for shp in [x for x in data["shipments"] if x["order_id"] == src["id"]]:
+                data["shipments"].append(
+                    shp
+                    | {
+                        "id": f"SHP-{ship_n:04d}",
+                        "order_id": oid,
+                        "tracking_number": f"NW{9_100_000_000 + ship_n}",
+                    }
+                )
+                ship_n += 1
+            for ref in [x for x in data["refunds"] if x["order_id"] == src["id"]]:
+                data["refunds"].append(ref | {"id": f"REF-{ref_n:04d}", "order_id": oid})
+                ref_n += 1
+    data["anchors"]["customers"] += [c[0] for c in E2E_CUSTOMERS]
+    data["anchors"]["orders"] += new_orders
+    data["anchors"]["e2e_customers"] = [c[0] for c in E2E_CUSTOMERS]
 
 
 def render() -> str:
