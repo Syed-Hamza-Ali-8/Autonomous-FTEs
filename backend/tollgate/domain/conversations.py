@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from tollgate.actions import cards as action_cards
 from tollgate.approvals import expiry
 from tollgate.db import Conn
-from tollgate.domain.models import ActionCard, OrderSummary
+from tollgate.domain.models import ActionCard, ActionKind, OrderSummary
 from tollgate.domain.orders import list_orders
 
 
@@ -47,6 +47,27 @@ async def owned_conversation(
         customer_id,
     )
     return OwnedConversation(id=row["id"], order_id=row["order_id"]) if row is not None else None
+
+
+# The steps the K7 correction offers (L19): it never offers one that any turn of the conversation completed.
+SUPPORT_ACTIONS: tuple[ActionKind, ...] = ("create_ticket", "escalate_to_human")
+
+
+async def support_actions_done(
+    conn: Conn, customer_id: str, conversation_id: uuid.UUID
+) -> frozenset[ActionKind]:
+    """The offered steps already EXECUTED in this customer's conversation, in any turn. Filtered by owner in
+    SQL (invariant 3). Read only by the correction's offer, never by what a reply may claim (invariant 10)."""
+    rows = await conn.fetch(
+        "SELECT DISTINCT action FROM app.action_requests"
+        " WHERE conversation_id = $1 AND customer_id = $2 AND status = 'executed'"
+        " AND action = ANY($3::text[])",
+        conversation_id,
+        customer_id,
+        list(SUPPORT_ACTIONS),
+    )
+    found = {r["action"] for r in rows}
+    return frozenset(k for k in SUPPORT_ACTIONS if k in found)
 
 
 async def owns_order(conn: Conn, customer_id: str, order_id: str) -> bool:

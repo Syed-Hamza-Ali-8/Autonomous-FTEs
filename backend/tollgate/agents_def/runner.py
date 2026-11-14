@@ -193,9 +193,13 @@ async def run_turn(
             shown = checked.text
             # K7 (DECISIONS L13, L16): a contact detail or unit the store's data doesn't hold. Replace or
             # log per facts.MODE, set by the pre-committed rule. The replacement is composed from this turn's
-            # action log, so it states what succeeded and never offers it again.
+            # action log, so it states what succeeded and never offers it again; its OFFER also skips a step
+            # any earlier turn of this conversation completed (L19). What it states stays this turn's.
             seen = [turn.customer.email, *ctx.seen_text]
-            fact = facts.check_facts(shown, seen, ctx.actions) if checked.passed else None
+            fact = None
+            if checked.passed:
+                earlier = await conv.support_actions_done(conn, turn.customer.customer_id, conv_id)
+                fact = facts.check_facts(shown, seen, ctx.actions, already_done=earlier)
             if fact is not None and not fact.passed:
                 await conn.execute(
                     "INSERT INTO app.audit_log"

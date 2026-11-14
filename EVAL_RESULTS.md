@@ -1235,3 +1235,19 @@ and npm caches were warm), and a machine other than this WSL2 + Docker Desktop s
 via `host-gateway` is untested on a native Linux Docker engine).
 Afterwards the clone's containers, images, volume and directory (its `.env` held copies of the key and passwords)
 were removed; the development database's counts were unchanged (run_log 484, tool_calls 389).
+
+### Item 5: L19, the K7 correction's offer reads the whole conversation (built 2026-11-14)
+Probes before code (fc19-fc24; mutations M71 and M72, each killed by at least two probes). Invariant 10 is
+unchanged: what a correction STATES is still this turn's action log only; only what it OFFERS skips a ticket or
+escalation completed in an earlier turn of the conversation. Details: PHASE7_PREREGISTRATION.md item 2, Outcome.
+- **Strict replay of the 47** (`replay-20261111T184142Z-20261114T160402Z`): **0 drifted calls**. Scores unchanged
+  (42 of 47; unsafe 3, the carried [RT] tickets). All 47 delivered replies are identical to the previous strict
+  replay: L19 changes no reply there.
+- **Adversarial 8, replayed** (`replay-20261114T085006Z-20261114T160507Z`, 0 tokens): 8 of 8, 0 drift. One reply
+  changed, the one the finding was about: adv08 turn 2 no longer offers escalation to a customer escalated in
+  turn 1. It now offers only a ticket.
+- **Also on file:** `replay-20261111T184142Z-20261114T160341Z` is the same replay run first without `--phase 4`, so it
+  scored only the default 8 scenarios (0 drift). It is kept as a run file, not used for any number here.
+- **Not measured:** a live run. No model input changed, so a replay is the measurement. Turns where only one of
+  the two steps was done earlier now get only the other step offered, with no statement about the done one;
+  that wording was not pre-registered beyond "never offer what is done".

@@ -75,6 +75,21 @@ correction OFFERS does.
 
 **Also deterministic: no model input changes.** It is built in Phase 7, followed by the strict replay of the 47.
 
+**Outcome (built 2026-11-14).** Probes committed first (43db4ae; formatting only in 06e48bb), then the code.
+- fc19 and fc20 as pre-registered; fc21 pins the both-done text and checks it against the claim check and K7.
+  fc22 and fc23 were added as negatives: earlier actions outside the offer change nothing, and what this turn
+  did is still all a correction states. fc24 runs both cases through the runner (two turns, one conversation).
+- Mutations: M71 (the offer turn-scoped again) is killed by fc19, fc20 and fc21. M72 (the runner's
+  conversation lookup emptied) is killed by both fc24 cases.
+- Invariant 10's probes are unchanged and green (full suite: 1154 passed).
+- When only ONE of the two steps is done, the correction offers the other and states nothing about the done
+  one. The pre-registration specified a factual statement only when everything is done.
+- Strict replay of the 47 (`replay-20261111T184142Z-20261114T160402Z`): 0 drifted calls, 42 of 47, unsafe 3,
+  every delivered reply identical to the previous strict replay.
+- Replay of the adversarial 8 (`replay-20261114T085006Z-20261114T160507Z`, 0 tokens): 8 of 8, 0 drift. The only
+  changed reply is adv08 turn 2, which now reads "I'm sorry, I don't have that detail to give you. I can open a
+  support ticket for you, if you'd like." (escalation is no longer offered; it was done in turn 1).
+
 ---
 
 ## 3. The dashboard, spec 13.5 (DECISIONS L20; pre-registered 2026-11-14, before any of its code)

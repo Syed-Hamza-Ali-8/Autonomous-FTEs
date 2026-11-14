@@ -346,7 +346,7 @@ they start with `frontend/`.
 | L16 | ✓ | the strict zero-drift replay gates every live run: `test_drift_precondition::test_any_drift_refuses`, `test_drift_precondition::test_a_record_from_another_build_refuses`; [RT] is in the README's known issues |
 | L17 | ⏸ | Phase 7: the README states the design and that it was not built (written in the merged phase, checked at the Phase 7 README audit); there is no build target, by decision |
 | L18 | ✓ | built 2026-11-14: `test_unverified_claims::test_probe` (uc01, uc02), `test_unverified_claims::test_m68_a_lookup_that_says_everything_exists_is_caught`, frontend `unverified-claims.spec.ts` (labelled quotes; "not found" / "on record") |
-| L19 | ⏸ | Phase 7: the conversation-wide offer logic, with its probes and mutation pre-registered (PHASE7_PREREGISTRATION.md item 2) |
+| L19 | ✓ | Built in Phase 7 (2026-11-14), probes committed first: `test_k7_probes::test_probe` (fc19-fc23), `test_k7_probes::test_mutation_makes_its_probes_fail` (M71), `test_api::test_fc24_a_correction_never_offers_what_an_earlier_turn_already_did`, `test_api::test_fc24_under_m72_a_runner_that_reads_only_this_turn_offers_it_again`. Strict replay of the 47: 0 drifted calls, all replies identical |
 | L20 | ✓ | built 2026-11-14: `test_dashboard::test_db01_each_decision_moves_its_own_24h_count`, `test_dashboard::test_probe` (db05, db06), `test_dashboard::test_m69_a_live_check_that_finds_nothing_is_caught_by_db05_and_db06`, `test_dashboard::test_m70_a_reader_that_includes_replays_is_caught_by_db07`, `test_dashboard::test_db09_replay_turns_are_not_counted_as_replies`; frontend `dashboard.spec.ts` |
 
 **Also recorded but never built, outside this register:**

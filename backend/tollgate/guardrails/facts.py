@@ -13,6 +13,11 @@ cards' own words, with no refusal opening: the customer may never have asked for
 opens with the refusal and offers the next step. It never offers an action already done, and carries no
 contact detail of any kind (probes fc09, fc13-fc18). Whether the runner shows it or only logs the finding is
 `MODE`, set by the pre-committed L13 rule.
+
+L19 (Phase 7): only the OFFER reads the whole conversation (`already_done`: the ticket and escalation kinds
+completed in any turn of it), so a step done in an earlier turn is never offered again; when both are done it
+says so as fact instead (probes fc19-fc21, fc24). What a correction STATES stays this turn's action log:
+invariant 10 is unchanged (fc22, fc23).
 """
 
 import re
@@ -20,7 +25,7 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from tollgate.domain.models import ActionCard
+from tollgate.domain.models import ActionCard, ActionKind
 from tollgate.guardrails.claims import normalise
 
 # Set by the L13 rule (pre-registration section 6), never by judgement after the fact. Applied 2026-11-13:
@@ -35,12 +40,32 @@ NEXT_STEP = (
 )
 
 
-def compose_correction(actions: Sequence[ActionCard] = ()) -> str:
-    """The replacement for a reply that failed the check, from this turn's action log (the cards' source)."""
+# The next step offered when only one of the two is still open, and the facts stated when neither is (L19).
+OFFER_TICKET = "I can open a support ticket for you, if you'd like."
+OFFER_PERSON = "I can pass you to a member of our support team, if you'd like."
+BOTH_DONE = (
+    "A support ticket has already been opened for you, and this is already with a member of our support team."
+)
+
+
+def _next_step(already_done: Collection[ActionKind]) -> str:
+    ticket, person = "create_ticket" in already_done, "escalate_to_human" in already_done
+    if ticket and person:
+        return BOTH_DONE
+    if person:
+        return OFFER_TICKET
+    if ticket:
+        return OFFER_PERSON
+    return NEXT_STEP
+
+
+def compose_correction(actions: Sequence[ActionCard] = (), already_done: Collection[ActionKind] = ()) -> str:
+    """The replacement for a reply that failed the check. What it states comes from this turn's action log
+    (the cards' source); what it offers also skips what any turn of the conversation already did (L19)."""
     done = list(dict.fromkeys(a.explanation for a in actions if a.state == "completed"))
     # When something succeeded, state only that: the customer may never have asked for a detail (e03 and f01
     # reported fraud), so a refusal opening would be a non-sequitur (owner, 2026-11-13).
-    return " ".join(done) if done else f"{OPENING} {NEXT_STEP}"
+    return " ".join(done) if done else f"{OPENING} {_next_step(already_done)}"
 
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -99,9 +124,12 @@ def findings(reply: str, allowed_contacts: Collection[str] = ()) -> list[str]:
 
 
 def check_facts(
-    reply: str, allowed_contacts: Collection[str] = (), actions: Sequence[ActionCard] = ()
+    reply: str,
+    allowed_contacts: Collection[str] = (),
+    actions: Sequence[ActionCard] = (),
+    already_done: Collection[ActionKind] = (),
 ) -> FactCheck:
     found = findings(reply, allowed_contacts)
     if found:
-        return FactCheck(passed=False, text=compose_correction(actions), matched=found)
+        return FactCheck(passed=False, text=compose_correction(actions, already_done), matched=found)
     return FactCheck(passed=True, text=normalise(reply), matched=[])
