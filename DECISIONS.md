@@ -245,11 +245,11 @@ they start with `frontend/`.
 | C3 | ✓ | `test_decisions_register::test_c3_*` (added in this audit). Offline guards only; the cloud path itself first runs in Phase 7. |
 | C4 | ✓ | `test_auth_tokens::test_alg_none_is_rejected`, `test_auth_tokens::test_hs256_signed_with_public_key_is_rejected`. The cloud signing method is pending from the owner (Phase 7). |
 | C5 | ✓ | `tests/txpool.py` with the conftest row-count guard; `test_adversarial_tools::test_concurrent_probe_executes_exactly_once` (scratch databases, I11) |
-| C6 | ◐ | Both slots exist: `test_decisions_register::test_c6_two_model_slots_are_configured_separately`. Only `MODEL_STRONG` is used; `MODEL_FAST` gets its first use in Phase 5. |
+| C6 | ◐ | Both slots exist: `test_decisions_register::test_c6_two_model_slots_are_configured_separately`. Only `MODEL_STRONG` is used. `MODEL_FAST` was for the multi-agent design, which was not attempted (L3); Phase 7: the README states the slot is unused |
 | C7 | ✓ | `test_decisions_register::test_c7_the_frontend_verification_loop_exists_and_is_in_the_manual` |
-| C8 | ◐ | v1 compares action verbs and kinds against this turn's action log: `test_claim_check::test_claims_the_action_log_does_not_show_are_replaced`. Order IDs and amounts are not compared yet: Phase 6. |
+| C8 | ✓ | v1 (action kinds): `test_claim_check::test_claims_the_action_log_does_not_show_are_replaced`; v2 (order IDs and amounts, merged phase): `test_claim_check_v2_probes::test_probe` (cc01–cc10), with M58–M60 killed (`test_claim_check_v2_probes::test_mutation_makes_its_probes_fail`) |
 | C9 | ⏸ | No `docker-compose.yml` yet: Phase 7 (packaging). |
-| D1 | ⏸ | Phase 5 |
+| D1 | ↪ | superseded by L3 (the multi-agent comparison was not attempted; single-agent ships) |
 | D2 | ⏸ | Phase 7 |
 | D3 | ✓ | `test_decisions_register::test_d3_only_free_tier_providers_can_be_configured`; the spend ledger `test_budget_ledger::test_ledger_appends_and_sums_the_last_24h` |
 | D4 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
@@ -258,7 +258,7 @@ they start with `frontend/`.
 | D7 | ✓ | `test_decisions_register::test_d7_folder_and_package_names` |
 | D8 | ⏸ | Phase 7 (owner, 2026-11-13: the LLM tone judge stays deferred; not in the merged Phases 5 + 6 scope) |
 | D9 | ✓ | `test_eval_scoring::test_scenarios_verify_against_the_fixture` (subset counts) |
-| D10 | ⏸ | Phase 5 |
+| D10 | ↪ | superseded by L3 (no multi-agent design, so no handoffs to cap) |
 | D11 | ✓ | `test_policy_rules::test_rules_yaml_equals_preregistered_policy` |
 | E1 | ✓ | `test_store_schema::test_trigger_*`, `test_historical_refund_cannot_carry_action_request`, `test_action_refund_requires_an_existing_action_request` |
 | E2 | ✓ | `test_store_schema::test_refund_currency_must_match_order`, `test_order_item_currency_must_match_product_and_order` |
@@ -278,7 +278,7 @@ they start with `frontend/`.
 | H4 | ✓ | `test_budget_ledger::test_ledger_appends_and_sums_the_last_24h`, `test_budget_ledger::test_preflight_uses_the_higher_of_db_and_ledger` |
 | H5 | ↪ | The Phase 3 target, met at the Phase 3 gate (EVAL_RESULTS); superseded by J5 for Phase 4. |
 | I1 | ✓ | probes b09–b16, dp01 (credits by items) |
-| I2 | ◐ | Items required: probe am09; the ceiling: probe am14; support-v4 tells the agent to escalate shipping-only requests. Measured by scenario i01 in the Phase 4 run. |
+| I2 | ✓ | Items required: probe am09; the ceiling: probe am14; support-v4 tells the agent to escalate shipping-only requests, measured by scenario i01 (passed in Phase 4) |
 | I3 | ✓ | criterion 4 in `probe_harness.redaction_problems`, exercised by probes xc08, am04 |
 | I4 | ✓ | probes b03, b04, b11, b12 |
 | I5 | ✓ | probes id01–id07 |
@@ -315,15 +315,15 @@ they start with `frontend/`.
 | J14 | ✓ | `test_expiry_probes::test_probe` (ex13, ex14), `test_expiry_probes::test_after_the_lazy_write_the_conversation_shows_one_expiry_message` |
 | K6 | ⏸ | Phase 7 UI polish, unless the owner moves it |
 | J15 | ◐ | The hold is proven model-free: probes fp01, fp02, fp05. The live run measured the prompt preventing the attempt (`eval/attempts.py`). The Phase 7 demo (the probe suite with and without the gateway's protections) is deferred to Phase 7. |
-| K7 | ⏸ | Phase 6: pre-register the reply check (contact details and named units against store data), measure it on the existing recordings at zero tokens, then decide the response |
-| J16 | ⏸ | Phase 5 (merged with Phase 6): the prospective (d) rule applies to the adversarial 8. p09 stays `tickets: []` and fails under v4 because of the known [RT] issue (L16). |
+| K7 | ✓ | `test_k7_probes::test_probe` (fc01–fc18), with mutations killed (`test_k7_probes::test_mutation_makes_its_probes_fail`); the delivered-text ordering: `test_api::test_fc16_a_replaced_reply_states_the_executed_escalation_and_no_check_objects`. Measured at 3 of 116, so REPLACE (L13) |
+| J16 | ✓ | the prospective (d) rule (order- and money-tier only) in the adversarial scorer: `test_unsafe_parts::test_adversarial_an_executed_forbidden_effect_fails_and_a_held_one_is_measured`; contact-tier actions reported beside it. p09 stays `tickets: []` and fails under v4 ([RT], a known issue) |
 | J17 | ◐ | The stop rule: `test_eval_scoring::test_j5_does_not_stop_on_an_unasked_contact_tier_action_alone`. The [RT] narrowing itself is not built (L16: a known issue); it waits for the next model-visible version, Phase 7 at the earliest. |
 | J18 | ✓ | `test_eval_scoring::test_j18_only_a_provider_error_with_no_model_output_qualifies`, `test_eval_scoring::test_j18_a_transport_failure_is_re_run_once_and_logged`, `test_eval_scoring::test_j18_a_second_transport_failure_is_not_measured_and_does_not_stop_the_run` (`run_eval --rerun-transport-failures`) |
 | J19 | ⏸ | Phase 7 at the earliest: the [RT] fix waits for the next model-visible version (L16; a known issue meanwhile). e02's K7 part is measured by replay in the merged phase. The failed gate itself is recorded in EVAL_RESULTS (Phase 4 gate report) and the README. |
 | J20 | ⏸ | Phase 7: the demo is built on it (with J15). The evidence is recorded in EVAL_RESULTS (Phase 4 gate report) and the README. |
 | L1 | ↪ | superseded by L16 (no prompt change; [RT] is a known issue) |
 | L2 | ↪ | superseded by L15 (Tollgate is not wired to Gateway; the knowledge port and local implementation stay) |
-| L3 | ⏸ | Phase 5: stated in the Phase 5 gate report and the README (pre-registration section 3) |
+| L3 | ⏸ | Phase 7: the README states that multi-agent was never built or measured (README item, Phase 7 order of work) |
 | L4 | ↪ | superseded by L16 (no `support-v5`; the agent stays on support-v4) |
 | L5 | ✓ | frontend `console-1024.spec.ts` (projects w1024-light, w1024-dark; screenshots 20–23 at 1024): usable at 1024 in spec 13.4's collapsed list → detail layout, passing since 2026-11-13. The test's first version was mis-specified, corrected per pre-registration section 14 |
 | L6 | ↪ | superseded by L16 (p09 keeps `tickets: []` and fails under v4 because of the known [RT] issue) |
@@ -332,11 +332,11 @@ they start with `frontend/`.
 | L9 | ↪ | superseded by L15 (no northwind tenant, so there is nothing for a re-measure to check) |
 | L10 | ↪ | superseded by L15 (one stack only; the 6 GB WSL cap stays for host health) |
 | L11 | ↪ | superseded by L16 (there is no v5 run; the thresholds of the original 30 stand as carried Phase 4 misses) |
-| L12 | ⏸ | Phase 5 (merged with Phase 6): the combined gate (pre-registration section 10); amended by L16, so there is no K7 prompt line and no re-run of the 47 |
-| L13 | ⏸ | Phase 5 (merged with Phase 6): applied at the zero-token K7 measurement, before the run (pre-registration section 6) |
-| L14 | ⏸ | Phase 5 (merged with Phase 6): the 8 conversations in `adversarial_llm.jsonl`, committed before the Phase 6 code (pre-registration section 9) |
+| L12 | ✓ | the merged gate, approved 2026-11-14 (EVAL_RESULTS); its precondition: `test_drift_precondition::test_a_clean_record_for_this_build_allows` |
+| L13 | ✓ | rule applied: REPLACE (3 of 116, 0 false positives, labels accepted); the correction: `test_k7_probes::test_probe` (fc09, fc13–fc18) |
+| L14 | ✓ | the 8 conversations run live (20261114T085006Z), scored by `test_unsafe_parts::test_adversarial_replies_fail_on_tier_c_values_and_fabricated_contacts` and `test_unsafe_parts::test_adversarial_a_missing_h3_escalation_fails` |
 | L15 | ↪ | superseded by L17 (the knowledge layer is not built; L15's no-Gateway-wiring part still holds) |
-| L16 | ⏸ | Phase 5 (merged with Phase 6): the strict zero-drift replay of the 47, the zero-token control replays, and the README known issue (pre-registration sections 1 and 4) |
+| L16 | ✓ | the strict zero-drift replay gates every live run: `test_drift_precondition::test_any_drift_refuses`, `test_drift_precondition::test_a_record_from_another_build_refuses`; [RT] is in the README's known issues |
 | L17 | ⏸ | Phase 7: the README states the design and that it was not built (written in the merged phase, checked at the Phase 7 README audit); there is no build target, by decision |
 | L18 | ⏸ | Phase 7: the console mitigation, against the committed frontend `unverified-claims.spec.ts` (failing until built) and a backend lookup probe |
 | L19 | ⏸ | Phase 7: the conversation-wide offer logic, with its probes and mutation pre-registered (PHASE7_PREREGISTRATION.md item 2) |

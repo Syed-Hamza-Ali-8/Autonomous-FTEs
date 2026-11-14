@@ -102,7 +102,7 @@ from pathlib import Path  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = ROOT / "backend" / "tests"
 PROBE_FILE = ROOT / "backend" / "eval" / "adversarial_tools.jsonl"
-CURRENT_PHASE = 4
+CURRENT_PHASE = 7
 STATUSES = {"✓", "⏸", "◐", "↪"}  # implemented, deferred, partial (both), superseded
 
 
@@ -198,15 +198,15 @@ def test_the_register_check_is_live() -> None:
     recorded-but-not-built status are each caught."""
     good = "- **Z1** x.\n- **Z2** y.\n## Implementation status\n| ID | S | E |\n|---|---|---|\n"
     rows = {
-        "untested": "| Z1 | ✓ | it works |\n| Z2 | ⏸ | Phase 5 |",
+        "untested": "| Z1 | ✓ | it works |\n| Z2 | ⏸ | Phase 7 |",
         "no phase": f"| Z1 | ✓ | {SELF} |\n| Z2 | ⏸ | later |",
-        "no test": "| Z1 | ✓ | `test_decisions_register::test_nothing_like_this` |\n| Z2 | ⏸ | Phase 5 |",
-        "no row": "| Z1 | ⏸ | Phase 5 |",
-        "not built": "| Z1 | ✗ | Phase 5 |\n| Z2 | ⏸ | Phase 5 |",
+        "no test": "| Z1 | ✓ | `test_decisions_register::test_nothing_like_this` |\n| Z2 | ⏸ | Phase 7 |",
+        "no row": "| Z1 | ⏸ | Phase 7 |",
+        "not built": "| Z1 | ✗ | Phase 7 |\n| Z2 | ⏸ | Phase 7 |",
     }
     for case, body in rows.items():
         assert register_problems(good + body + "\n") != [], case
-    clean = f"| Z1 | ✓ | {SELF}; probes b01\u2013b03 |\n| Z2 | ⏸ | Phase 5 |"
+    clean = f"| Z1 | ✓ | {SELF}; probes b01\u2013b03 |\n| Z2 | ⏸ | Phase 7 |"
     assert register_problems(good + clean + "\n") == []
 
 
