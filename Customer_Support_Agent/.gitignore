@@ -1,0 +1,48 @@
+# Secrets: every .env file except the documented template
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
+
+# Eval run artifacts that may hold recorded model output (results go to EVAL_RESULTS.md)
+backend/eval/runs/tmp/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local token-spend ledger (budget durability across `supabase db reset`); per machine, never committed
+.tollgate/

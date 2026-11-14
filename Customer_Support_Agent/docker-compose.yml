@@ -1,0 +1,35 @@
+# Tollgate: the API and the web app in containers (Phase 7). The database and sign-in come from the Supabase
+# local stack, started first with `supabase start` (its own containers, on the host's ports 54321/54322).
+#
+# From inside a container, 127.0.0.1 is the container itself, so the API reaches the host's Supabase through
+# host.docker.internal. The browser still uses 127.0.0.1, and tokens carry that issuer, so SUPABASE_URL stays as in
+# .env, and only SUPABASE_INTERNAL_URL (key fetch) and DOCKER_DATABASE_URL use the host gateway.
+services:
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:?set DOCKER_DATABASE_URL in .env (see .env.example)}
+      SUPABASE_INTERNAL_URL: http://host.docker.internal:54321
+      LLM_BUDGET_LEDGER: /app/.tollgate/token_spend.jsonl
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # local development: new eval runs show on the dashboard without a rebuild (read-only)
+      - ./backend/eval/runs:/app/eval/runs:ro
+      # the token-spend ledger is shared with the host, so the budget pre-flight sees the container's spend too
+      - ./.tollgate:/app/.tollgate
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL in .env}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY in .env}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api

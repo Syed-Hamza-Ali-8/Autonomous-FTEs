@@ -1,0 +1,847 @@
+"""HTTP API with two real signed-in customers and a scripted model (zero tokens).
+
+Covers: token rejection at the HTTP layer, 403 for a user with no customer row, two-customer isolation
+on every read route, indistinguishable 404s, no-store headers, and the chat flow (C1 buffering,
+claim check, B9 de-duplication, ownership of conversations and order context, typed errors).
+"""
+
+import json
+import secrets
+import time
+import uuid
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import asyncpg
+import httpx
+import jwt
+import openai
+import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
+
+from tests.auth_users import test_email
+from tests.fakes import CallTool, Fail, Say, ScriptedModel
+from tests.txpool import TxPool, rolled_back
+from tollgate.agents_def.runner import LLMRuntime
+from tollgate.agents_def.support import PROMPT_VERSION
+from tollgate.config import SupabaseSettings
+from tollgate.guardrails.claims import CORRECTION, CORRECTION_WITH_ACTIONS
+from tollgate.main import app
+
+
+@dataclass(frozen=True)
+class SignedIn:
+    customer_id: str
+    token: str
+    order_ids: list[str]
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}"}
+
+
+async def _make_user(c: httpx.AsyncClient, svc: str, anon: str) -> tuple[str, str]:
+    admin = {"apikey": svc, "Authorization": f"Bearer {svc}"}
+    email, pw = test_email("api"), secrets.token_urlsafe(24)
+    r = await c.post(
+        "/admin/users", headers=admin, json={"email": email, "password": pw, "email_confirm": True}
+    )
+    r.raise_for_status()
+    uid = r.json()["id"]
+    t = await c.post(
+        "/token",
+        params={"grant_type": "password"},
+        headers={"apikey": anon},
+        json={"email": email, "password": pw},
+    )
+    t.raise_for_status()
+    return uid, t.json()["access_token"]
+
+
+@pytest.fixture(scope="module")
+async def auth_users(settings: SupabaseSettings) -> AsyncIterator[list[tuple[str, str]]]:
+    """Three throwaway Auth users (uid, access token). Created first and deleted LAST, after the
+    rollback below: deleting a user touches app.customers rows our open transaction has locked."""
+    assert settings.supabase_service_role_key is not None
+    svc = settings.supabase_service_role_key.get_secret_value()
+    anon = settings.supabase_anon_key.get_secret_value()
+    admin = {"apikey": svc, "Authorization": f"Bearer {svc}"}
+    async with httpx.AsyncClient(base_url=f"{settings.supabase_url}/auth/v1", timeout=10) as c:
+        users: list[tuple[str, str]] = []
+        try:
+            for _ in range(3):
+                users.append(await _make_user(c, svc, anon))
+            yield users
+        finally:
+            for uid, _ in users:
+                await c.delete(f"/admin/users/{uid}", headers=admin)
+
+
+@pytest.fixture(scope="module")
+async def txpool(settings: SupabaseSettings, auth_users: list[tuple[str, str]]) -> AsyncIterator[TxPool]:
+    """Every write in this module (API, runner, tools, fixtures) happens in one rolled-back transaction."""
+    async with rolled_back(settings.database_url.get_secret_value()) as pool:
+        yield pool
+
+
+@pytest.fixture(scope="module")
+def db(txpool: TxPool) -> asyncpg.Connection:
+    """Overrides the session `db`: reads here must see this module's uncommitted writes."""
+    return txpool.connection
+
+
+@pytest.fixture(autouse=True)
+async def _rollback_each_test(txpool: TxPool) -> AsyncIterator[None]:
+    async with txpool.savepoint():
+        yield
+
+
+@pytest.fixture(scope="module")
+async def people(db: asyncpg.Connection, auth_users: list[tuple[str, str]]) -> tuple[SignedIn, SignedIn, str]:
+    """Two seed-only customers linked to Auth users inside the transaction, plus a customer-less token."""
+    picks = await db.fetch(
+        """SELECT c.id FROM app.customers c WHERE c.auth_user_id IS NULL
+            AND (SELECT count(*) FROM app.orders o WHERE o.customer_id = c.id) >= 3 ORDER BY c.id LIMIT 2"""
+    )
+    assert len(picks) == 2
+    out = []
+    for row, (uid, token) in zip(picks, auth_users[:2], strict=True):
+        await db.execute(
+            "UPDATE app.customers SET auth_user_id = $1 WHERE id = $2", uuid.UUID(uid), row["id"]
+        )
+        ids = [r["id"] for r in await db.fetch("SELECT id FROM app.orders WHERE customer_id = $1", row["id"])]
+        out.append(SignedIn(row["id"], token, ids))
+    return out[0], out[1], auth_users[2][1]
+
+
+@pytest.fixture(scope="module")
+async def client(txpool: TxPool) -> AsyncIterator[httpx.AsyncClient]:
+    async with app.router.lifespan_context(app):
+        real_pool = app.state.pool
+        app.state.pool = txpool  # route every API write into the rolled-back transaction
+        try:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://api.test") as c:
+                yield c
+        finally:
+            app.state.pool = real_pool
+
+
+def script(steps: list[Any], daily_budget: int = 10_000_000) -> ScriptedModel:
+    model = ScriptedModel(steps=steps)
+    app.state.llm = LLMRuntime(
+        model=model, model_name="scripted", daily_budget=daily_budget, turn_estimate=1, ledger=None
+    )
+    return model
+
+
+async def chat(
+    client: httpx.AsyncClient, who: SignedIn, body: dict[str, Any]
+) -> tuple[int, list[dict[str, Any]]]:
+    payload = {"client_message_id": str(uuid.uuid4()), **body}
+    resp = await client.post("/v1/chat", headers=who.headers, json=payload)
+    if resp.status_code != 200:
+        return resp.status_code, [resp.json()]
+    events = [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
+    return 200, events
+
+
+# --- authentication at the HTTP layer ----------
+
+
+def _forged_tokens(settings: SupabaseSettings) -> dict[str, str]:
+    now = int(time.time())
+    claims = {"sub": str(uuid.uuid4()), "aud": "authenticated", "iss": f"{settings.supabase_url}/auth/v1"}
+    key = ec.generate_private_key(ec.SECP256R1())
+    return {
+        "anon_key": settings.supabase_anon_key.get_secret_value(),
+        "expired": jwt.encode(
+            {**claims, "iat": now - 7200, "exp": now - 3600}, key, algorithm="ES256", headers={"kid": "x"}
+        ),
+        "alg_none": jwt.encode({**claims, "iat": now, "exp": now + 600}, None, algorithm="none"),
+        "hs256_anon_secret": jwt.encode(
+            {**claims, "iat": now, "exp": now + 600},
+            settings.supabase_anon_key.get_secret_value(),
+            algorithm="HS256",
+        ),
+        "garbage": "not-a-token",
+    }
+
+
+@pytest.mark.parametrize("path", ["/v1/me", "/v1/orders", "/v1/orders/ORD-1042", "/v1/conversations/latest"])
+async def test_bad_tokens_get_identical_401(
+    client: httpx.AsyncClient, settings: SupabaseSettings, path: str
+) -> None:
+    responses = [await client.get(path)]
+    for token in _forged_tokens(settings).values():
+        responses.append(await client.get(path, headers={"Authorization": f"Bearer {token}"}))
+    assert {r.status_code for r in responses} == {401}
+    assert {r.text for r in responses} == {'{"error":"unauthorized"}'}
+
+
+async def test_chat_rejects_bad_tokens(client: httpx.AsyncClient, settings: SupabaseSettings) -> None:
+    model = script([Say("should never run")])
+    for token in _forged_tokens(settings).values():
+        r = await client.post(
+            "/v1/chat",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"client_message_id": str(uuid.uuid4()), "message": "hi"},
+        )
+        assert r.status_code == 401
+    assert model.calls == 0
+
+
+async def test_valid_user_without_customer_row_is_forbidden(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    _, _, stray = people
+    r = await client.get("/v1/orders", headers={"Authorization": f"Bearer {stray}"})
+    assert r.status_code == 403
+
+
+# --- two-customer isolation (owner gate item) ----------
+
+
+async def test_each_customer_sees_only_their_orders(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, b, _ = people
+    for me, other in ((a, b), (b, a)):
+        listed = (await client.get("/v1/orders", headers=me.headers)).json()
+        assert sorted(o["id"] for o in listed) == sorted(me.order_ids)
+        assert (await client.get("/v1/me", headers=me.headers)).json()["id"] == me.customer_id
+        for oid in other.order_ids:
+            r = await client.get(f"/v1/orders/{oid}", headers=me.headers)
+            assert r.status_code == 404, oid
+
+
+async def test_foreign_order_404_is_identical_to_missing(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, b, _ = people
+    foreign = await client.get(f"/v1/orders/{b.order_ids[0]}", headers=a.headers)
+    missing = await client.get("/v1/orders/ORD-9999", headers=a.headers)
+    lowered = await client.get(f"/v1/orders/{b.order_ids[0].lower()}", headers=a.headers)
+    strip = {"date", "content-length"}
+    for r in (foreign, lowered):
+        assert (r.status_code, r.text) == (missing.status_code, missing.text)
+        assert {k: v for k, v in r.headers.items() if k not in strip} == {
+            k: v for k, v in missing.headers.items() if k not in strip
+        }
+
+
+async def test_per_user_responses_are_not_cacheable(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, _, _ = people
+    for path in ("/v1/me", "/v1/orders", f"/v1/orders/{a.order_ids[0]}", "/v1/conversations/latest"):
+        r = await client.get(path, headers=a.headers)
+        assert r.headers["cache-control"] == "no-store", path
+        assert "authorization" in r.headers["vary"].lower(), path
+
+
+# --- chat ----------
+
+
+async def test_chat_answers_own_order_with_buffered_reply(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, _, _ = people
+    oid = a.order_ids[0]
+    model = script([CallTool("get_order", {"order_id": oid}), Say(f"Your order {oid} is on its way.")])
+    status, events = await chat(client, a, {"message": f"Where is {oid}?"})
+    assert status == 200
+    types = [e["type"] for e in events]
+    assert types[0] == "turn_started" and types[-1] == "done"
+    assert types.count("reply") == 1 and "progress" in types
+    assert [e["order"]["id"] for e in events if e["type"] == "order_ref"] == [oid]
+    reply = next(e for e in events if e["type"] == "reply")
+    assert reply["text"] == f"Your order {oid} is on its way."
+    assert model.calls == 2
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    stored = await db.fetch("SELECT role, content FROM app.messages WHERE turn_id = $1 ORDER BY id", turn_id)
+    assert [(r["role"], r["content"]) for r in stored] == [
+        ("customer", f"Where is {oid}?"),
+        ("assistant", reply["text"]),
+    ]
+    run = await db.fetchrow(
+        "SELECT status, model_calls, prompt_version FROM app.run_log WHERE turn_id = $1", turn_id
+    )
+    assert run is not None and (run["status"], run["model_calls"], run["prompt_version"]) == (
+        "ok",
+        2,
+        PROMPT_VERSION,
+    )
+
+
+async def test_chat_model_asking_for_foreign_order_gets_not_found(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, b, _ = people
+    model = script([CallTool("get_order", {"order_id": b.order_ids[0]}), Say("I couldn't find that order.")])
+    status, events = await chat(client, a, {"message": f"Show me {b.order_ids[0]}"})
+    assert status == 200 and model.calls == 2
+    assert not [e for e in events if e["type"] == "order_ref"]
+    stream = json.dumps(events)
+    assert not any(oid in stream for oid in b.order_ids[1:])
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    outcome = await db.fetchval("SELECT outcome FROM app.tool_calls WHERE turn_id = $1", turn_id)
+    assert outcome == "not_found"
+    # what the model saw for the foreign order is the generic not-found result
+    assert "No order with that ID was found" in json.dumps(model.inputs[-1], default=str)
+
+
+async def test_false_action_claim_never_reaches_screen_or_db(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, _, _ = people
+    script([Say("Done! I've refunded your order in full.")])
+    _, events = await chat(client, a, {"message": "refund me"})
+    stream = json.dumps(events)
+    assert "refunded your order" not in stream
+    assert next(e for e in events if e["type"] == "reply")["text"] == CORRECTION
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    stored = await db.fetchval(
+        "SELECT content FROM app.messages WHERE turn_id = $1 AND role = 'assistant'", turn_id
+    )
+    assert stored == CORRECTION
+    assert (
+        await db.fetchval(
+            "SELECT count(*) FROM app.audit_log WHERE turn_id = $1 AND event = 'claim_check_replaced'",
+            turn_id,
+        )
+        == 1
+    )
+
+
+async def test_repeated_client_message_id_runs_once(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, _, _ = people
+    model = script([Say("Hello! How can I help?")])
+    _, first = await chat(client, a, {"message": "hi"})
+    conv_id = first[0]["conversation_id"]
+    body = {"client_message_id": str(uuid.uuid4()), "message": "hello again", "conversation_id": conv_id}
+    model.steps.append(Say("Hi again."))
+    r1 = await client.post("/v1/chat", headers=a.headers, json=body)
+    r2 = await client.post("/v1/chat", headers=a.headers, json=body)
+    replies = [[json.loads(x[6:]) for x in r.text.splitlines() if x.startswith("data: ")] for r in (r1, r2)]
+    texts = [next(e["text"] for e in evs if e["type"] == "reply") for evs in replies]
+    assert texts == ["Hi again.", "Hi again."]
+    assert model.calls == 2  # one for "hi", one for the deduplicated pair
+
+
+async def test_cannot_post_into_another_customers_conversation(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, b, _ = people
+    script([Say("hi")])
+    _, events = await chat(client, b, {"message": "hello"})
+    b_conv = events[0]["conversation_id"]
+    model = script([Say("should never run")])
+    status, body = await chat(client, a, {"message": "hijack", "conversation_id": b_conv})
+    missing_status, missing_body = await chat(
+        client, a, {"message": "x", "conversation_id": str(uuid.uuid4())}
+    )
+    assert (status, body) == (missing_status, missing_body) == (404, [{"error": "not_found"}])
+    assert model.calls == 0
+
+
+async def test_chat_order_context_must_be_own_order(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, b, _ = people
+    model = script([Say("should never run")])
+    status, body = await chat(client, a, {"message": "help", "order_id": b.order_ids[0]})
+    assert (status, body) == (404, [{"error": "not_found"}])
+    assert model.calls == 0
+
+
+async def test_latest_conversation_is_per_customer(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, b, _ = people
+    script([Say("A's private reply 7d1c")])
+    await chat(client, a, {"message": "A's private question 7d1c"})
+    seen_by_b = (await client.get("/v1/conversations/latest", headers=b.headers)).text
+    assert "7d1c" not in seen_by_b
+    assert "7d1c" in (await client.get("/v1/conversations/latest", headers=a.headers)).text
+
+
+async def test_rate_limit_becomes_typed_error_and_no_reply(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, _, _ = people
+    req = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    resp = httpx.Response(429, request=req, headers={"retry-after": "7"})
+    script([Fail(openai.RateLimitError("rate limited", response=resp, body=None))])
+    _, events = await chat(client, a, {"message": "status?"})
+    err = next(e for e in events if e["type"] == "error")
+    assert (err["code"], err["retry_after_s"]) == ("rate_limited", 7.0)
+    assert not [e for e in events if e["type"] == "reply"]
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    assert await db.fetchval("SELECT status FROM app.run_log WHERE turn_id = $1", turn_id) == "error"
+    assert (
+        await db.fetchval(
+            "SELECT count(*) FROM app.messages WHERE turn_id = $1 AND role = 'assistant'", turn_id
+        )
+        == 0
+    )
+
+
+async def test_budget_preflight_refuses_without_calling_model(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, _, _ = people
+    model = script([Say("should never run")], daily_budget=0)
+    _, events = await chat(client, a, {"message": "status?"})
+    assert [e["code"] for e in events if e["type"] == "error"] == ["budget_exhausted"]
+    assert model.calls == 0
+
+
+def test_openapi_documents_chat_events() -> None:
+    schema = app.openapi()
+    sse = schema["paths"]["/v1/chat"]["post"]["responses"]["200"]["content"]["text/event-stream"]
+    assert "contentSchema" in sse["itemSchema"]["properties"]["data"]
+    names = set(schema["components"]["schemas"])
+    assert {"TurnStarted", "Progress", "OrderRef", "Reply", "ChatError", "Done"} <= names
+
+
+async def test_order_cards_survive_reload_and_come_from_tool_data(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, b, _ = people
+    own = a.order_ids[0]
+    # The reply text names a foreign order; only the tool-returned (own) order may become a card.
+    script([CallTool("get_order", {"order_id": own}), Say(f"{own} is fine. Also see {b.order_ids[0]}.")])
+    await chat(client, a, {"message": f"status of {own}?"})
+    latest = (await client.get("/v1/conversations/latest", headers=a.headers)).json()
+    reply = [m for m in latest["messages"] if m["role"] == "assistant"][-1]
+    assert [o["id"] for o in reply["orders"]] == [own]
+    assert all(m["orders"] == [] for m in latest["messages"] if m["role"] != "assistant")
+
+
+async def test_failed_turn_is_not_repeated_in_the_models_history(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    # A rate-limited turn stores the customer's message but no reply. When the customer re-sends,
+    # the model must see that request once, not twice.
+    a, _, _ = people
+    req = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    resp = httpx.Response(429, request=req, headers={"retry-after": "1"})
+    model = script([Fail(openai.RateLimitError("limited", response=resp, body=None)), Say("Here you go.")])
+    _, first = await chat(client, a, {"message": "status of my orders?"})
+    conv = first[0]["conversation_id"]
+    await chat(client, a, {"message": "status of my orders?", "conversation_id": conv})
+    sent = model.inputs[-1]
+    customer_msgs = [m for m in sent if isinstance(m, dict) and m.get("role") == "user"]
+    assert [m["content"] for m in customer_msgs] == ["status of my orders?"]
+
+
+async def test_chat_streams_an_action_card_and_replaces_a_false_claim(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    """The card comes from the gateway's outcome; the model's "I've cancelled it" is caught (invariant 10)."""
+    a, _, _ = people
+    oid = await db.fetchval(
+        "SELECT id FROM app.orders WHERE customer_id = $1 AND status NOT IN ('pending', 'paid')"
+        " ORDER BY id LIMIT 1",
+        a.customer_id,
+    )
+    script(
+        [
+            CallTool("cancel_order", {"order_id": oid, "reason": "changed my mind"}),
+            Say("I've cancelled your order."),
+        ]
+    )
+    status, events = await chat(client, a, {"message": f"Cancel {oid}"})
+    assert status == 200
+    types = [e["type"] for e in events]
+    assert types.index("action") < types.index("reply")
+    cards = [e["card"] for e in events if e["type"] == "action"]
+    assert len(cards) == 1
+    assert (cards[0]["action"], cards[0]["state"], cards[0]["order_id"]) == (
+        "cancel_order",
+        "not_allowed",
+        oid,
+    )
+    reply = next(e for e in events if e["type"] == "reply")
+    assert reply["text"] == CORRECTION_WITH_ACTIONS
+    latest = (await client.get("/v1/conversations/latest", headers=a.headers)).json()
+    assert [m for m in latest["messages"] if m["role"] == "assistant"][-1]["actions"] == cards
+
+
+async def test_chat_true_claim_backed_by_a_completed_action_passes(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str]
+) -> None:
+    a, _, _ = people
+    summary = "My parcel arrived damaged and I'd like someone to call me."
+    script([
+        CallTool("create_ticket", {"summary": summary, "category": "delivery"}),
+        Say("I've submitted a ticket for you; our team will reply by email."),
+    ])  # fmt: skip
+    status, events = await chat(client, a, {"message": summary})
+    assert status == 200
+    cards = [e["card"] for e in events if e["type"] == "action"]
+    assert [(c["action"], c["state"]) for c in cards] == [("create_ticket", "completed")]
+    assert next(e for e in events if e["type"] == "reply")["text"].startswith("I've submitted a ticket")
+
+
+async def test_completed_action_the_reply_leaves_out_is_logged_not_blocked(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, _, _ = people
+    summary = "Please have someone call me about my order."
+    script(
+        [
+            CallTool("create_ticket", {"summary": summary, "category": "other"}),
+            Say("Thanks for your patience!"),
+        ]
+    )
+    status, events = await chat(client, a, {"message": summary})
+    assert status == 200
+    assert (
+        next(e for e in events if e["type"] == "reply")["text"] == "Thanks for your patience!"
+    )  # not blocked
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    logged = await db.fetchval(
+        "SELECT details->'findings' FROM app.audit_log"
+        " WHERE turn_id = $1 AND event = 'claim_check_under_claim'",
+        turn_id,
+    )
+    assert json.loads(logged) == ["omitted:create_ticket"]
+
+
+async def _address_request(db: asyncpg.Connection, customer_id: str, order_id: str) -> str:
+    address = {"name": "Sana Morgan", "line1": "14 Garden Road", "city": "Lahore", "postal_code": "54000",
+               "country": "PK"}  # fmt: skip
+    ref: str = await db.fetchval(
+        "INSERT INTO app.action_requests (customer_id, turn_id, action, order_id, args, decision, status,"
+        " created_at) VALUES ($1, gen_random_uuid(), 'update_shipping_address', $2, $3::jsonb, 'ALLOW',"
+        " 'executed', now()) RETURNING id",
+        customer_id,
+        order_id,
+        json.dumps({"new_address": address, "changed": ["line1"]}),
+    )
+    return ref
+
+
+async def test_action_record_shows_the_resulting_address_and_is_owner_only(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    a, b, _ = people
+    mine = await _address_request(db, a.customer_id, a.order_ids[0])
+    theirs = await _address_request(db, b.customer_id, b.order_ids[0])
+    ok = await client.get(f"/v1/actions/{mine}", headers=a.headers)
+    assert ok.status_code == 200
+    body = ok.json()
+    assert (body["state"], body["delivery_address"]["line1"]) == ("completed", "14 Garden Road")
+    assert body["kept_fields"] == ["name", "city", "postal_code", "country"]
+    foreign = await client.get(f"/v1/actions/{theirs}", headers=a.headers)
+    missing = await client.get("/v1/actions/ACT-999999", headers=a.headers)
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.content == missing.content  # indistinguishable (invariant 8)
+
+
+# -- K7 replacement through the runner: probe fc16 (Phases 5+6 section 6; owner review 2026-11-13) ---------
+# The claim check and the under-claim counter run on the text actually DELIVERED, after any K7 replacement.
+# Found in review: they ran on the model's original reply, so a replacement that dropped an executed
+# escalation (e03, f01) was seen by no check. With the ordering fixed, the under-claim counter catches
+# exactly that.
+
+ESCALATED_THEN_INVENTED = [
+    CallTool("escalate_to_human", {"summary": "Customer reports an order they never placed."}),
+    Say("I've escalated this to our fraud team, who will be in touch shortly."),
+]
+
+
+async def _k7_turn(
+    client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection
+) -> tuple[str, list[str], list[str]]:
+    script(list(ESCALATED_THEN_INVENTED))
+    status, events = await chat(client, who, {"message": "I never placed this order."})
+    assert status == 200
+    turn_id = uuid.UUID(events[0]["turn_id"])
+    rows = await db.fetch("SELECT event, details FROM app.audit_log WHERE turn_id = $1", turn_id)
+    under = [json.loads(r["details"])["findings"] for r in rows if r["event"] == "claim_check_under_claim"]
+    k7 = [r["event"] for r in rows if r["event"] == "k7_finding"]
+    reply = next(e for e in events if e["type"] == "reply")["text"]
+    return reply, [f for fs in under for f in fs], k7
+
+
+async def test_fc16_a_replaced_reply_states_the_executed_escalation_and_no_check_objects(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    from tollgate.actions import cards
+
+    reply, under, k7 = await _k7_turn(client, people[0], db)
+    assert k7 == ["k7_finding"]  # "our fraud team" fired
+    assert "fraud team" not in reply  # replaced whole
+    assert reply == cards.DONE["escalate_to_human"]  # only the executed escalation: no refusal opening
+    assert "Just say which" not in reply and "I can open" not in reply  # never offered again
+    assert under == []  # the delivered text omits nothing that happened
+
+
+async def test_fc16_under_m66_the_under_claim_counter_on_the_delivered_text_catches_the_dropped_escalation(
+    client: httpx.AsyncClient,
+    people: tuple[SignedIn, SignedIn, str],
+    db: asyncpg.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M66 (the fixed text back): the defect the review found. Checked on the DELIVERED text, it is logged."""
+    from tests.test_k7_probes import m66
+    from tollgate.guardrails import facts
+
+    m66(monkeypatch)
+    reply, under, _ = await _k7_turn(client, people[0], db)
+    assert reply == facts.compose_correction([])  # the fixed text
+    assert under == ["omitted:escalate_to_human"]
+
+
+# --- L19: the K7 correction's offer reads the whole conversation (PHASE7_PREREGISTRATION item 2) ----------
+
+EARLIER_TURN = {
+    "escalate_to_human": [
+        CallTool("escalate_to_human", {"summary": "Customer reports an order they never placed."}),
+        Say("I've passed this to a member of our support team, who will reply here."),
+    ],
+    "create_ticket": [
+        CallTool("create_ticket", {"summary": "Parcel arrived damaged.", "category": "delivery"}),
+        Say("I've opened a support ticket for this."),
+    ],
+}
+
+
+async def _second_turn_after(client: httpx.AsyncClient, who: SignedIn, earlier: str) -> str:
+    """Turn 1 completes `earlier`; turn 2, in the same conversation, does nothing and names a fraud team."""
+    script(list(EARLIER_TURN[earlier]))
+    status, first = await chat(client, who, {"message": "I need help with this."})
+    assert status == 200
+    assert any(e["type"] == "action" and e["card"]["state"] == "completed" for e in first)
+    script([Say("Our fraud team will call you about this.")])
+    status, events = await chat(
+        client, who, {"message": "Is anyone looking at it?", "conversation_id": first[0]["conversation_id"]}
+    )
+    assert status == 200
+    return str(next(e for e in events if e["type"] == "reply")["text"])
+
+
+@pytest.mark.parametrize("earlier", ["escalate_to_human", "create_ticket"])
+async def test_fc24_a_correction_never_offers_what_an_earlier_turn_already_did(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], earlier: str
+) -> None:
+    from tests.test_k7_probes import ESCALATED_EARLIER_TEXT, TICKET_EARLIER_TEXT
+
+    reply = await _second_turn_after(client, people[0], earlier)
+    want = ESCALATED_EARLIER_TEXT if earlier == "escalate_to_human" else TICKET_EARLIER_TEXT
+    assert reply == want
+
+
+@pytest.mark.parametrize("earlier", ["escalate_to_human", "create_ticket"])
+async def test_fc24_under_m72_a_runner_that_reads_only_this_turn_offers_it_again(
+    client: httpx.AsyncClient,
+    people: tuple[SignedIn, SignedIn, str],
+    monkeypatch: pytest.MonkeyPatch,
+    earlier: str,
+) -> None:
+    """M72: the conversation lookup is emptied (the runner wired turn-scoped again); fc24 must see it."""
+    from tests.test_k7_probes import NO_ACTION_TEXT
+    from tollgate.domain import conversations
+
+    async def nothing(*_a: object) -> frozenset[str]:
+        return frozenset()
+
+    monkeypatch.setattr(conversations, "support_actions_done", nothing)
+    assert await _second_turn_after(client, people[0], earlier) == NO_ACTION_TEXT
+
+
+# --- A turn that fails after the gateway acted still shows what was done (owner, 2026-11-14) ---------
+# Probes committed before the code. The card is saved when the gateway returns (app.turn_action_cards), not
+# with the reply at the end of the turn; a turn that ended without a reply shows a plain error with its cards.
+
+INTERRUPTED = "Something went wrong while writing the reply. Here is what was done."
+
+
+def _limited() -> openai.RateLimitError:
+    req = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    return openai.RateLimitError("rate limited", response=httpx.Response(429, request=req), body=None)
+
+
+async def _latest(client: httpx.AsyncClient, who: SignedIn) -> list[dict[str, Any]]:
+    resp = await client.get("/v1/conversations/latest", headers=who.headers)
+    assert resp.status_code == 200
+    return list(resp.json()["messages"])
+
+
+async def _failed_after_escalation(client: httpx.AsyncClient, who: SignedIn) -> tuple[str, dict[str, Any]]:
+    script([CallTool("escalate_to_human", {"summary": "Customer needs a person."}), Fail(_limited())])
+    status, events = await chat(client, who, {"message": "Please get me a person."})
+    assert status == 200
+    assert any(e["type"] == "error" for e in events) and not any(e["type"] == "reply" for e in events)
+    card = next(e["card"] for e in events if e["type"] == "action")
+    return events[0]["turn_id"], card
+
+
+async def tc01(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that fails after a successful gateway action still shows that action's card after a reload,
+    beside the plain error."""
+    _, card = await _failed_after_escalation(client, who)
+    last = (await _latest(client, who))[-1]
+    out = [] if last["content"] == INTERRUPTED else [f"content: {last['content']!r}"]
+    refs = [a["reference"] for a in last["actions"]]
+    return out + ([] if refs == [card["reference"]] else [f"cards: {refs}, expected {[card['reference']]}"])
+
+
+async def tc02(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that DID reply shows its card once, with the reply: never a second, synthetic copy."""
+    script(
+        [CallTool("escalate_to_human", {"summary": "Customer needs a person."}), Say("I've passed this on.")]
+    )
+    _, events = await chat(client, who, {"message": "Please get me a person."})
+    ref = next(e["card"]["reference"] for e in events if e["type"] == "action")
+    shown = [a["reference"] for m in await _latest(client, who) for a in m["actions"]].count(ref)
+    texts = [m["content"] for m in await _latest(client, who)]
+    return ([] if shown == 1 else [f"card shown {shown} times"]) + (
+        [] if INTERRUPTED not in texts else ["the error text appears for a turn that replied"]
+    )
+
+
+async def tc03(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that fails with NO action adds nothing: no error message, no card."""
+    script([Fail(_limited())])
+    await chat(client, who, {"message": "status?"})
+    texts = [m["content"] for m in await _latest(client, who)]
+    return [] if INTERRUPTED not in texts else ["an error message for a turn where nothing was done"]
+
+
+async def tc04(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """The card is saved when the gateway returns: it is stored for the turn although no reply ever was."""
+    turn_id, card = await _failed_after_escalation(client, who)
+    saved = await db.fetch(
+        "SELECT card FROM app.turn_action_cards WHERE turn_id = $1 AND customer_id = $2",
+        uuid.UUID(turn_id),
+        who.customer_id,
+    )
+    refs = [(json.loads(c) if isinstance(c := r["card"], str) else c)["reference"] for r in saved]
+    return [] if refs == [card["reference"]] else [f"saved: {refs}"]
+
+
+async def _orphan_turn(db: asyncpg.Connection, who: SignedIn, age_minutes: int) -> str:
+    """A turn whose process died after the gateway acted: a saved card, no reply, no run_log row."""
+    conv_id = await db.fetchval(
+        "INSERT INTO app.conversations (customer_id) VALUES ($1) RETURNING id", who.customer_id
+    )
+    turn_id = uuid.uuid4()
+    at = datetime.now(UTC) - timedelta(minutes=age_minutes)
+    await db.execute(
+        "INSERT INTO app.messages (conversation_id, turn_id, role, content, client_message_id, created_at)"
+        " VALUES ($1, $2, 'customer', 'refund please', $3, $4)",
+        conv_id, turn_id, uuid.uuid4(), at,
+    )  # fmt: skip
+    card = {"action": "escalate_to_human", "state": "completed", "order_id": None, "amount": None,
+            "reference": "ACT-999001", "explanation": "A member of our support team will pick this up.",
+            "at": at.isoformat()}  # fmt: skip
+    await db.execute(
+        "INSERT INTO app.turn_action_cards (conversation_id, turn_id, customer_id, card, created_at)"
+        " VALUES ($1, $2, $3, $4::jsonb, $5)",
+        conv_id, turn_id, who.customer_id, json.dumps(card), at,
+    )  # fmt: skip
+    await db.execute(
+        "UPDATE app.conversations SET updated_at = now() + interval '1 day' WHERE id = $1", conv_id
+    )
+    return "ACT-999001"
+
+
+async def tc05(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that crashed (no run_log) and is older than 10 minutes is over: its card shows."""
+    ref = await _orphan_turn(db, who, age_minutes=11)
+    last = (await _latest(client, who))[-1]
+    return (
+        []
+        if (last["content"], [a["reference"] for a in last["actions"]]) == (INTERRUPTED, [ref])
+        else [f"got {last['content']!r} {[a['reference'] for a in last['actions']]}"]
+    )
+
+
+async def tc06(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn still in progress (no run_log yet, a minute old) is not shown as failed."""
+    await _orphan_turn(db, who, age_minutes=1)
+    texts = [m["content"] for m in await _latest(client, who)]
+    return [] if INTERRUPTED not in texts else ["a turn still in progress is shown as failed"]
+
+
+async def _run_tc(name: str, client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    probe = {"tc01": tc01, "tc02": tc02, "tc03": tc03, "tc04": tc04, "tc05": tc05, "tc06": tc06}[name]
+    try:
+        return await probe(client, who, db)
+    except Exception as exc:  # a probe that breaks under a mutation has caught it
+        return [f"{type(exc).__name__}: {exc}"]
+
+
+@pytest.mark.parametrize("name", ["tc01", "tc02", "tc03", "tc04", "tc05", "tc06"])
+async def test_turn_card_probe(
+    name: str, client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    assert await _run_tc(name, client, people[0], db) == []
+
+
+def _m74(mp: pytest.MonkeyPatch) -> None:  # the gateway no longer saves the card when it returns
+    from tollgate.actions import gateway
+
+    async def nothing(*_a: object) -> None:
+        return None
+
+    mp.setattr(gateway, "_save_card", nothing)
+
+
+def _m75(mp: pytest.MonkeyPatch) -> None:  # a reload never shows a failed turn's cards
+    mp.setattr(conversations_domain(), "_shows_interrupted", lambda *_a: False)
+
+
+def _m76(mp: pytest.MonkeyPatch) -> None:  # shown for every turn with cards, replied or still running
+    mp.setattr(conversations_domain(), "_shows_interrupted", lambda *_a: True)
+
+
+def conversations_domain() -> Any:
+    from tollgate.domain import conversations
+
+    return conversations
+
+
+TURN_CARD_KILLS: dict[str, tuple[Any, tuple[str, ...]]] = {
+    "M74": (_m74, ("tc01", "tc04")),
+    "M75": (_m75, ("tc01", "tc05")),
+    "M76": (_m76, ("tc02", "tc06")),
+}
+
+
+@pytest.mark.parametrize("mutant", sorted(TURN_CARD_KILLS))
+async def test_turn_card_mutation_is_killed(
+    mutant: str,
+    client: httpx.AsyncClient,
+    people: tuple[SignedIn, SignedIn, str],
+    db: asyncpg.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch, probes = TURN_CARD_KILLS[mutant]
+    patch(monkeypatch)
+    survivors = [p for p in probes if not await _run_tc(p, client, people[0], db)]
+    assert survivors == [], f"{mutant}: these probes still pass under the mutation"
+
+
+async def test_the_chat_model_is_paced_under_the_providers_per_minute_limits() -> None:
+    """Owner, 2026-11-14: chat waits for per-minute headroom before each model call, as eval runs do, so a
+    refund turn's reply is not refused mid-turn. Checked on the app as it starts (not a scripted stand-in)."""
+    from tollgate.config import LLMSettings
+    from tollgate.llm.throttle import ThrottledModel
+
+    async with app.router.lifespan_context(app):
+        model = app.state.llm.model
+        assert isinstance(model, ThrottledModel)
+        limits = LLMSettings()
+        assert (model.throttle.tokens_per_minute, model.throttle.requests_per_minute) == (
+            limits.llm_tokens_per_minute,
+            limits.llm_requests_per_minute,
+        )

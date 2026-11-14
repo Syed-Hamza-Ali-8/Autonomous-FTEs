@@ -1,0 +1,51 @@
+{
+  "suite": "tests/test_read_isolation.py",
+  "baseline_before": {
+    "passed": true,
+    "tail": "................                                                         [100%]\n16 passed in 5.57s"
+  },
+  "baseline_after": {
+    "passed": true,
+    "tail": "................                                                         [100%]\n16 passed in 4.45s"
+  },
+  "mutations": [
+    {
+      "mutation": "list_orders_unfiltered",
+      "removes": "list_orders filters by customer in SQL",
+      "targets": [
+        "tests/test_read_isolation.py::test_list_orders_returns_only_own_orders",
+        "tests/test_read_isolation.py::test_get_my_orders_lists_only_own"
+      ],
+      "target_failed": true,
+      "tail": "FAILED tests/test_read_isolation.py::test_list_orders_returns_only_own_orders\nFAILED tests/test_read_isolation.py::test_get_my_orders_lists_only_own - Asse...\n2 failed in 3.47s"
+    },
+    {
+      "mutation": "get_order_unfiltered",
+      "removes": "get_order loads the order WHERE id AND customer_id",
+      "targets": [
+        "tests/test_read_isolation.py::test_get_order_of_other_customer_is_none",
+        "tests/test_read_isolation.py::test_foreign_missing_and_malformed_orders_look_identical"
+      ],
+      "target_failed": true,
+      "tail": "FAILED tests/test_read_isolation.py::test_foreign_missing_and_malformed_orders_look_identical[get_shipment]\nFAILED tests/test_read_isolation.py::test_foreign_missing_and_malformed_orders_look_identical[get_refund_history]\n4 failed in 4.52s"
+    },
+    {
+      "mutation": "get_shipment_unfiltered",
+      "removes": "get_shipment joins orders and filters by customer",
+      "targets": [
+        "tests/test_read_isolation.py::test_get_order_of_other_customer_is_none"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_read_isolation.py::test_get_order_of_other_customer_is_none\n1 failed in 4.42s"
+    },
+    {
+      "mutation": "refund_history_unfiltered",
+      "removes": "get_refund_history checks ownership in SQL",
+      "targets": [
+        "tests/test_read_isolation.py::test_get_order_of_other_customer_is_none"
+      ],
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_read_isolation.py::test_get_order_of_other_customer_is_none\n1 failed in 4.56s"
+    }
+  ]
+}

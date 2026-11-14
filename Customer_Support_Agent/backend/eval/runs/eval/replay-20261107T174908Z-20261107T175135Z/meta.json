@@ -1,0 +1,16 @@
+{
+  "run_id": "replay-20261107T174908Z-20261107T175135Z",
+  "model": "openai/gpt-oss-120b",
+  "prompt_version": "support-v1",
+  "replay_of": "20261107T174908Z",
+  "recorded": false,
+  "clock": "2026-11-07T12:00:00+00:00",
+  "scenarios_sha": "506e9039a8355d54",
+  "fixture_sha": "ef2a584a1f3baeb9",
+  "selection": {
+    "phase": 2,
+    "subset": false,
+    "only": null
+  },
+  "started_at": "2026-11-07T17:51:35.466183+00:00"
+}

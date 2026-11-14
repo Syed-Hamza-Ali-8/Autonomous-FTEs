@@ -1,0 +1,29 @@
+# Normalize all text files to LF in the repo and working tree (WSL + Windows editors)
+* text=auto eol=lf
+
+*.sh     text eol=lf
+*.py     text eol=lf
+*.sql    text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.json   text eol=lf
+*.jsonl  text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.md     text eol=lf
+*.toml   text eol=lf
+*.css    text eol=lf
+
+# Lockfiles: no textual merges
+uv.lock            text eol=lf -diff linguist-generated
+package-lock.json  text eol=lf -diff linguist-generated
+
+# Generated files
+frontend/src/types/api.ts  linguist-generated
+
+# Binary
+*.png    binary
+*.jpg    binary
+*.ico    binary
+*.woff   binary
+*.woff2  binary

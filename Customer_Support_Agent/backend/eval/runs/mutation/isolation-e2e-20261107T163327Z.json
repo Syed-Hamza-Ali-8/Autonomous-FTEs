@@ -1,0 +1,34 @@
+{
+  "baseline_before": true,
+  "baseline_after": true,
+  "mutations": [
+    {
+      "name": "no_user_keys_and_no_clear",
+      "required": true,
+      "edits": [
+        "src/lib/queries.ts",
+        "src/lib/auth.tsx"
+      ],
+      "failed": true,
+      "tail": "Error: expect(locator).toBeVisible() failed\n    Expected: visible\n    Error: element(s) not found\n  1 failed"
+    },
+    {
+      "name": "no_clear_only",
+      "required": false,
+      "edits": [
+        "src/lib/auth.tsx"
+      ],
+      "failed": false,
+      "tail": "1 passed (25.8s)"
+    },
+    {
+      "name": "no_user_keys_only",
+      "required": false,
+      "edits": [
+        "src/lib/queries.ts"
+      ],
+      "failed": false,
+      "tail": "1 passed (24.6s)"
+    }
+  ]
+}

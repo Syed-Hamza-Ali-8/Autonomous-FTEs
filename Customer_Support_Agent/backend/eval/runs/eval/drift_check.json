@@ -1,0 +1,10 @@
+{
+  "run_id": "replay-20261111T184142Z-20261114T192410Z",
+  "scenarios": 47,
+  "drifted_calls": 0,
+  "detail": null,
+  "build": "618a2059dbdc9b459e391b8c111af54591c559f388862df8c6d38af571893d2c",
+  "prompt_version": "support-v4",
+  "tool_schema_version": "5364a60e5f71",
+  "at": "2026-11-14T19:24:40.266198+00:00"
+}

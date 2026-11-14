@@ -1,0 +1,40 @@
+{
+  "baseline_before": {
+    "passed": true,
+    "tail": ".......                                                                  [100%]\n7 passed in 14.22s"
+  },
+  "baseline_after": {
+    "passed": true,
+    "tail": ".......                                                                  [100%]\n7 passed in 14.06s"
+  },
+  "mutations": [
+    {
+      "mutation": "grant_api_roles_on_app",
+      "removes": "no privileges for anon/authenticated in app",
+      "target": "test_api_roles_have_no_privileges_in_app",
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_supabase_lockdown.py::test_api_roles_have_no_privileges_in_app\n1 failed in 0.25s"
+    },
+    {
+      "mutation": "public_execute_on_new_functions",
+      "removes": "global default REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC",
+      "target": "test_api_roles_have_no_privileges_in_app",
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_supabase_lockdown.py::test_api_roles_have_no_privileges_in_app\n1 failed in 0.23s"
+    },
+    {
+      "mutation": "app_table_without_rls",
+      "removes": "RLS enabled on every app table",
+      "target": "test_rls_enabled_on_every_app_table",
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_supabase_lockdown.py::test_rls_enabled_on_every_app_table\n1 failed in 0.23s"
+    },
+    {
+      "mutation": "expose_app_in_data_api",
+      "removes": "app not served by the REST Data API",
+      "target": "test_anon_cannot_read_app_table_via_rest",
+      "target_failed": true,
+      "tail": "=========================== short test summary info ============================\nFAILED tests/test_supabase_lockdown.py::test_anon_cannot_read_app_table_via_rest\n1 failed in 0.76s"
+    }
+  ]
+}

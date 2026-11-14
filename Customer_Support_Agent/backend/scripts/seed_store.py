@@ -1,0 +1,506 @@
+"""Seed the Northwind Goods store (spec Section 4.1; DECISIONS C3, E3).
+
+Usage (from backend/):
+  uv run python scripts/seed_store.py write [--check]   # eval/fixtures/store_seed.json -> supabase/seed.sql
+  uv run python scripts/seed_store.py apply [--reset]    # load seed.sql into LOCAL db + demo Auth users;
+                                                         # refuses if store data exists unless --reset
+  uv run python scripts/seed_store.py apply --target cloud [--reset]   # demo project; asks to confirm
+  uv run python scripts/seed_store.py staff              # (re)seed only the support lead, LOCAL (E3)
+  uv run python scripts/seed_store.py customers          # re-link only the demo customers' sign-ins, LOCAL
+
+`supabase db reset` also loads seed.sql (config [db.seed]); `apply` then only needs the Auth step,
+but running it in full is idempotent. Demo passwords come from .env (never committed, never printed).
+The cloud target shows the project host, requires typing it back, and refuses when store data
+already exists unless --reset is given. Tests never use this script's cloud path (invariant 20).
+"""
+
+import argparse
+import asyncio
+import json
+import sys
+import uuid
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+import asyncpg
+import httpx
+from pydantic import SecretStr, ValidationError
+from pydantic_settings import BaseSettings
+
+from tollgate.config import _COMMON, REPO_ROOT
+
+FIXTURE = Path(__file__).resolve().parents[1] / "eval" / "fixtures" / "store_seed.json"
+SEED_SQL = REPO_ROOT / "supabase" / "seed.sql"
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+STORE_TABLES = (
+    "product_reviews",
+    "refunds",
+    "shipments",
+    "payments",
+    "order_items",
+    "orders",
+    "products",
+    "customers",
+)
+DEPENDENT_TABLES = (
+    "audit_log",
+    "tool_calls",
+    "run_log",
+    "messages",
+    "idempotency_keys",
+    "store_credits",
+    "tickets",
+    "action_requests",
+    "conversations",
+)
+
+
+# Each subcommand loads only the settings it uses (tests/test_seed_settings.py): `staff` never needs the demo
+# customers' passwords, and `apply` never needs the support lead's.
+
+
+class _ConnectionSettings(BaseSettings):
+    """Where to seed: the database and the Auth admin API."""
+
+    model_config = _COMMON
+
+    database_url: SecretStr
+    supabase_url: str
+    supabase_service_role_key: SecretStr
+    cloud_database_url: SecretStr | None = None
+    cloud_supabase_url: str | None = None
+    cloud_supabase_service_role_key: SecretStr | None = None
+
+
+class CustomerSeedSettings(_ConnectionSettings):
+    """`apply` and `customers`: the store data and the two demo customers' sign-ins."""
+
+    demo_customer_email: str
+    demo_customer_password: SecretStr
+    demo_target_email: str
+    demo_target_password: SecretStr
+
+
+class StaffSeedSettings(_ConnectionSettings):
+    """`staff` (and `apply`, when set): the support lead (E3, J13), its Auth user and staff row together."""
+
+    demo_staff_email: str = "maya.chen@northwind.example"
+    demo_staff_password: SecretStr
+
+
+# --- seed.sql rendering (literal SQL file, so values are escaped, never formatted raw) -------------
+
+
+def lit(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, (dict, list)):
+        return lit(json.dumps(value, ensure_ascii=False, sort_keys=True)) + "::jsonb"
+    text = str(value)
+    if "\x00" in text:
+        raise ValueError("NUL byte in fixture value")
+    return "'" + text.replace("'", "''") + "'"  # standard_conforming_strings = on (Postgres default)
+
+
+# Every date is "<base> - N days". The committed seed.sql uses the fixture's fixed instant
+# (fixture_now), so dates never move and pinned-clock evals give the same answer forever.
+# `apply --relative-dates` renders with now() instead, for a live demo seeded on the real clock.
+_BASE = "now()"
+
+
+def ago(days: int | None) -> str:
+    return "NULL" if days is None else f"{_BASE} - interval '{int(days)} days'"
+
+
+def events_sql(events: list[dict[str, Any]]) -> str:
+    """Shipment events as a jsonb array whose `at` values are resolved against now() at load time."""
+    parts = [
+        f"jsonb_build_object('at', {ago(e['days_ago'])}, 'description', {lit(e['description'])})"
+        for e in events
+    ]
+    return "jsonb_build_array(" + ", ".join(parts) + ")"
+
+
+def rows(table: str, cols: list[str], values: list[list[str]]) -> str:
+    body = ",\n".join("  (" + ", ".join(v) + ")" for v in values)
+    return f"INSERT INTO app.{table} ({', '.join(cols)}) VALUES\n{body};\n"
+
+
+def render_seed_sql(fx: dict[str, Any], relative_dates: bool = False) -> str:
+    global _BASE
+    _BASE = "now()" if relative_dates else f"{lit(fx['fixture_now'])}::timestamptz"
+    out = [
+        "-- GENERATED by backend/scripts/seed_store.py from eval/fixtures/store_seed.json. Do not edit.\n"
+        "-- Dates are fixture_now minus the fixture offsets (fixed instant), unless rendered with\n"
+        "-- --relative-dates for a live demo.\n",
+        # One transaction: orders and their refunds land together, so the deferred order-status
+        # consistency check (actions migration) sees a finished store.
+        "BEGIN;\n",
+        "TRUNCATE "
+        + ", ".join(f"app.{t}" for t in DEPENDENT_TABLES + STORE_TABLES)
+        + " RESTART IDENTITY CASCADE;\n",
+    ]
+    out.append(
+        rows(
+            "customers",
+            ["id", "email", "name", "tier", "created_at"],
+            [
+                [lit(c["id"]), lit(c["email"]), lit(c["name"]), lit(c["tier"]), ago(200)]
+                for c in fx["customers"]
+            ],
+        )
+    )
+    out.append(
+        rows(
+            "products",
+            ["id", "name", "category", "final_sale", "digital", "currency", "price_cents"],
+            [
+                [
+                    lit(p[k])
+                    for k in ("id", "name", "category", "final_sale", "digital", "currency", "price_cents")
+                ]
+                for p in fx["products"]
+            ],
+        )
+    )
+    out.append(
+        rows(
+            "orders",
+            [
+                "id",
+                "customer_id",
+                "status",
+                "currency",
+                "total_cents",
+                "shipping_address",
+                "notes",
+                "placed_at",
+                "paid_at",
+                "packed_at",
+                "delivered_at",
+            ],
+            [
+                [
+                    lit(o["id"]),
+                    lit(o["customer_id"]),
+                    lit(o["status"]),
+                    lit(o["currency"]),
+                    lit(o["total_cents"]),
+                    lit(o["shipping_address"]),
+                    lit(o["notes"]),
+                    ago(o["placed_days_ago"]),
+                    ago(o["paid_days_ago"]),
+                    ago(o["packed_days_ago"]),
+                    ago(o["delivered_days_ago"]),
+                ]
+                for o in fx["orders"]
+            ],
+        )
+    )
+    out.append(
+        rows(
+            "order_items",
+            ["order_id", "product_id", "currency", "quantity", "unit_price_cents", "downloaded_at"],
+            [
+                [
+                    lit(i["order_id"]),
+                    lit(i["product_id"]),
+                    lit(i["currency"]),
+                    lit(i["quantity"]),
+                    lit(i["unit_price_cents"]),
+                    ago(i["downloaded_days_ago"]),
+                ]
+                for i in fx["order_items"]
+            ],
+        )
+    )
+    out.append(
+        rows(
+            "payments",
+            ["id", "order_id", "currency", "amount_cents", "captured_at"],
+            [
+                [
+                    lit(p["id"]),
+                    lit(p["order_id"]),
+                    lit(p["currency"]),
+                    lit(p["amount_cents"]),
+                    ago(p["captured_days_ago"]),
+                ]
+                for p in fx["payments"]
+            ],
+        )
+    )
+    out.append(
+        rows(
+            "shipments",
+            [
+                "id",
+                "order_id",
+                "carrier",
+                "tracking_number",
+                "status",
+                "events",
+                "shipped_at",
+                "delivered_at",
+            ],
+            [
+                [
+                    lit(s["id"]),
+                    lit(s["order_id"]),
+                    lit(s["carrier"]),
+                    lit(s["tracking_number"]),
+                    lit(s["status"]),
+                    events_sql(s["events"]),
+                    ago(s["shipped_days_ago"]),
+                    ago(s["delivered_days_ago"]),
+                ]
+                for s in fx["shipments"]
+            ],
+        )
+    )
+    out.append(
+        rows(
+            "refunds",
+            ["id", "order_id", "currency", "amount_cents", "status", "source", "reason", "created_at"],
+            [
+                [
+                    lit(r["id"]),
+                    lit(r["order_id"]),
+                    lit(r["currency"]),
+                    lit(r["amount_cents"]),
+                    lit(r["status"]),
+                    lit(r["source"]),
+                    lit(r["reason"]),
+                    ago(r["created_days_ago"]),
+                ]
+                for r in fx["refunds"]
+            ],
+        )
+    )
+    out.append(
+        rows(
+            "product_reviews",
+            ["id", "product_id", "customer_id", "rating", "body", "created_at"],
+            [
+                [
+                    lit(r["id"]),
+                    lit(r["product_id"]),
+                    lit(r["customer_id"]),
+                    lit(r["rating"]),
+                    lit(r["body"]),
+                    ago(r["created_days_ago"]),
+                ]
+                for r in fx["product_reviews"]
+            ],
+        )
+    )
+    out.append("COMMIT;\n")
+    return "\n".join(out)
+
+
+# --- applying ----------------------------------------------------------------------------------------
+
+
+async def apply_sql(dsn: str, sql: str, reset: bool, guard_existing: bool) -> None:
+    conn = await asyncpg.connect(dsn)
+    try:
+        if guard_existing and not reset:
+            existing = await conn.fetchval("SELECT count(*) FROM app.customers")
+            if existing:
+                raise SystemExit(
+                    f"refusing: target already has {existing} customers; pass --reset to replace them."
+                    " --reset EMPTIES the store, conversations, audit log, run_log and tool_calls first."
+                    " To fix only the demo sign-ins, run `seed_store.py customers` (and `staff`) instead."
+                )
+        await conn.execute(sql)  # the generated file is one script; asyncpg runs it in one round trip
+    finally:
+        await conn.close()
+
+
+async def ensure_auth_user(client: httpx.AsyncClient, email: str, password: SecretStr) -> str:
+    """Create the Auth user, or reset its password to the .env value if it exists. Returns its id."""
+    found = None
+    page = 1
+    while found is None:
+        resp = await client.get("/admin/users", params={"page": page, "per_page": 200})
+        resp.raise_for_status()
+        users = resp.json().get("users", [])
+        found = next((u for u in users if u.get("email") == email), None)
+        if len(users) < 200:
+            break
+        page += 1
+    body = {"email": email, "password": password.get_secret_value(), "email_confirm": True}
+    if found is None:
+        resp = await client.post("/admin/users", json=body)
+    else:
+        resp = await client.put(f"/admin/users/{found['id']}", json=body)
+    resp.raise_for_status()
+    return str(resp.json()["id"])
+
+
+async def link_demo_users(s: CustomerSeedSettings, dsn: str, api_url: str, service_key: SecretStr) -> None:
+    key = service_key.get_secret_value()
+    demo = [
+        ("CUS-001", s.demo_customer_email, s.demo_customer_password),
+        ("CUS-002", s.demo_target_email, s.demo_target_password),
+    ]
+    for _, _, pw in demo:
+        if len(pw.get_secret_value()) < 12:
+            raise SystemExit("demo passwords must be set in .env and be at least 12 characters")
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+    async with httpx.AsyncClient(base_url=f"{api_url}/auth/v1", headers=headers, timeout=15) as client:
+        conn = await asyncpg.connect(dsn)
+        try:
+            for customer_id, email, password in demo:
+                fixture_email = await conn.fetchval(
+                    "SELECT email FROM app.customers WHERE id = $1", customer_id
+                )
+                if fixture_email != email.lower():
+                    raise SystemExit(f"{customer_id}: .env email does not match the fixture email")
+                uid = await ensure_auth_user(client, email, password)
+                await conn.execute(
+                    "UPDATE app.customers SET auth_user_id = $1 WHERE id = $2", uid, customer_id
+                )
+                print(f"{customer_id}: Auth user linked")
+        finally:
+            await conn.close()
+
+
+STAFF_NAME = "Maya Chen"
+
+
+async def link_demo_staff(s: StaffSeedSettings, dsn: str, api_url: str, service_key: SecretStr) -> None:
+    """The support lead (E3): the Auth user (password from .env, never shown) and its staff_users row,
+    together. Its role comes from that row, never from the token (invariant 22)."""
+    password, email = s.demo_staff_password, s.demo_staff_email.strip().lower()
+    if len(password.get_secret_value()) < 12:
+        raise SystemExit("DEMO_STAFF_PASSWORD must be set in .env and be at least 12 characters")
+    key = service_key.get_secret_value()
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+    conn = await asyncpg.connect(dsn)
+    try:
+        if await conn.fetchval("SELECT 1 FROM app.customers WHERE lower(email) = $1", email):
+            raise SystemExit("refusing: the staff email belongs to a customer; one login is never both")
+        async with httpx.AsyncClient(base_url=f"{api_url}/auth/v1", headers=headers, timeout=15) as client:
+            uid = await ensure_auth_user(client, email, password)
+        await conn.execute(
+            "INSERT INTO app.staff_users (auth_user_id, name, email, role)"
+            " VALUES ($1, $2, $3, 'support_lead')"
+            " ON CONFLICT (email) DO UPDATE SET auth_user_id = EXCLUDED.auth_user_id, name = EXCLUDED.name",
+            uuid.UUID(uid),
+            STAFF_NAME,
+            email,
+        )
+        print(f"support lead {email}: Auth user and staff row linked")
+    finally:
+        await conn.close()
+
+
+def confirm_cloud(api_url: str) -> None:
+    host = urlsplit(api_url).hostname or "?"
+    print(f"TARGET: cloud Supabase project at {host}")
+    typed = input(f"Type the host ({host}) to seed the CLOUD project: ").strip()
+    if typed != host:
+        raise SystemExit("not confirmed; nothing changed")
+
+
+async def cmd_apply(target: str, reset: bool, relative_dates: bool) -> None:
+    s = CustomerSeedSettings()  # values come from .env
+    sql = (
+        render_seed_sql(json.loads(FIXTURE.read_text()), relative_dates=True)
+        if relative_dates
+        else SEED_SQL.read_text()
+    )
+    if target == "local":
+        dsn, api, key = s.database_url.get_secret_value(), s.supabase_url, s.supabase_service_role_key
+        if {urlsplit(dsn).hostname, urlsplit(api).hostname} - LOCAL_HOSTS:
+            raise SystemExit("refusing: DATABASE_URL / SUPABASE_URL are not local")
+        # Guarded like the cloud path (C3): seed.sql TRUNCATEs every store table, run_log and tool_calls
+        # included, so an existing store is replaced only with --reset (fresh-clone finding D, 2026-11-14).
+        await apply_sql(dsn, sql, reset=reset, guard_existing=True)
+    else:
+        if not (s.cloud_database_url and s.cloud_supabase_url and s.cloud_supabase_service_role_key):
+            raise SystemExit(
+                "CLOUD_DATABASE_URL, CLOUD_SUPABASE_URL and CLOUD_SUPABASE_SERVICE_ROLE_KEY are required"
+            )
+        dsn, api, key = (
+            s.cloud_database_url.get_secret_value(),
+            s.cloud_supabase_url,
+            s.cloud_supabase_service_role_key,
+        )
+        confirm_cloud(api)
+        await apply_sql(dsn, sql, reset=reset, guard_existing=True)
+    print(f"seed.sql applied to {target}")
+    await link_demo_users(s, dsn, api, key)
+    try:
+        staff = StaffSeedSettings()
+    except ValidationError:
+        print("DEMO_STAFF_PASSWORD is not set: the support lead was not created (run `staff` once it is)")
+        return
+    await link_demo_staff(staff, dsn, api, key)
+
+
+async def cmd_customers() -> None:
+    """Re-link only the two demo customers' sign-ins on the LOCAL stack, from .env. Loads no SQL and leaves
+    the store data as it is (fresh-clone finding E, 2026-11-14): the fix when a demo customer cannot sign
+    in."""
+    s = CustomerSeedSettings()
+    dsn, api = s.database_url.get_secret_value(), s.supabase_url
+    if {urlsplit(dsn).hostname, urlsplit(api).hostname} - LOCAL_HOSTS:
+        raise SystemExit("refusing: DATABASE_URL / SUPABASE_URL are not local")
+    await link_demo_users(s, dsn, api, s.supabase_service_role_key)
+
+
+async def cmd_staff() -> None:
+    """(Re)seed only the support lead on the LOCAL stack, leaving the store data as it is."""
+    s = StaffSeedSettings()
+    dsn, api = s.database_url.get_secret_value(), s.supabase_url
+    if {urlsplit(dsn).hostname, urlsplit(api).hostname} - LOCAL_HOSTS:
+        raise SystemExit("refusing: DATABASE_URL / SUPABASE_URL are not local")
+    await link_demo_staff(s, dsn, api, s.supabase_service_role_key)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    w = sub.add_parser("write")
+    w.add_argument("--check", action="store_true")
+    a = sub.add_parser("apply")
+    a.add_argument("--target", choices=("local", "cloud"), default="local")
+    a.add_argument("--reset", action="store_true", help="replace existing store data (empties run_log too)")
+    a.add_argument(
+        "--relative-dates",
+        action="store_true",
+        help="anchor dates to the real now() (live demo); default is the fixed fixture_now",
+    )
+    sub.add_parser("staff", help="(re)seed only the support lead on the local stack, from .env")
+    sub.add_parser("customers", help="re-link only the demo customers' sign-ins (local stack, from .env)")
+    args = parser.parse_args()
+
+    if args.cmd == "customers":
+        asyncio.run(cmd_customers())
+        return 0
+
+    if args.cmd == "staff":
+        asyncio.run(cmd_staff())
+        return 0
+    if args.cmd == "write":
+        text = render_seed_sql(json.loads(FIXTURE.read_text()))
+        if args.check:
+            same = SEED_SQL.exists() and SEED_SQL.read_text() == text
+            print("seed.sql up to date" if same else "seed.sql differs from fixture")
+            return 0 if same else 1
+        SEED_SQL.write_text(text)
+        print(f"wrote {SEED_SQL.relative_to(REPO_ROOT)}")
+        return 0
+    asyncio.run(cmd_apply(args.target, args.reset, args.relative_dates))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

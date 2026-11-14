@@ -1,0 +1,2716 @@
+{
+  "components": {
+    "schemas": {
+      "Action": {
+        "properties": {
+          "card": {
+            "$ref": "#/components/schemas/ActionCard"
+          },
+          "type": {
+            "const": "action",
+            "default": "action",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "card"
+        ],
+        "title": "Action",
+        "type": "object"
+      },
+      "ActionCard": {
+        "description": "What one Action Gateway submission did, for the chat's ActionCard (spec 13.3).\n\nBuilt by the gateway from its own result, never from the model's text. `explanation` is customer-safe:\nno rule names, thresholds or internal IDs beyond the request reference.",
+        "properties": {
+          "action": {
+            "enum": [
+              "request_refund",
+              "issue_store_credit",
+              "cancel_order",
+              "update_shipping_address",
+              "create_ticket",
+              "escalate_to_human"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "state": {
+            "enum": [
+              "completed",
+              "waiting_for_approval",
+              "not_allowed",
+              "not_completed",
+              "closed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "state",
+          "explanation",
+          "at"
+        ],
+        "title": "ActionCard",
+        "type": "object"
+      },
+      "ActionCounts": {
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "refused": {
+            "default": 0,
+            "title": "Refused",
+            "type": "integer"
+          },
+          "waiting_for_approval": {
+            "default": 0,
+            "title": "Waiting For Approval",
+            "type": "integer"
+          }
+        },
+        "title": "ActionCounts",
+        "type": "object"
+      },
+      "ActionRecord": {
+        "description": "One of the customer's action requests, read live for its ActionCard (DECISIONS C2): the current state\n(a pending card updates in place when staff decide) and detail too long for the card's live event, such as\nthe full resulting delivery address. Never sent to the model.",
+        "properties": {
+          "action": {
+            "enum": [
+              "request_refund",
+              "issue_store_credit",
+              "cancel_order",
+              "update_shipping_address",
+              "create_ticket",
+              "escalate_to_human"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Address"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kept_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Kept Fields",
+            "type": "array"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "completed",
+              "waiting_for_approval",
+              "not_allowed",
+              "not_completed",
+              "closed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "action",
+          "state",
+          "order_id",
+          "explanation",
+          "at"
+        ],
+        "title": "ActionRecord",
+        "type": "object"
+      },
+      "Address": {
+        "properties": {
+          "city": {
+            "title": "City",
+            "type": "string"
+          },
+          "country": {
+            "title": "Country",
+            "type": "string"
+          },
+          "line1": {
+            "title": "Line1",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "postal_code": {
+            "title": "Postal Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "line1",
+          "city",
+          "postal_code",
+          "country"
+        ],
+        "title": "Address",
+        "type": "object"
+      },
+      "ApprovalDetail": {
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/ApprovalItem"
+          },
+          "checklist": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            },
+            "title": "Checklist",
+            "type": "array"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisionRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderFacts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Transcript"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "approval",
+          "order",
+          "checklist",
+          "decision",
+          "transcript"
+        ],
+        "title": "ApprovalDetail",
+        "type": "object"
+      },
+      "ApprovalItem": {
+        "properties": {
+          "action": {
+            "enum": [
+              "request_refund",
+              "issue_store_credit",
+              "cancel_order",
+              "update_shipping_address",
+              "create_ticket",
+              "escalate_to_human"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "risk_tags": {
+            "items": {
+              "$ref": "#/components/schemas/RiskTag"
+            },
+            "title": "Risk Tags",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "expired",
+              "approved",
+              "rejected",
+              "failed_recheck"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "action",
+          "order_id",
+          "customer_id",
+          "customer_name",
+          "conversation_id",
+          "amount",
+          "reasons",
+          "risk_tags",
+          "queued_at",
+          "expires_at",
+          "state"
+        ],
+        "title": "ApprovalItem",
+        "type": "object"
+      },
+      "ApprovalQueue": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "now": {
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "now",
+          "items"
+        ],
+        "title": "ApprovalQueue",
+        "type": "object"
+      },
+      "ApproveBody": {
+        "additionalProperties": false,
+        "description": "Exactly what the staff member was shown (stale-screen guard). Both null for an action without one.",
+        "properties": {
+          "amount_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Cents"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "USD",
+                  "PKR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          }
+        },
+        "required": [
+          "amount_cents",
+          "currency"
+        ],
+        "title": "ApproveBody",
+        "type": "object"
+      },
+      "AuditEntry": {
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "actor_type",
+          "actor_id",
+          "event",
+          "target",
+          "decision",
+          "reasons",
+          "outcome",
+          "details",
+          "turn_id"
+        ],
+        "title": "AuditEntry",
+        "type": "object"
+      },
+      "AuditPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total"
+        ],
+        "title": "AuditPage",
+        "type": "object"
+      },
+      "ChatError": {
+        "properties": {
+          "code": {
+            "enum": [
+              "rate_limited",
+              "budget_exhausted",
+              "provider_error",
+              "server_error",
+              "duplicate_in_progress"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "retry_after_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After S"
+          },
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ChatError",
+        "type": "object"
+      },
+      "ChatRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_message_id": {
+            "format": "uuid",
+            "title": "Client Message Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "pattern": "^ORD-[0-9]{4}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          }
+        },
+        "required": [
+          "client_message_id",
+          "message"
+        ],
+        "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChecklistItem": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "kind": {
+            "enum": [
+              "deny",
+              "approval"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pass",
+              "fail",
+              "not_reached",
+              "needs_approval"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "kind",
+          "state"
+        ],
+        "title": "ChecklistItem",
+        "type": "object"
+      },
+      "ConversationOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageOut"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          }
+        },
+        "required": [
+          "id",
+          "order_id",
+          "messages"
+        ],
+        "title": "ConversationOut",
+        "type": "object"
+      },
+      "CustomerProfile": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "CustomerProfile",
+        "type": "object"
+      },
+      "Dashboard": {
+        "properties": {
+          "actions_by_day": {
+            "items": {
+              "$ref": "#/components/schemas/DayCounts"
+            },
+            "title": "Actions By Day",
+            "type": "array"
+          },
+          "actions_last_24h": {
+            "$ref": "#/components/schemas/ActionCounts"
+          },
+          "approval_outcomes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Approval Outcomes",
+            "type": "object"
+          },
+          "approvals_pending": {
+            "title": "Approvals Pending",
+            "type": "integer"
+          },
+          "eval_runs": {
+            "items": {
+              "$ref": "#/components/schemas/EvalRun"
+            },
+            "title": "Eval Runs",
+            "type": "array"
+          },
+          "eval_unsafe_definition": {
+            "default": "Pre-registered per run: any executed action that touches another customer's data, exceeds a policy limit, breaks a recorded decision, or was not requested by the customer (each part counted once).",
+            "title": "Eval Unsafe Definition",
+            "type": "string"
+          },
+          "latency": {
+            "$ref": "#/components/schemas/Latency"
+          },
+          "now": {
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "time_to_approval": {
+            "$ref": "#/components/schemas/TimeToApproval"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUse"
+          },
+          "unsafe_live": {
+            "$ref": "#/components/schemas/UnsafeLive"
+          }
+        },
+        "required": [
+          "now",
+          "actions_last_24h",
+          "approvals_pending",
+          "time_to_approval",
+          "tokens",
+          "unsafe_live",
+          "actions_by_day",
+          "approval_outcomes",
+          "latency",
+          "eval_runs"
+        ],
+        "title": "Dashboard",
+        "type": "object"
+      },
+      "DayCounts": {
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "refused": {
+            "default": 0,
+            "title": "Refused",
+            "type": "integer"
+          },
+          "waiting_for_approval": {
+            "default": 0,
+            "title": "Waiting For Approval",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day"
+        ],
+        "title": "DayCounts",
+        "type": "object"
+      },
+      "DecisionOut": {
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected",
+              "failed_recheck",
+              "expired"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "approval_id",
+          "decision",
+          "reasons"
+        ],
+        "title": "DecisionOut",
+        "type": "object"
+      },
+      "DecisionRecord": {
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected",
+              "expired",
+              "failed_recheck"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "approval_id",
+          "decision",
+          "decided_by",
+          "note",
+          "decided_at"
+        ],
+        "title": "DecisionRecord",
+        "type": "object"
+      },
+      "Done": {
+        "properties": {
+          "type": {
+            "const": "done",
+            "default": "done",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "Done",
+        "type": "object"
+      },
+      "EvalRun": {
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scenarios": {
+            "title": "Scenarios",
+            "type": "integer"
+          },
+          "task_success": {
+            "title": "Task Success",
+            "type": "integer"
+          },
+          "unsafe_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsafe Total"
+          }
+        },
+        "required": [
+          "run_id",
+          "date",
+          "prompt_version",
+          "scenarios",
+          "task_success",
+          "unsafe_total",
+          "complete"
+        ],
+        "title": "EvalRun",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Latency": {
+        "properties": {
+          "p50_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Ms"
+          },
+          "p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Ms"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          },
+          "window_days": {
+            "default": 7,
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "p50_ms",
+          "p95_ms",
+          "turns"
+        ],
+        "title": "Latency",
+        "type": "object"
+      },
+      "MessageOut": {
+        "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ActionCard"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "orders": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OrderSummary"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "role": {
+            "enum": [
+              "customer",
+              "assistant",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "MessageOut",
+        "type": "object"
+      },
+      "Money": {
+        "properties": {
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "currency": {
+            "enum": [
+              "USD",
+              "PKR"
+            ],
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_cents",
+          "currency"
+        ],
+        "title": "Money",
+        "type": "object"
+      },
+      "OrderDetail": {
+        "properties": {
+          "captured": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "packed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packed At"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "placed_at": {
+            "format": "date-time",
+            "title": "Placed At",
+            "type": "string"
+          },
+          "refunded": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "refunds": {
+            "items": {
+              "$ref": "#/components/schemas/Refund"
+            },
+            "title": "Refunds",
+            "type": "array"
+          },
+          "shipment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Shipment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shipping_address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "paid",
+              "packed",
+              "shipped",
+              "delivered",
+              "cancelled",
+              "refunded",
+              "partially_refunded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "total",
+          "placed_at",
+          "paid_at",
+          "packed_at",
+          "delivered_at",
+          "shipping_address",
+          "items",
+          "captured",
+          "refunded",
+          "refunds",
+          "shipment"
+        ],
+        "title": "OrderDetail",
+        "type": "object"
+      },
+      "OrderFacts": {
+        "properties": {
+          "captured": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "refunded": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "total",
+          "captured",
+          "refunded",
+          "items"
+        ],
+        "title": "OrderFacts",
+        "type": "object"
+      },
+      "OrderItem": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "digital": {
+            "title": "Digital",
+            "type": "boolean"
+          },
+          "final_sale": {
+            "title": "Final Sale",
+            "type": "boolean"
+          },
+          "line_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "product_id": {
+            "title": "Product Id",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "required": [
+          "product_id",
+          "name",
+          "category",
+          "quantity",
+          "unit_price",
+          "line_total",
+          "final_sale",
+          "digital"
+        ],
+        "title": "OrderItem",
+        "type": "object"
+      },
+      "OrderRef": {
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/OrderSummary"
+          },
+          "type": {
+            "const": "order_ref",
+            "default": "order_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "title": "OrderRef",
+        "type": "object"
+      },
+      "OrderSummary": {
+        "properties": {
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "first_item_name": {
+            "title": "First Item Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "item_count": {
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "placed_at": {
+            "format": "date-time",
+            "title": "Placed At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "paid",
+              "packed",
+              "shipped",
+              "delivered",
+              "cancelled",
+              "refunded",
+              "partially_refunded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "total",
+          "placed_at",
+          "delivered_at",
+          "item_count",
+          "first_item_name"
+        ],
+        "title": "OrderSummary",
+        "type": "object"
+      },
+      "Progress": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "type": {
+            "const": "progress",
+            "default": "progress",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "Progress",
+        "type": "object"
+      },
+      "ReferenceCheck": {
+        "description": "An approval reference found in customer- or model-written text, checked against app.approvals (L18).",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "exists"
+        ],
+        "title": "ReferenceCheck",
+        "type": "object"
+      },
+      "Refund": {
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "pending_approval",
+              "succeeded",
+              "rejected",
+              "expired",
+              "not_completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "amount",
+          "status",
+          "reason",
+          "created_at"
+        ],
+        "title": "Refund",
+        "type": "object"
+      },
+      "RejectBody": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "RejectBody",
+        "type": "object"
+      },
+      "Reply": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "reply",
+            "default": "reply",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id",
+          "text",
+          "created_at"
+        ],
+        "title": "Reply",
+        "type": "object"
+      },
+      "RiskTag": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label"
+        ],
+        "title": "RiskTag",
+        "type": "object"
+      },
+      "Shipment": {
+        "properties": {
+          "carrier": {
+            "title": "Carrier",
+            "type": "string"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ShipmentEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "shipped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipped At"
+          },
+          "status": {
+            "enum": [
+              "label_created",
+              "in_transit",
+              "out_for_delivery",
+              "delivered"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tracking_number": {
+            "title": "Tracking Number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "carrier",
+          "tracking_number",
+          "status",
+          "shipped_at",
+          "delivered_at",
+          "events"
+        ],
+        "title": "Shipment",
+        "type": "object"
+      },
+      "ShipmentEvent": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "description"
+        ],
+        "title": "ShipmentEvent",
+        "type": "object"
+      },
+      "StaffProfile": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "role"
+        ],
+        "title": "StaffProfile",
+        "type": "object"
+      },
+      "TimeToApproval": {
+        "properties": {
+          "decisions": {
+            "title": "Decisions",
+            "type": "integer"
+          },
+          "median_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Seconds"
+          }
+        },
+        "required": [
+          "median_seconds",
+          "decisions"
+        ],
+        "title": "TimeToApproval",
+        "type": "object"
+      },
+      "TokenUse": {
+        "properties": {
+          "budget": {
+            "title": "Budget",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "used_24h": {
+            "title": "Used 24H",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "used_24h",
+          "budget",
+          "model"
+        ],
+        "title": "TokenUse",
+        "type": "object"
+      },
+      "ToolTrace": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "title": "Arguments",
+            "type": "object"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "tool",
+          "arguments",
+          "outcome",
+          "latency_ms",
+          "at"
+        ],
+        "title": "ToolTrace",
+        "type": "object"
+      },
+      "Transcript": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReferenceCheck"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolTrace"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "customer_id",
+          "messages",
+          "tool_calls",
+          "actions"
+        ],
+        "title": "Transcript",
+        "type": "object"
+      },
+      "TranscriptMessage": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "customer",
+              "assistant",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "role",
+          "content",
+          "at"
+        ],
+        "title": "TranscriptMessage",
+        "type": "object"
+      },
+      "TurnStarted": {
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "turn_started",
+            "default": "turn_started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "turn_id"
+        ],
+        "title": "TurnStarted",
+        "type": "object"
+      },
+      "UnsafeLive": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "definition": {
+            "default": "Executed actions in the database that (a) touch another customer's order, (b) exceed a policy limit, or (c) break a decision checkable on data alone (a line compensated twice; an order status that disagrees with its refunds). Unasked actions (d) cannot be checked live: that needs what the customer asked for.",
+            "title": "Definition",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Findings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "findings"
+        ],
+        "title": "UnsafeLive",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Tollgate API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/actions/{reference}": {
+      "get": {
+        "description": "One of the customer's own action requests, for its ActionCard (C2).",
+        "operationId": "get_action_v1_actions__reference__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "title": "Reference",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Action",
+        "tags": [
+          "store"
+        ]
+      }
+    },
+    "/v1/chat": {
+      "post": {
+        "operationId": "chat_v1_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "properties": {
+                    "data": {
+                      "contentMediaType": "application/json",
+                      "contentSchema": {
+                        "discriminator": {
+                          "mapping": {
+                            "action": "#/components/schemas/Action",
+                            "done": "#/components/schemas/Done",
+                            "error": "#/components/schemas/ChatError",
+                            "order_ref": "#/components/schemas/OrderRef",
+                            "progress": "#/components/schemas/Progress",
+                            "reply": "#/components/schemas/Reply",
+                            "turn_started": "#/components/schemas/TurnStarted"
+                          },
+                          "propertyName": "type"
+                        },
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/TurnStarted"
+                          },
+                          {
+                            "$ref": "#/components/schemas/Progress"
+                          },
+                          {
+                            "$ref": "#/components/schemas/OrderRef"
+                          },
+                          {
+                            "$ref": "#/components/schemas/Action"
+                          },
+                          {
+                            "$ref": "#/components/schemas/Reply"
+                          },
+                          {
+                            "$ref": "#/components/schemas/ChatError"
+                          },
+                          {
+                            "$ref": "#/components/schemas/Done"
+                          }
+                        ],
+                        "title": "Streamitem Chat V1 Chat Post"
+                      },
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "retry": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chat",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/v1/conversations/latest": {
+      "get": {
+        "operationId": "latest_conversation_v1_conversations_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConversationOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Latest Conversation V1 Conversations Latest Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Latest Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "operationId": "me_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me",
+        "tags": [
+          "store"
+        ]
+      }
+    },
+    "/v1/orders": {
+      "get": {
+        "operationId": "list_orders_v1_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "paid",
+                    "packed",
+                    "shipped",
+                    "delivered",
+                    "cancelled",
+                    "refunded",
+                    "partially_refunded"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrderSummary"
+                  },
+                  "title": "Response List Orders V1 Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Orders",
+        "tags": [
+          "store"
+        ]
+      }
+    },
+    "/v1/orders/{order_id}": {
+      "get": {
+        "operationId": "get_order_v1_orders__order_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Order",
+        "tags": [
+          "store"
+        ]
+      }
+    },
+    "/v1/staff/approvals": {
+      "get": {
+        "operationId": "approvals_v1_staff_approvals_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalQueue"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Approvals",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/v1/staff/approvals/{reference}": {
+      "get": {
+        "operationId": "approval_v1_staff_approvals__reference__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "title": "Reference",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approval",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/v1/staff/approvals/{reference}/approve": {
+      "post": {
+        "operationId": "approve_v1_staff_approvals__reference__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "title": "Reference",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/v1/staff/approvals/{reference}/reject": {
+      "post": {
+        "operationId": "reject_v1_staff_approvals__reference__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "title": "Reference",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/v1/staff/audit": {
+      "get": {
+        "operationId": "audit_v1_staff_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ALLOW",
+                    "NEEDS_APPROVAL",
+                    "DENY"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decision"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "request_refund",
+                    "issue_store_credit",
+                    "cancel_order",
+                    "update_shipping_address",
+                    "create_ticket",
+                    "escalate_to_human"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "customer",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/v1/staff/conversations/{conversation_id}": {
+      "get": {
+        "operationId": "conversation_v1_staff_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transcript"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Conversation",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/v1/staff/dashboard": {
+      "get": {
+        "description": "Spec 13.5 (DECISIONS L20): live metrics from the database, eval results from the run files, kept\napart.",
+        "operationId": "dashboard_v1_staff_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dashboard",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/v1/staff/me": {
+      "get": {
+        "operationId": "me_v1_staff_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me",
+        "tags": [
+          "staff"
+        ]
+      }
+    }
+  }
+}

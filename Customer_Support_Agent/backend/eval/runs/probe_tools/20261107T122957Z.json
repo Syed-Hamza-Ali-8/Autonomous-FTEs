@@ -1,0 +1,44 @@
+{
+  "provider": "groq",
+  "base_url": "https://api.groq.com/openai/v1",
+  "agents_sdk": "see docs/sdk_surface.md",
+  "results": {
+    "qwen/qwen3.8-27b": {
+      "raw": {
+        "passed": true,
+        "tool_calls": [
+          {
+            "name": "get_order_status",
+            "args": {
+              "order_id": "ORD-1042"
+            }
+          }
+        ],
+        "text": null,
+        "total_tokens": 365,
+        "latency_ms": 536
+      },
+      "sdk": {
+        "passed": true,
+        "tool_args_seen": [
+          "ORD-1042"
+        ],
+        "final_output": "Your order **ORD-1042** has been **shipped**. Let me know if you need any further assistance!",
+        "total_tokens": 808,
+        "latency_ms": 429
+      },
+      "usable": true
+    },
+    "allam-2-7b": {
+      "raw": {
+        "passed": false,
+        "error": "ProviderError: provider HTTP 400: Error code: 400 - `tool calling` is not supported with this model"
+      },
+      "sdk": {
+        "passed": false,
+        "error": "ProviderError: provider HTTP 400: Error code: 400 - `tool calling` is not supported with this model"
+      },
+      "usable": false
+    }
+  }
+}
