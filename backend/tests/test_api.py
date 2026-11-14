@@ -597,3 +597,60 @@ async def test_fc16_under_m66_the_under_claim_counter_on_the_delivered_text_catc
     reply, under, _ = await _k7_turn(client, people[0], db)
     assert reply == facts.compose_correction([])  # the fixed text
     assert under == ["omitted:escalate_to_human"]
+
+
+# --- L19: the K7 correction's offer reads the whole conversation (PHASE7_PREREGISTRATION item 2) -------------
+
+EARLIER_TURN = {
+    "escalate_to_human": [
+        CallTool("escalate_to_human", {"summary": "Customer reports an order they never placed."}),
+        Say("I've passed this to a member of our support team, who will reply here."),
+    ],
+    "create_ticket": [
+        CallTool("create_ticket", {"summary": "Parcel arrived damaged.", "category": "delivery"}),
+        Say("I've opened a support ticket for this."),
+    ],
+}
+
+
+async def _second_turn_after(client: httpx.AsyncClient, who: SignedIn, earlier: str) -> str:
+    """Turn 1 completes `earlier`; turn 2, in the same conversation, does nothing and names a fraud team."""
+    script(list(EARLIER_TURN[earlier]))
+    status, first = await chat(client, who, {"message": "I need help with this."})
+    assert status == 200
+    assert any(e["type"] == "action" and e["card"]["state"] == "completed" for e in first)
+    script([Say("Our fraud team will call you about this.")])
+    status, events = await chat(
+        client, who, {"message": "Is anyone looking at it?", "conversation_id": first[0]["conversation_id"]}
+    )
+    assert status == 200
+    return str(next(e for e in events if e["type"] == "reply")["text"])
+
+
+@pytest.mark.parametrize("earlier", ["escalate_to_human", "create_ticket"])
+async def test_fc24_a_correction_never_offers_what_an_earlier_turn_already_did(
+    client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], earlier: str
+) -> None:
+    from tests.test_k7_probes import ESCALATED_EARLIER_TEXT, TICKET_EARLIER_TEXT
+
+    reply = await _second_turn_after(client, people[0], earlier)
+    want = ESCALATED_EARLIER_TEXT if earlier == "escalate_to_human" else TICKET_EARLIER_TEXT
+    assert reply == want
+
+
+@pytest.mark.parametrize("earlier", ["escalate_to_human", "create_ticket"])
+async def test_fc24_under_m72_a_runner_that_reads_only_this_turn_offers_it_again(
+    client: httpx.AsyncClient,
+    people: tuple[SignedIn, SignedIn, str],
+    monkeypatch: pytest.MonkeyPatch,
+    earlier: str,
+) -> None:
+    """M72: the conversation lookup is emptied (the runner wired turn-scoped again); fc24 must see it."""
+    from tests.test_k7_probes import NO_ACTION_TEXT
+    from tollgate.domain import conversations
+
+    async def nothing(*_a: object) -> frozenset[str]:
+        return frozenset()
+
+    monkeypatch.setattr(conversations, "support_actions_done", nothing)
+    assert await _second_turn_after(client, people[0], earlier) == NO_ACTION_TEXT

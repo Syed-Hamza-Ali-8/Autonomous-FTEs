@@ -200,6 +200,73 @@ def fc13() -> list[str]:
     return expect("failed", result.passed, False) + expect("contact details in what is shown", found, [])
 
 
+# -- L19: the offer reads the whole conversation; what the reply CLAIMS stays this turn's (PHASE7 item 2) -------
+
+OPENING = "I'm sorry, I don't have that detail to give you."
+ESCALATED_EARLIER_TEXT = f"{OPENING} I can open a support ticket for you, if you'd like."
+TICKET_EARLIER_TEXT = f"{OPENING} I can pass you to a member of our support team, if you'd like."
+BOTH_EARLIER_TEXT = (
+    f"{OPENING} A support ticket has already been opened for you, and this is already with a member of our "
+    "support team."
+)
+ESCALATION_OFFER = re.compile(r"(?i)\bI can (?:pass|escalate|connect|hand)\b|\bjust say which\b")
+TICKET_OFFER = re.compile(r"(?i)\bI can (?:also )?open a support ticket\b|\bjust say which\b")
+
+
+def _no_action_turn(already_done: set[ActionKind]) -> facts.FactCheck:
+    return facts.check_facts("Our fraud team will call you.", (), [], already_done=already_done)
+
+
+def _claims_nothing(text: str) -> list[str]:
+    """Invariant 10 unchanged: with no action this turn, the delivered text passes the claim check as is."""
+    return expect("claim check on the delivered text", claims.check_reply(text, []).passed, True)
+
+
+def fc19() -> list[str]:
+    """adv08: replaced in a turn with no action, in a conversation whose EARLIER turn escalated: no escalation
+    is offered; the ticket still is."""
+    result = _no_action_turn({"escalate_to_human"})
+    out = expect("replaced", result.passed, False)
+    out += expect("offers escalation again", bool(ESCALATION_OFFER.search(result.text)), False)
+    out += expect("text", result.text, ESCALATED_EARLIER_TEXT)
+    return out + _claims_nothing(result.text)
+
+
+def fc20() -> list[str]:
+    """The same with an earlier ticket: no ticket is offered; escalation still is."""
+    result = _no_action_turn({"create_ticket"})
+    out = expect("replaced", result.passed, False)
+    out += expect("offers a ticket again", bool(TICKET_OFFER.search(result.text)), False)
+    out += expect("text", result.text, TICKET_EARLIER_TEXT)
+    return out + _claims_nothing(result.text)
+
+
+def fc21() -> list[str]:
+    """Both done earlier: nothing is offered; it says so factually (the conversation's action log as fact),
+    and the delivered text passes the claim check and its own check."""
+    result = _no_action_turn({"create_ticket", "escalate_to_human"})
+    out = expect("replaced", result.passed, False)
+    out += expect("offers anything", bool(OFFER.search(result.text)), False)
+    out += expect("text", result.text, BOTH_EARLIER_TEXT)
+    out += expect("passes its own check", fires(result.text), False)
+    return out + _claims_nothing(result.text)
+
+
+def fc22() -> list[str]:
+    """Earlier actions outside the offer (a refund, a cancellation) change nothing: the next step is offered
+    in the pinned text."""
+    return expect("text", _no_action_turn({"request_refund", "cancel_order"}).text, NO_ACTION_TEXT)
+
+
+def fc23() -> list[str]:
+    """What THIS turn did is still all a correction states, even when earlier turns did more (invariant 10's
+    side stays turn-scoped): the escalation done now is stated in its card's words, nothing else."""
+    result = facts.check_facts(
+        "I've escalated this to our fraud team.", (), [done("escalate_to_human")], already_done={"create_ticket"}
+    )
+    return expect("text", result.text, cards.DONE["escalate_to_human"])
+
+
 PROBES: dict[str, Callable[[], list[str]]] = {
     f.__name__: f
     for f in (
@@ -220,6 +287,11 @@ PROBES: dict[str, Callable[[], list[str]]] = {
         fc15,
         fc17,
         fc18,
+        fc19,
+        fc20,
+        fc21,
+        fc22,
+        fc23,
     )
 }
 
@@ -253,11 +325,16 @@ FIXED = (
 
 
 def m66(mp: pytest.MonkeyPatch) -> None:  # the correction reverts to fixed text, ignoring the action log
-    mp.setattr(facts, "compose_correction", lambda actions=(): FIXED)
+    mp.setattr(facts, "compose_correction", lambda actions=(), already_done=(): FIXED)
 
 
 def m67(mp: pytest.MonkeyPatch) -> None:  # a turn with no completed action is no longer offered a next step
     mp.setattr(facts, "NEXT_STEP", "")
+
+
+def m71(mp: pytest.MonkeyPatch) -> None:  # L19 reverted: the offer reads only this turn's actions again
+    turn_scoped = facts.compose_correction
+    mp.setattr(facts, "compose_correction", lambda actions=(), already_done=(): turn_scoped(actions))
 
 
 KILLS: dict[str, tuple[Patch, tuple[str, ...]]] = {
@@ -267,9 +344,10 @@ KILLS: dict[str, tuple[Patch, tuple[str, ...]]] = {
     "M64": (m64, ("fc09", "fc13")),
     "M66": (m66, ("fc14", "fc17", "fc18")),  # plus test_api's fc16, through the runner
     "M67": (m67, ("fc15", "fc09")),
+    "M71": (m71, ("fc19", "fc20", "fc21")),  # plus test_api's fc24, through the runner
 }
 OTHERS = {"fc02", "fc05"}  # positives guarded by test_probe; their patterns have no pre-registered mutation
-NEGATIVES = {"fc06", "fc07", "fc08"}
+NEGATIVES = {"fc06", "fc07", "fc08", "fc22", "fc23"}  # fc22, fc23: L19 must change nothing outside the offer
 
 
 def _failures(probe: str) -> list[str]:
