@@ -232,7 +232,10 @@ def eval_runs(runs_dir: Path) -> list[EvalRun]:
         meta_path, summary_path = d / "meta.json", d / "summary.json"
         if not (meta_path.exists() and summary_path.exists()):
             continue
-        meta, summary = json.loads(meta_path.read_text()), json.loads(summary_path.read_text())
+        try:
+            meta, summary = json.loads(meta_path.read_text()), json.loads(summary_path.read_text())
+        except (OSError, ValueError):
+            continue  # a missing or broken run file leaves the run out; the section never fails (probe db10)
         if _is_replay(d.name, meta):
             continue
         out.append(

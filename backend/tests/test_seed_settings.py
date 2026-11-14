@@ -95,3 +95,63 @@ async def test_staff_still_requires_what_it_uses(
     with pytest.raises(ValidationError):
         await seed_store.cmd_staff()
     assert calls == []
+
+
+# --- Phase 7 fresh-clone findings D and E (owner, 2026-11-14) ------------------------------------------
+
+
+async def test_customers_relinks_the_demo_sign_ins_and_touches_no_data(
+    only: Any, calls: list[tuple[str, Any]]
+) -> None:
+    """E: `customers` only links the two demo customers' sign-ins; it never loads seed.sql."""
+    only(CONNECTION | CUSTOMERS)
+    await seed_store.cmd_customers()
+    assert [name for name, _ in calls] == ["link_demo_users"]
+    assert isinstance(calls[0][1], seed_store.CustomerSeedSettings)
+
+
+async def test_customers_refuses_a_non_local_target(only: Any, calls: list[tuple[str, Any]]) -> None:
+    only(CONNECTION | CUSTOMERS | {"DATABASE_URL": "postgresql://u:p@db.example.com:5432/postgres"})
+    with pytest.raises(SystemExit, match="not local"):
+        await seed_store.cmd_customers()
+    assert calls == []
+
+
+async def test_local_apply_is_guarded_and_reset_passes_through(
+    only: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D: the local path asks apply_sql to guard existing data, exactly as the cloud path does (C3)."""
+    seen: list[dict[str, Any]] = []
+
+    async def record(*_a: Any, **k: Any) -> None:
+        seen.append(k)
+
+    async def nothing(*_a: Any) -> None:
+        return None
+
+    monkeypatch.setattr(seed_store, "apply_sql", record)
+    monkeypatch.setattr(seed_store, "link_demo_users", nothing)
+    only(CONNECTION | CUSTOMERS)
+    await seed_store.cmd_apply("local", reset=False, relative_dates=False)
+    await seed_store.cmd_apply("local", reset=True, relative_dates=False)
+    assert seen == [{"reset": False, "guard_existing": True}, {"reset": True, "guard_existing": True}]
+
+
+async def test_local_apply_refuses_a_store_with_data_unless_reset(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D, on the real local database. seed.sql is swapped for a harmless statement and the Auth steps are
+    stubbed, so even a broken guard (the mutation check) cannot empty the real tables."""
+    harmless = tmp_path / "seed.sql"
+    harmless.write_text("SELECT 1;")
+    monkeypatch.setattr(seed_store, "SEED_SQL", harmless)
+    linked: list[str] = []
+
+    async def link(*_a: Any) -> None:
+        linked.append("link")
+
+    monkeypatch.setattr(seed_store, "link_demo_users", link)
+    monkeypatch.setattr(seed_store, "link_demo_staff", link)
+    with pytest.raises(SystemExit, match="refusing: target already has"):
+        await seed_store.cmd_apply("local", reset=False, relative_dates=False)
+    assert linked == []

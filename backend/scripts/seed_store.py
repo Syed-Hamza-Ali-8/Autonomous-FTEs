@@ -2,9 +2,11 @@
 
 Usage (from backend/):
   uv run python scripts/seed_store.py write [--check]   # eval/fixtures/store_seed.json -> supabase/seed.sql
-  uv run python scripts/seed_store.py apply              # load seed.sql into LOCAL db + demo Auth users
+  uv run python scripts/seed_store.py apply [--reset]    # load seed.sql into LOCAL db + demo Auth users;
+                                                         # refuses if store data exists unless --reset
   uv run python scripts/seed_store.py apply --target cloud [--reset]   # demo project; asks to confirm
   uv run python scripts/seed_store.py staff              # (re)seed only the support lead, LOCAL (E3)
+  uv run python scripts/seed_store.py customers          # re-link only the demo customers' sign-ins, LOCAL
 
 `supabase db reset` also loads seed.sql (config [db.seed]); `apply` then only needs the Auth step,
 but running it in full is idempotent. Demo passwords come from .env (never committed, never printed).
@@ -72,7 +74,7 @@ class _ConnectionSettings(BaseSettings):
 
 
 class CustomerSeedSettings(_ConnectionSettings):
-    """`apply`: the store data and the two demo customers' sign-ins."""
+    """`apply` and `customers`: the store data and the two demo customers' sign-ins."""
 
     demo_customer_email: str
     demo_customer_password: SecretStr
@@ -311,7 +313,9 @@ async def apply_sql(dsn: str, sql: str, reset: bool, guard_existing: bool) -> No
             existing = await conn.fetchval("SELECT count(*) FROM app.customers")
             if existing:
                 raise SystemExit(
-                    f"refusing: target already has {existing} customers; pass --reset to replace"
+                    f"refusing: target already has {existing} customers; pass --reset to replace them."
+                    " --reset EMPTIES the store, conversations, audit log, run_log and tool_calls first."
+                    " To fix only the demo sign-ins, run `seed_store.py customers` (and `staff`) instead."
                 )
         await conn.execute(sql)  # the generated file is one script; asyncpg runs it in one round trip
     finally:
@@ -416,7 +420,9 @@ async def cmd_apply(target: str, reset: bool, relative_dates: bool) -> None:
         dsn, api, key = s.database_url.get_secret_value(), s.supabase_url, s.supabase_service_role_key
         if {urlsplit(dsn).hostname, urlsplit(api).hostname} - LOCAL_HOSTS:
             raise SystemExit("refusing: DATABASE_URL / SUPABASE_URL are not local")
-        await apply_sql(dsn, sql, reset=True, guard_existing=False)
+        # Guarded like the cloud path (C3): seed.sql TRUNCATEs every store table, run_log and tool_calls
+        # included, so an existing store is replaced only with --reset (fresh-clone finding D, 2026-11-14).
+        await apply_sql(dsn, sql, reset=reset, guard_existing=True)
     else:
         if not (s.cloud_database_url and s.cloud_supabase_url and s.cloud_supabase_service_role_key):
             raise SystemExit(
@@ -439,6 +445,17 @@ async def cmd_apply(target: str, reset: bool, relative_dates: bool) -> None:
     await link_demo_staff(staff, dsn, api, key)
 
 
+async def cmd_customers() -> None:
+    """Re-link only the two demo customers' sign-ins on the LOCAL stack, from .env. Loads no SQL and leaves
+    the store data as it is (fresh-clone finding E, 2026-11-14): the fix when a demo customer cannot sign
+    in."""
+    s = CustomerSeedSettings()
+    dsn, api = s.database_url.get_secret_value(), s.supabase_url
+    if {urlsplit(dsn).hostname, urlsplit(api).hostname} - LOCAL_HOSTS:
+        raise SystemExit("refusing: DATABASE_URL / SUPABASE_URL are not local")
+    await link_demo_users(s, dsn, api, s.supabase_service_role_key)
+
+
 async def cmd_staff() -> None:
     """(Re)seed only the support lead on the LOCAL stack, leaving the store data as it is."""
     s = StaffSeedSettings()
@@ -455,14 +472,19 @@ def main() -> int:
     w.add_argument("--check", action="store_true")
     a = sub.add_parser("apply")
     a.add_argument("--target", choices=("local", "cloud"), default="local")
-    a.add_argument("--reset", action="store_true")
+    a.add_argument("--reset", action="store_true", help="replace existing store data (empties run_log too)")
     a.add_argument(
         "--relative-dates",
         action="store_true",
         help="anchor dates to the real now() (live demo); default is the fixed fixture_now",
     )
     sub.add_parser("staff", help="(re)seed only the support lead on the local stack, from .env")
+    sub.add_parser("customers", help="re-link only the demo customers' sign-ins (local stack, from .env)")
     args = parser.parse_args()
+
+    if args.cmd == "customers":
+        asyncio.run(cmd_customers())
+        return 0
 
     if args.cmd == "staff":
         asyncio.run(cmd_staff())

@@ -313,3 +313,18 @@ async def test_unreachable_jwks_fails_closed(ec_key: ec.EllipticCurvePrivateKey)
     dead = TokenVerifier(AuthSettings(supabase_url="http://127.0.0.1:9"))  # nothing listens on port 9
     with pytest.raises(AuthUnavailableError):
         await dead.verify(es256(ec_key, claims(iss="http://127.0.0.1:9/auth/v1")))
+
+
+def test_an_internal_supabase_url_moves_only_the_key_fetch_never_the_issuer_check() -> None:
+    """Phase 7 Docker (2026-11-14): inside a container, the browser's address 127.0.0.1 is not the host. An
+    optional SUPABASE_INTERNAL_URL tells the API where to FETCH the signing keys; the issuer a token
+    must carry stays the public SUPABASE_URL, so the token check is exactly as strict."""
+    from tollgate.config import AuthSettings
+
+    public = AuthSettings(supabase_url="http://127.0.0.1:54321")
+    assert public.jwks_url == "http://127.0.0.1:54321/auth/v1/.well-known/jwks.json"
+    boxed = AuthSettings(
+        supabase_url="http://127.0.0.1:54321", supabase_internal_url="http://host.docker.internal:54321"
+    )
+    assert boxed.issuer == "http://127.0.0.1:54321/auth/v1"  # unchanged
+    assert boxed.jwks_url == "http://host.docker.internal:54321/auth/v1/.well-known/jwks.json"

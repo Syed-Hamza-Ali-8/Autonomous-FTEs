@@ -84,6 +84,10 @@ class AuthSettings(BaseSettings):
     model_config = _COMMON
 
     supabase_url: str
+    # Where the API itself reaches Supabase, when that differs from the public address the browser and the
+    # token issuer use: inside a Docker container 127.0.0.1 is the container, not the host. It changes only
+    # where the signing keys are FETCHED; a token must still carry the public issuer (Phase 7, 2026-11-14).
+    supabase_internal_url: str | None = None
     auth_jwt_mode: Literal["jwks", "secret"] = "jwks"
     auth_jwt_algorithms: list[str] = ["ES256"]
     auth_jwt_secret: SecretStr | None = None
@@ -109,7 +113,8 @@ class AuthSettings(BaseSettings):
 
     @property
     def jwks_url(self) -> str:
-        return f"{self.issuer}/.well-known/jwks.json"
+        base = self.supabase_internal_url or self.supabase_url
+        return f"{base.rstrip('/')}/auth/v1/.well-known/jwks.json"
 
 
 class AppSettings(BaseSettings):

@@ -209,9 +209,7 @@ unmeasured claim. Where there is no data, the dashboard says so rather than show
 - **Multi-agent:** the five-agent design was **never built or measured**. Tollgate is one agent holding every tool.
   The second model slot (`MODEL_FAST`) is unused.
 - **Repeatability at temperature 0 was not measured.** See the next section.
-- **Not built yet:**
-  - the LLM tone judge (deferred);
-  - Docker packaging (Phase 7 work, in progress).
+- **The LLM tone judge** was not built (deferred).
 
 ## Reproducibility is bounded by the provider
 In the Phase 4 run, **134 model calls returned 38 distinct `system_fingerprint` values** from Groq
@@ -221,29 +219,55 @@ on this tier, and repeatability couldn't be isolated from backend changes. **Eve
 exactly:** each run records the model's outputs, and the replay uses them at zero tokens.
 
 ## Running it locally
-*Not yet checked from a fresh clone; that check, and Docker packaging, are Phase 7 work. These are the steps used in
-development.*
+*Checked from a fresh clone on 2026-11-14; see `EVAL_RESULTS.md` (Phase 7, fresh-clone check) for what that covered.*
 
 **Prerequisites:**
-- Docker;
+- Docker with Compose;
 - the Supabase CLI;
-- Python 3.12 with `uv`;
-- Node.js;
+- Python 3.12 with `uv` (for the two setup scripts and the tests);
 - a free Groq API key.
 
 **Steps:**
-1. **Environment.** Copy `.env.example` to `.env` at the repo root and fill it in (it lists every variable). Create
-   `frontend/.env.local` with `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-2. **Database.** Run `supabase start`. Migrations and `supabase/seed.sql` apply to the local stack.
-3. **Backend.** In `backend/`:
+1. **Start the database and sign-in service.** First stop any other local Supabase project (`supabase stop` in its
+   directory). This repo's `supabase/config.toml` uses the CLI's default ports (54321 for the API, 54322 for the
+   database), so two projects cannot run side by side unless you change the ports in one of them. Then, from the
+   repo root, run `supabase start`. It applies the migrations and loads the seed store, then prints the local URLs
+   and keys you need next (`supabase status` prints them again).
+2. **Environment.** Run `cp .env.example .env`, then fill in:
+   - `GROQ_API_KEY`;
+   - from `supabase status`: `SUPABASE_URL` is its `API_URL`, `DATABASE_URL` its `DB_URL`, `SUPABASE_ANON_KEY` its
+     `ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` its `SERVICE_ROLE_KEY`. `supabase status` also prints a
+     `PUBLISHABLE_KEY` and a `SECRET_KEY`; use `ANON_KEY` and `SERVICE_ROLE_KEY`, the pair that was tested;
+   - `DOCKER_DATABASE_URL`: the same as `DATABASE_URL`, with `127.0.0.1` replaced by `host.docker.internal`;
+   - `DEMO_CUSTOMER_PASSWORD`, `DEMO_TARGET_PASSWORD` and `DEMO_STAFF_PASSWORD`: passwords of your choice for the
+     demo sign-ins, at least 12 characters each (the emails are already filled in).
+3. **Models and demo sign-ins.** In `backend/`:
    - `uv sync`;
-   - `uv run python scripts/resolve_models.py` (model IDs come from the provider);
-   - `uv run python scripts/seed_store.py apply` (demo sign-ins);
-   - `uv run uvicorn tollgate.main:app`.
-4. **Frontend.** In `frontend/`: `npm install`, then `npm run dev`.
-5. **Tests.** Run only against the local stack:
-   - in `backend/`: `uv run pytest -q`;
-   - the evaluation harness: `uv run python -m eval.run_eval --help` (budget pre-flight, `--record`, `--replay`).
+   - set `MODEL_STRONG=openai/gpt-oss-120b` and `MODEL_FAST=openai/gpt-oss-20b` in `.env`. Every measured result in
+     this README used `openai/gpt-oss-120b`, the model chat runs on (all 28 run files record it); `MODEL_FAST` is
+     used only by the setup probes. Then run `uv run python scripts/resolve_models.py`: it lists the models your
+     key can use and should report both as served;
+   - `uv run python scripts/seed_store.py customers` and `uv run python scripts/seed_store.py staff` create the demo
+     sign-ins and link them to the seeded store. Neither changes any data.
+4. **Run it.** From the repo root, run `docker compose up -d --build`. The store is at <http://localhost:3000>, and the
+   staff console at <http://localhost:3000/console>.
+5. **Sign in** with `DEMO_CUSTOMER_EMAIL` as a customer, or `DEMO_STAFF_EMAIL` for the staff console.
+
+**If a demo sign-in fails:** run `uv run python scripts/seed_store.py customers` (the two customers) or
+`uv run python scripts/seed_store.py staff` (the support lead) in `backend/`. They reset those passwords to the
+`.env` values and touch nothing else.
+
+**Re-seeding the store:** `uv run python scripts/seed_store.py apply` reloads `supabase/seed.sql`. It refuses when the
+store already has data, unless you pass `--reset`. With `--reset` it **empties** the store, the conversations, the
+audit log and the run traces (`run_log`, `tool_calls`) before reloading, so every recorded run on that database is
+lost.
+
+**Tests:** they run only against the local stack. In `backend/`: `uv run pytest -q`. The evaluation harness's options
+(budget pre-flight, `--record`, `--replay`) are listed by `uv run python -m eval.run_eval --help`.
+
+**Without Docker:** run the API with `uv run uvicorn tollgate.main:app` in `backend/`. For the web app, create
+`frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localhost:8000`, `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, then run `npm install` and `npm run dev` in `frontend/`.
 
 ## Licence
 MIT. See `LICENSE`.

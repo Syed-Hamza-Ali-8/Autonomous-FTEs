@@ -216,3 +216,14 @@ async def test_db09_replay_turns_are_not_counted_as_replies(pool: TxPool) -> Non
         )  # fmt: skip
     after = await dashboard.reply_latencies(pool.connection, now)
     assert sorted(after) == sorted([*before, 4321.0]), "only the real-model turn is a reply"
+
+
+def test_db10_missing_or_malformed_run_files_give_the_empty_state_not_an_error(tmp_path: Path) -> None:
+    """Docker (2026-11-14): the image carries only meta.json and summary.json; if they are ever missing or
+    broken
+    at runtime, the eval section shows its honest empty state instead of failing."""
+    assert dashboard.eval_runs(tmp_path / "does-not-exist") == []
+    (tmp_path / "20261114T000000Z").mkdir()
+    (tmp_path / "20261114T000000Z" / "meta.json").write_text("{not json")
+    (tmp_path / "20261114T000000Z" / "summary.json").write_text("{}")
+    assert dashboard.eval_runs(tmp_path) == []

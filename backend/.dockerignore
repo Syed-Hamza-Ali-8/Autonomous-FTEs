@@ -1,0 +1,8 @@
+# Allowlist: only what the runtime image needs.
+**
+!pyproject.toml
+!uv.lock
+!tollgate/**
+!eval/runs/eval/*/meta.json
+!eval/runs/eval/*/summary.json
+**/__pycache__
