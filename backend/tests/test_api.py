@@ -11,6 +11,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncpg
@@ -654,3 +655,177 @@ async def test_fc24_under_m72_a_runner_that_reads_only_this_turn_offers_it_again
 
     monkeypatch.setattr(conversations, "support_actions_done", nothing)
     assert await _second_turn_after(client, people[0], earlier) == NO_ACTION_TEXT
+
+
+# --- A turn that fails after the gateway acted still shows what was done (owner, 2026-11-14) ---------
+# Probes committed before the code. The card is saved when the gateway returns (app.turn_action_cards), not
+# with the reply at the end of the turn; a turn that ended without a reply shows a plain error with its cards.
+
+INTERRUPTED = "Something went wrong while writing the reply. Here is what was done."
+
+
+def _limited() -> openai.RateLimitError:
+    req = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    return openai.RateLimitError("rate limited", response=httpx.Response(429, request=req), body=None)
+
+
+async def _latest(client: httpx.AsyncClient, who: SignedIn) -> list[dict[str, Any]]:
+    resp = await client.get("/v1/conversations/latest", headers=who.headers)
+    assert resp.status_code == 200
+    return list(resp.json()["messages"])
+
+
+async def _failed_after_escalation(client: httpx.AsyncClient, who: SignedIn) -> tuple[str, dict[str, Any]]:
+    script([CallTool("escalate_to_human", {"summary": "Customer needs a person."}), Fail(_limited())])
+    status, events = await chat(client, who, {"message": "Please get me a person."})
+    assert status == 200
+    assert any(e["type"] == "error" for e in events) and not any(e["type"] == "reply" for e in events)
+    card = next(e["card"] for e in events if e["type"] == "action")
+    return events[0]["turn_id"], card
+
+
+async def tc01(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that fails after a successful gateway action still shows that action's card after a reload,
+    beside the plain error."""
+    _, card = await _failed_after_escalation(client, who)
+    last = (await _latest(client, who))[-1]
+    out = [] if last["content"] == INTERRUPTED else [f"content: {last['content']!r}"]
+    refs = [a["reference"] for a in last["actions"]]
+    return out + ([] if refs == [card["reference"]] else [f"cards: {refs}, expected {[card['reference']]}"])
+
+
+async def tc02(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that DID reply shows its card once, with the reply: never a second, synthetic copy."""
+    script(
+        [CallTool("escalate_to_human", {"summary": "Customer needs a person."}), Say("I've passed this on.")]
+    )
+    _, events = await chat(client, who, {"message": "Please get me a person."})
+    ref = next(e["card"]["reference"] for e in events if e["type"] == "action")
+    shown = [a["reference"] for m in await _latest(client, who) for a in m["actions"]].count(ref)
+    texts = [m["content"] for m in await _latest(client, who)]
+    return ([] if shown == 1 else [f"card shown {shown} times"]) + (
+        [] if INTERRUPTED not in texts else ["the error text appears for a turn that replied"]
+    )
+
+
+async def tc03(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that fails with NO action adds nothing: no error message, no card."""
+    script([Fail(_limited())])
+    await chat(client, who, {"message": "status?"})
+    texts = [m["content"] for m in await _latest(client, who)]
+    return [] if INTERRUPTED not in texts else ["an error message for a turn where nothing was done"]
+
+
+async def tc04(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """The card is saved when the gateway returns: it is stored for the turn although no reply ever was."""
+    turn_id, card = await _failed_after_escalation(client, who)
+    saved = await db.fetch(
+        "SELECT card FROM app.turn_action_cards WHERE turn_id = $1 AND customer_id = $2",
+        uuid.UUID(turn_id),
+        who.customer_id,
+    )
+    refs = [(json.loads(c) if isinstance(c := r["card"], str) else c)["reference"] for r in saved]
+    return [] if refs == [card["reference"]] else [f"saved: {refs}"]
+
+
+async def _orphan_turn(db: asyncpg.Connection, who: SignedIn, age_minutes: int) -> str:
+    """A turn whose process died after the gateway acted: a saved card, no reply, no run_log row."""
+    conv_id = await db.fetchval(
+        "INSERT INTO app.conversations (customer_id) VALUES ($1) RETURNING id", who.customer_id
+    )
+    turn_id = uuid.uuid4()
+    at = datetime.now(UTC) - timedelta(minutes=age_minutes)
+    await db.execute(
+        "INSERT INTO app.messages (conversation_id, turn_id, role, content, client_message_id, created_at)"
+        " VALUES ($1, $2, 'customer', 'refund please', $3, $4)",
+        conv_id, turn_id, uuid.uuid4(), at,
+    )  # fmt: skip
+    card = {"action": "escalate_to_human", "state": "completed", "order_id": None, "amount": None,
+            "reference": "ACT-999001", "explanation": "A member of our support team will pick this up.",
+            "at": at.isoformat()}  # fmt: skip
+    await db.execute(
+        "INSERT INTO app.turn_action_cards (conversation_id, turn_id, customer_id, card, created_at)"
+        " VALUES ($1, $2, $3, $4::jsonb, $5)",
+        conv_id, turn_id, who.customer_id, json.dumps(card), at,
+    )  # fmt: skip
+    await db.execute(
+        "UPDATE app.conversations SET updated_at = now() + interval '1 day' WHERE id = $1", conv_id
+    )
+    return "ACT-999001"
+
+
+async def tc05(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn that crashed (no run_log) and is older than 10 minutes is over: its card shows."""
+    ref = await _orphan_turn(db, who, age_minutes=11)
+    last = (await _latest(client, who))[-1]
+    return (
+        []
+        if (last["content"], [a["reference"] for a in last["actions"]]) == (INTERRUPTED, [ref])
+        else [f"got {last['content']!r} {[a['reference'] for a in last['actions']]}"]
+    )
+
+
+async def tc06(client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    """A turn still in progress (no run_log yet, a minute old) is not shown as failed."""
+    await _orphan_turn(db, who, age_minutes=1)
+    texts = [m["content"] for m in await _latest(client, who)]
+    return [] if INTERRUPTED not in texts else ["a turn still in progress is shown as failed"]
+
+
+async def _run_tc(name: str, client: httpx.AsyncClient, who: SignedIn, db: asyncpg.Connection) -> list[str]:
+    probe = {"tc01": tc01, "tc02": tc02, "tc03": tc03, "tc04": tc04, "tc05": tc05, "tc06": tc06}[name]
+    try:
+        return await probe(client, who, db)
+    except Exception as exc:  # a probe that breaks under a mutation has caught it
+        return [f"{type(exc).__name__}: {exc}"]
+
+
+@pytest.mark.parametrize("name", ["tc01", "tc02", "tc03", "tc04", "tc05", "tc06"])
+async def test_turn_card_probe(
+    name: str, client: httpx.AsyncClient, people: tuple[SignedIn, SignedIn, str], db: asyncpg.Connection
+) -> None:
+    assert await _run_tc(name, client, people[0], db) == []
+
+
+def _m74(mp: pytest.MonkeyPatch) -> None:  # the gateway no longer saves the card when it returns
+    from tollgate.actions import gateway
+
+    async def nothing(*_a: object) -> None:
+        return None
+
+    mp.setattr(gateway, "_save_card", nothing)
+
+
+def _m75(mp: pytest.MonkeyPatch) -> None:  # a reload never shows a failed turn's cards
+    mp.setattr(conversations_domain(), "_shows_interrupted", lambda *_a: False)
+
+
+def _m76(mp: pytest.MonkeyPatch) -> None:  # shown for every turn with cards, replied or still running
+    mp.setattr(conversations_domain(), "_shows_interrupted", lambda *_a: True)
+
+
+def conversations_domain() -> Any:
+    from tollgate.domain import conversations
+
+    return conversations
+
+
+TURN_CARD_KILLS: dict[str, tuple[Any, tuple[str, ...]]] = {
+    "M74": (_m74, ("tc01", "tc04")),
+    "M75": (_m75, ("tc01", "tc05")),
+    "M76": (_m76, ("tc02", "tc06")),
+}
+
+
+@pytest.mark.parametrize("mutant", sorted(TURN_CARD_KILLS))
+async def test_turn_card_mutation_is_killed(
+    mutant: str,
+    client: httpx.AsyncClient,
+    people: tuple[SignedIn, SignedIn, str],
+    db: asyncpg.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch, probes = TURN_CARD_KILLS[mutant]
+    patch(monkeypatch)
+    survivors = [p for p in probes if not await _run_tc(p, client, people[0], db)]
+    assert survivors == [], f"{mutant}: these probes still pass under the mutation"

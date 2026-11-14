@@ -62,6 +62,12 @@ export default defineConfig({
       testMatch: /unverified-claims\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, colorScheme: "light" },
     },
+    // Owner, 2026-11-14, committed before the code: a failed turn keeps its cards; reply text never renders HTML.
+    {
+      name: "p7-turn-failure",
+      testMatch: /turn-failure\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+    },
     {
       name: "w1024-dark",
       testMatch: /console-1024\.spec\.ts/,
