@@ -32,22 +32,22 @@ export default defineConfig({
     { name: "isolation", testMatch: /isolation\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
     {
       name: "desktop-light",
-      testMatch: /(screenshots|action-cards|console)\.spec\.ts/,
+      testMatch: /(screenshots|action-cards|console|dashboard)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, colorScheme: "light" },
     },
     {
       name: "desktop-dark",
-      testMatch: /(screenshots|action-cards|console)\.spec\.ts/,
+      testMatch: /(screenshots|action-cards|console|dashboard)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, colorScheme: "dark" },
     },
     {
       name: "mobile-light",
-      testMatch: /(screenshots|action-cards|console)\.spec\.ts/,
+      testMatch: /(screenshots|action-cards|console|dashboard)\.spec\.ts/,
       use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 }, colorScheme: "light" },
     },
     {
       name: "mobile-dark",
-      testMatch: /(screenshots|action-cards|console)\.spec\.ts/,
+      testMatch: /(screenshots|action-cards|console|dashboard)\.spec\.ts/,
       use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 }, colorScheme: "dark" },
     },
     // The staff console at 1024px (DECISIONS L5): evidence for Phase 4's "usable at 1024", carried until it passes.
