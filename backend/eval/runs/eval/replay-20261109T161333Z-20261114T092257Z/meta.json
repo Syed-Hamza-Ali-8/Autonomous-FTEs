@@ -1,0 +1,17 @@
+{
+  "run_id": "replay-20261109T161333Z-20261114T092257Z",
+  "model": "openai/gpt-oss-120b",
+  "prompt_version": "support-v4",
+  "tool_schema_version": "5364a60e5f71",
+  "replay_of": "20261109T161333Z",
+  "recorded": false,
+  "clock": "2026-11-07T12:00:00+00:00",
+  "scenarios_sha": "b9779ffb307f27cf",
+  "fixture_sha": "cb3cf1b25ae177c9",
+  "selection": {
+    "phase": 3,
+    "subset": false,
+    "only": "a01,a02,a03,a04,a05,a06,a07,a08,a09,a10,a11,d01,d03,e01,m01,m02,r01,r02,r03,r04,r05,r06,r07,r08"
+  },
+  "started_at": "2026-11-14T09:22:57.217607+00:00"
+}

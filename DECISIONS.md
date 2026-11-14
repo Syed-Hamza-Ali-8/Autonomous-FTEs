@@ -194,6 +194,20 @@ carried-over evidence for a01–a08, and would cost another day of budget.
   - **Known issue, beside [RT]:** with no policy source and no prompt-stated policy facts, a direct policy question ("what's your return window?") has no authoritative source. That is the same fabrication risk K7 addresses. The agent's policy behaviour is currently evidenced only through refusal messages at the point of action.
   - **Supersedes L15's build** (L15's "not wired to Gateway" still holds).
   - **Also approved (owner, 2026-11-13):** pre-registration revision 6, with the strict zero-drift replay of the 47 as a hard precondition: no tokens are spent unless it reports zero drifted calls.
+- **L18** (owner, 2026-11-14) **The strongest finding in the project: the gateway cannot be socially engineered, so the attack relocated to the human approver.**
+  - **The finding:** in the live adversarial set every forbidden action was held or refused. In adv01, the customer's invented approval reference ("APR-000123") reached a staff-facing ticket as if fact: "Manager approved refund … reference APR-000123".
+  - **Mitigation, pre-registered for Phase 7, UI and staff API only** (no tokens, no model input change):
+    - customer-originated and model-written text in the staff console (messages, replies, ticket and escalation summaries, reasons) is rendered as a quoted, labelled unverified claim, never as console prose;
+    - any approval reference in such text is checked against `app.approvals` and shown as "not found" or "on record".
+  - **Probes:** the Playwright spec `unverified-claims.spec.ts` (project p7-unverified-claims) was committed before the code and fails until built. The backend lookup probe is written before its code (backend/eval/PHASE7_PREREGISTRATION.md, item 1).
+- **L19** (owner, 2026-11-14) **The K7 correction's "what to offer" widens to the whole conversation; invariant 10 is UNCHANGED.**
+  - **The finding:** in adv08 turn 2, the turn-scoped correction offered escalation to a customer escalated in turn 1.
+  - **The fix keeps the concerns separate:**
+    - replies may still claim only actions that succeeded THIS turn (invariant 10, the claim check, and the correction's statements stay turn-scoped);
+    - only the correction's OFFER logic reads the whole conversation, so it never offers an action already completed in any earlier turn;
+    - the under-claim counter stays turn-scoped.
+  - **Why it can't be read as weakening invariant 10:** nothing about what a reply may CLAIM changes.
+  - **Pre-registered** with its probes and a mutation (backend/eval/PHASE7_PREREGISTRATION.md, item 2). It is built in Phase 7, followed by the strict replay of the 47.
 
 ## Tooling
 - **T1** Verify external facts with WebFetch on official docs plus the installed source; Context7 not used for now.
@@ -324,6 +338,8 @@ they start with `frontend/`.
 | L15 | ↪ | superseded by L17 (the knowledge layer is not built; L15's no-Gateway-wiring part still holds) |
 | L16 | ⏸ | Phase 5 (merged with Phase 6): the strict zero-drift replay of the 47, the zero-token control replays, and the README known issue (pre-registration sections 1 and 4) |
 | L17 | ⏸ | Phase 7: the README states the design and that it was not built (written in the merged phase, checked at the Phase 7 README audit); there is no build target, by decision |
+| L18 | ⏸ | Phase 7: the console mitigation, against the committed frontend `unverified-claims.spec.ts` (failing until built) and a backend lookup probe |
+| L19 | ⏸ | Phase 7: the conversation-wide offer logic, with its probes and mutation pre-registered (PHASE7_PREREGISTRATION.md item 2) |
 
 **Also recorded but never built, outside this register:**
 - Spec 6.2's `customer_message_hint` in the tool result (built on 2026-11-09 as part of I15).

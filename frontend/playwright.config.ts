@@ -56,6 +56,12 @@ export default defineConfig({
       testMatch: /console-1024\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1024, height: 768 }, colorScheme: "light" },
     },
+    // Phase 7 item 1 (DECISIONS L18), committed before the code: fails until the console marks unverified claims.
+    {
+      name: "p7-unverified-claims",
+      testMatch: /unverified-claims\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+    },
     {
       name: "w1024-dark",
       testMatch: /console-1024\.spec\.ts/,

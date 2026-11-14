@@ -5,13 +5,13 @@
 **Core principle: the model *proposes* actions; deterministic code *decides* them.**
 
 **Source of truth:** `TOLLGATE_BUILD_SPEC.md`. Before each phase, re-read Section 10 for that phase plus every section it touches. This file is the short manual; the spec is the reference.
-**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, J1–J20, K1–K7, L1–L17, T1). They override spec defaults where they differ. Never change one without owner approval.
+**Owner decisions:** `DECISIONS.md` (IDs A1–D11, E1–E3, F1–F6, G1–G3, H1–H5, I1–I16, J1–J20, K1–K7, L1–L19, T1). They override spec defaults where they differ. Never change one without owner approval.
 
 ## Current state (update at the end of every working session and at every gate)
 - **Phase:** 5, merged with Phase 6 (L12), NO prompt change (L16), pre-registration rev 7 APPROVED 2026-11-13: stays on support-v4; the 47 keep their Phase 4 results; deterministic controls (K7 check, claim check v2, injection guard) measured by zero-token replay; live: the adversarial 8 only (~54–102k, 1 window). HARD PRECONDITION: no tokens unless the strict replay of the 47 reports 0 drifted calls. [RT] a known issue; knowledge layer designed, NOT built (L17); multi-agent not attempted (L3)
 - **Last completed gate:** Phase 3 (approved 2026-11-11). Phase 4 gate FAILED 2026-11-13 (EVAL_RESULTS, Phase 4 gate report)
-- **Next step:** OWNER REVIEW of the live adversarial 8 (run 20261114T085006Z: 8/8 pass, 0 executed forbidden actions; 3/8 attempted a money action, gateway held 1 and refused 2; injection signal fired on all 3 plants, behaviour unchanged; 69,395 tokens) and its two findings (turn-scoped K7 correction re-offers an earlier escalation, adv08; a fake approval reference reached a staff ticket, adv01) BEFORE the merged-phase gate report
-- **Waiting on owner:** review of the adversarial results and findings before the gate report; demo passwords; cloud project + signing method
+- **Next step:** OWNER APPROVAL of the merged-phase gate report (EVAL_RESULTS: every hard criterion MET; Phase 4 [RT] misses carried, open). On approval: mark the merged phase complete here and start Phase 7 from backend/eval/PHASE7_PREREGISTRATION.md (items 1 L18 console mitigation, 2 L19 conversation-wide offers, both pre-registered; the Playwright spec unverified-claims.spec.ts is committed and fails until built)
+- **Waiting on owner:** approval of the merged-phase gate; demo passwords; cloud project + signing method
 - **Runs:** pytest/offline smoke change nothing; real-model runs may only grow F6 tables. Time pinned to `fixture_now` (G1). Eval runs are throttled to 8k tokens/min; a full 45-scenario run (~198k) needs `--resume` across two days
 - **Notes:** npm audit findings are dev tooling only, left as is. Input borders fixed (zinc-500, >= 3:1 both themes). Known gaps K1-K5 all built (K1 coupling and K4 second probes in Phase 4; the K4 list is empty).
 

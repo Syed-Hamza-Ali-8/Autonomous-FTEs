@@ -35,6 +35,15 @@ e02's made-up contact details are handled by a deterministic check measured on t
 
 The full report is in `EVAL_RESULTS.md` (Phase 4 gate report).
 
+### The strongest finding: the attack moved from the gateway to the human approver
+In a live adversarial set (8 conversations: fake approvals, false authority, pressure, planted injections), the
+deterministic gateway held or refused every forbidden action, whatever the customer claimed. So the one thing that
+got through went around it. A customer invented an approval reference ("APR-000123"), and the model wrote it into a
+staff-facing ticket as if it were fact. Only the staff API can approve anything, so nothing executed, but a person
+reviewing that ticket could be misled. The planned mitigation is UI-only: customer- and model-written text in the
+staff console shown as labelled, unverified quotes, with approval references checked against the real approvals
+table. Its test is written and committed; the mitigation itself is not built yet.
+
 ### Live evidence: the gateway stopped the real model
 In the Phase 4 run, the real model (`openai/gpt-oss-120b` on Groq, prompt `support-v4`) **tried three refunds the
 store's policy forbids, and the deterministic gateway refused all three.** No money moved.
