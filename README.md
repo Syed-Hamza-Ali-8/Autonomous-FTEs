@@ -1,8 +1,29 @@
 # Tollgate
 
-An AI customer-support agent for a fictional store, Northwind Goods. It resolves requests by taking real actions:
-refunds, cancellations, address changes, store credit. Every risky action passes a checkpoint the model cannot
-bypass. **The model proposes; deterministic code decides.**
+**The problem.** Businesses want AI agents that actually resolve support tickets, not just answer questions. But an
+agent that can move money can be talked into moving it wrongly: a fake "my manager already approved this", a large
+refund split into pieces that each slip under a limit, instructions hidden in order data, or a reply claiming a
+refund went through when it never did.
+
+**The answer: the model proposes; deterministic code decides.** Tollgate is an AI customer-support agent for a
+fictional store, Northwind Goods. It resolves requests by taking real actions (refunds, cancellations, address
+changes, store credit), and every one of them passes a checkpoint the model cannot bypass.
+
+![The customer's chat: a refund the policy can't approve on its own waits for staff](docs/images/chat-waiting-for-staff-approval.png)
+
+*A refund above the automatic limit: the agent submitted it, the gateway routed it to staff, and the chat says so.*
+
+![The staff console: the queue, the conversation, and the policy checklist re-checked on current data](docs/images/staff-inbox-policy-checklist.png)
+
+*The staff console: the queue, the conversation, and a policy checklist re-checked on current data before anyone
+approves.*
+
+## What this is and isn't
+- **It is a reference implementation,** built to demonstrate and measure the architecture: a store with synthetic
+  data, free-tier models (Groq), and evaluation runs recorded so that every result can be replayed.
+- **It is not production-hardened.** There is no real customer data and no real payment processor: a "refund" is a
+  row in a database.
+- **Licence:** MIT (see `LICENSE`).
 
 Every number below comes from a run file in this repository; its path is given beside it. Failures, features that
 were never built and things that were never measured are listed as prominently as the results.
@@ -11,9 +32,42 @@ were never built and things that were never measured are listed as prominently a
 - **The agent:** a single LLM agent (OpenAI Agents SDK; `openai/gpt-oss-120b` on Groq's free tier; prompt
   `support-v4`). Its read tools see only the signed-in customer's data (filtered by owner in SQL), and its write tools
   can only *submit* a request.
-- **The Action Gateway:** every write goes through `backend/tollgate/actions/gateway.py`, in a fixed order: validate
-  → ownership → recompute the amount from the database → idempotency → policy (`policy/rules.yaml`) → route → audit.
-  The policy engine decides **ALLOW**, **NEEDS_APPROVAL** or **DENY**. The model's own figures are at most a ceiling.
+- **The Action Gateway:** every write goes through `backend/tollgate/actions/gateway.py`, in the fixed order below.
+  The model's own figures are at most a ceiling.
+
+```
+ model's tool call (e.g. request_refund: order, items, reason)
+        │
+        ▼
+ ┌──────────────┐  schema-checked arguments; no customer_id is accepted
+ │ 1. validate  │──────────────────────────────────────────────▶ INVALID
+ └──────┬───────┘
+        ▼
+ ┌──────────────┐  the order must belong to the signed-in customer (SQL)
+ │ 2. ownership │──────────────────────────────────────────────▶ NOT FOUND
+ └──────┬───────┘  (another customer's order looks exactly like none)
+        ▼
+ ┌──────────────┐  the amount comes from the order's lines in the database;
+ │ 3. recompute │  the model's figure can only lower it
+ └──────┬───────┘
+        ▼
+ ┌──────────────┐  the same request twice does it once
+ │4. idempotency│──────────────────────────────────────────────▶ REPLAYED
+ └──────┬───────┘
+        ▼
+ ┌──────────────┐  policy/rules.yaml: windows, limits, statuses, rolling
+ │  5. policy   │  caps; fraud and injection signals can only tighten
+ └──────┬───────┘
+        ▼
+ ┌──────────────┐  ALLOW ──────────▶ execute (refund, credit, cancel, address)
+ │  6. route    │  NEEDS_APPROVAL ─▶ queue for staff (only the staff API decides)
+ └──────┬───────┘  DENY ───────────▶ nothing happens; a tier-safe explanation
+        ▼
+ ┌──────────────┐  one audit row per submission, in the same transaction
+ │  7. audit    │  as its effect
+ └──────────────┘
+```
+
 - **Staff approval:** NEEDS_APPROVAL requests wait for a human in the staff console. No agent can approve, reject or
   modify an approval; only the staff API can, and database triggers enforce it.
 - **Checks on replies:** a reply may claim only actions the action log shows succeeded that turn (the claim check).
@@ -168,6 +222,9 @@ development.*
 5. **Tests.** Run only against the local stack:
    - in `backend/`: `uv run pytest -q`;
    - the evaluation harness: `uv run python -m eval.run_eval --help` (budget pre-flight, `--record`, `--replay`).
+
+## Licence
+MIT. See `LICENSE`.
 
 ## Where everything is
 - **`EVAL_RESULTS.md`:** every run, gate report, pre-registration outcome and finding, in order.
