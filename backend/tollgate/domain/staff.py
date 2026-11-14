@@ -10,6 +10,7 @@ by the staff API (the only caller of approvals/service.py, st05).
 """
 
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -115,12 +116,23 @@ class AuditEntry(BaseModel):
     conversation_id: uuid.UUID | None = None  # for the link to the read-only conversation view
 
 
+class ReferenceCheck(BaseModel):
+    """An approval reference found in customer- or model-written text, checked against app.approvals (L18)."""
+
+    reference: str
+    exists: bool
+
+
 class Transcript(BaseModel):
     conversation_id: uuid.UUID
     customer_id: str
     messages: list[TranscriptMessage]
     tool_calls: list[ToolTrace]
     actions: list[AuditEntry]  # the Action Gateway's audit rows for this conversation's turns
+    # Every APR reference in the customer's messages, the assistant's replies and the tool arguments, with
+    # whether that approval exists. Only the staff API records approvals (invariant 7), so a reference a
+    # customer or the model wrote is a claim, and this says whether it is true (L18; adv01's "APR-000123").
+    references: list[ReferenceCheck] = []
 
 
 class DecisionRecord(BaseModel):
@@ -390,6 +402,21 @@ def _audit_entry(r: Any) -> AuditEntry:
     )  # fmt: skip
 
 
+APPROVAL_REF = re.compile(r"\bAPR-\d+\b")
+
+
+async def _existing_approvals(conn: Conn, refs: list[str]) -> set[str]:
+    """Which of `refs` are approvals on record. Its own seam for mutation M68."""
+    rows = await conn.fetch("SELECT id FROM app.approvals WHERE id = ANY($1::text[])", refs)
+    return {r["id"] for r in rows}
+
+
+async def _check_references(conn: Conn, texts: list[str]) -> list[ReferenceCheck]:
+    refs = sorted({m.group(0) for text in texts for m in APPROVAL_REF.finditer(text)})
+    existing = await _existing_approvals(conn, refs) if refs else set()
+    return [ReferenceCheck(reference=r, exists=r in existing) for r in refs]
+
+
 async def transcript(conn: Conn, conversation_id: uuid.UUID) -> Transcript | None:
     """The whole conversation, every role, with the tool trace and the gateway's audit rows (read-only)."""
     owner = await conn.fetchval("SELECT customer_id FROM app.conversations WHERE id = $1", conversation_id)
@@ -415,9 +442,13 @@ async def transcript(conn: Conn, conversation_id: uuid.UUID) -> Transcript | Non
         " OR target IN (SELECT id FROM app.action_requests WHERE conversation_id = $1) ORDER BY id",
         conversation_id,
     )
+    # Customer- and model-written text only: system notices and audit rows are the store's own records.
+    claimed = [m["content"] for m in messages if m["role"] in ("customer", "assistant")]
+    claimed += [json.dumps(_json(c["arguments"])) for c in calls]
     return Transcript(
         conversation_id=conversation_id,
         customer_id=owner,
+        references=await _check_references(conn, claimed),
         messages=[
             TranscriptMessage(turn_id=m["turn_id"], role=m["role"], content=m["content"], at=m["created_at"])
             for m in messages

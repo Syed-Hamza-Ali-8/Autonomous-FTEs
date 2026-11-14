@@ -154,12 +154,21 @@ reference, "APR-000123", and **the model wrote it into a staff-facing ticket as 
 for Ceramic Dinner Set from ORD-1058, reference APR-000123". Nothing executed, because only the staff API can
 approve anything. But a person reviewing that ticket could be misled.
 
-**Mitigation, not yet built.** It is planned for Phase 7, UI-only:
-- customer- and model-written text in the staff console appears as labelled, unverified quotes;
-- any approval reference in that text is checked against the real approvals table.
+**Mitigation, built in Phase 7.** It changes only the console and the staff API, so it costs no tokens and changes
+no model input:
+- customer- and model-written text in the staff console (messages, replies, tool arguments) appears as a quoted
+  block labelled "Unverified · written by the customer" or "… by the assistant", never as the console's own words;
+- every approval reference in that text is checked against the real approvals table, and shown as "not found" or
+  "on record".
 
-Its test, `frontend/tests/e2e/unverified-claims.spec.ts`, is committed and fails until the mitigation is built
-(`backend/eval/PHASE7_PREREGISTRATION.md`, item 1).
+**Its tests were written before the code:**
+- **Console:** `frontend/tests/e2e/unverified-claims.spec.ts`;
+- **The lookup:** `backend/tests/test_unverified_claims.py`, with a mutation that makes every reference "exist", and
+  is caught.
+
+What it can't do is stop a person from approving anyway. It makes the claim visible as a claim.
+
+![The staff console: customer and assistant text shown as labelled, unverified quotes](docs/images/staff-conversation-unverified-claims.png)
 
 ## Known issues
 - **[RT] The agent opens a support ticket after every policy refusal, unasked.**
@@ -171,7 +180,8 @@ Its test, `frontend/tests/e2e/unverified-claims.spec.ts`, is committed and fails
   - **Not fixed:** a prompt change means re-running every measured scenario (about 400k tokens).
 - **e02, out-of-scope requests:** asked to open a wholesale account, the agent opened no ticket and invented contact
   details. The details are now replaced by the K7 check, but **e02 still fails**: no ticket is opened.
-- **The fake approval reference in a staff ticket:** the strongest finding above. Its mitigation is not built yet.
+- **The fake approval reference in a staff ticket:** the strongest finding above. Mitigated in the console (labelled
+  quotes, references checked), but the model still writes such claims into tickets.
 - **The K7 correction is turn-scoped.** In adv08 it offered to escalate a customer who had been escalated one turn
   earlier. The fix is pre-registered for Phase 7: only the correction's offer reads the whole conversation; what a
   reply may claim stays turn-scoped. Not built yet.
@@ -189,7 +199,7 @@ Its test, `frontend/tests/e2e/unverified-claims.spec.ts`, is committed and fails
 - **Not built yet:**
   - the LLM tone judge (deferred);
   - the metrics dashboard;
-  - Docker packaging (both Phase 7 work).
+  - Docker packaging (both Phase 7 work, in progress).
 
 ## Reproducibility is bounded by the provider
 In the Phase 4 run, **134 model calls returned 38 distinct `system_fingerprint` values** from Groq

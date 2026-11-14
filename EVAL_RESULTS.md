@@ -1113,3 +1113,28 @@ approval.
   values are `LLM_PROVIDER=groq` and three demo emails on the fictional `northwind.example` domain.
 - **No real env file was ever committed:** 0 commits touch `.env` or `frontend/.env.local`, and both are ignored.
 - **Not covered:** the separate Gateway repository (`/mnt/d/hamza/RAG_Projects/gateway`), which has its own history.
+
+### Item 2: the L18 mitigation, unverified claims in the staff console (built 2026-11-14)
+**Built:**
+- **The staff transcript API** gains `references`: every `APR-` reference in customer messages, assistant replies
+  and tool arguments, checked in SQL against `app.approvals`.
+- **The console** renders customer- and assistant-written text, and tool arguments, as a quoted block labelled in
+  words ("Unverified · written by the customer" / "… by the assistant"). Beside each reference it shows "not found"
+  or "on record". System notices stay as the store's own text. Neutral colours are used, because emerald, amber,
+  rose and sky are reserved for decision states (13.2).
+
+**Probes before code:**
+- **Backend, uc01 and uc02, with mutation M68 (every reference "exists"):** committed in `e8d6bc3`, failing; now
+  passing, and M68 is killed by both.
+- **Frontend, `unverified-claims.spec.ts`:** committed in `1202747`, failing; now **passing**.
+- **Correction recorded:** the spec supplies `references` itself, so it cannot kill M68, and both killers are backend
+  probes.
+
+**Checks:**
+- **Regression:** `console.spec.ts` passes in all four screenshot sets, and `console-1024.spec.ts` in light and dark;
+  the screenshots were regenerated.
+- **Suites:** 1,127 backend tests pass, with ruff, mypy, the frontend lint, typecheck and build, and the OpenAPI
+  check all clean.
+
+**No model input changed.** The code under the drift gate changed (`domain/staff.py`), so any later live run needs
+the strict replay first (zero tokens).

@@ -1286,6 +1286,25 @@
         "title": "Progress",
         "type": "object"
       },
+      "ReferenceCheck": {
+        "description": "An approval reference found in customer- or model-written text, checked against app.approvals (L18).",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "exists"
+        ],
+        "title": "ReferenceCheck",
+        "type": "object"
+      },
       "Refund": {
         "properties": {
           "amount": {
@@ -1566,6 +1585,14 @@
               "$ref": "#/components/schemas/TranscriptMessage"
             },
             "title": "Messages",
+            "type": "array"
+          },
+          "references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReferenceCheck"
+            },
+            "title": "References",
             "type": "array"
           },
           "tool_calls": {

@@ -688,6 +688,16 @@ export interface components {
              */
             type: "progress";
         };
+        /**
+         * ReferenceCheck
+         * @description An approval reference found in customer- or model-written text, checked against app.approvals (L18).
+         */
+        ReferenceCheck: {
+            /** Exists */
+            exists: boolean;
+            /** Reference */
+            reference: string;
+        };
         /** Refund */
         Refund: {
             amount: components["schemas"]["Money"];
@@ -808,6 +818,11 @@ export interface components {
             customer_id: string;
             /** Messages */
             messages: components["schemas"]["TranscriptMessage"][];
+            /**
+             * References
+             * @default []
+             */
+            references: components["schemas"]["ReferenceCheck"][];
             /** Tool Calls */
             tool_calls: components["schemas"]["ToolTrace"][];
         };

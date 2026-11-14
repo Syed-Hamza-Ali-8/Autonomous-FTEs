@@ -17,6 +17,42 @@ const ROLE: Record<Transcript["messages"][number]["role"], string> = {
   system: "System notice",
 };
 
+// Text a customer or the model wrote is a CLAIM, never console prose (DECISIONS L18): in adv01 a customer's invented
+// approval reference reached staff as if it were fact. System notices are the store's own records.
+const UNVERIFIED: Partial<Record<Transcript["messages"][number]["role"], string>> = {
+  customer: "Unverified · written by the customer",
+  assistant: "Unverified · written by the assistant",
+};
+const APPROVAL_REF = /\bAPR-\d+\b/g;
+
+/** Each approval reference in `text`, with what app.approvals says about it, in words (not colour alone). */
+function ReferenceChecks({ text, checks }: { text: string; checks: Map<string, boolean> }) {
+  const refs = [...new Set(text.match(APPROVAL_REF) ?? [])];
+  if (refs.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs" aria-label="Approval references checked">
+      {refs.map((r) => {
+        const exists = checks.get(r);
+        return (
+          <li key={r} data-reference-check className="font-medium text-foreground">
+            {r}: {exists === undefined ? "not checked" : exists ? "on record" : "not found"}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** A labelled, quoted block for text the console must not present as its own (L18). */
+function Claim({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <blockquote data-claim="unverified" aria-label={label} className="flex flex-col gap-1 border-l-2 border-muted-foreground/50 pl-2">
+      <span className="font-sans text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{label}</span>
+      {children}
+    </blockquote>
+  );
+}
+
 /** Messages grouped by turn, in order; each turn's tool calls and gateway decisions go with it. */
 function turns(t: Transcript): Turn[] {
   const order: string[] = [];
@@ -45,6 +81,7 @@ function turns(t: Transcript): Turn[] {
 /** The full conversation (every role) with a collapsible tool trace per turn (spec 13.4). Read-only. */
 export function TranscriptView({ transcript }: { transcript: Transcript }) {
   const all = turns(transcript);
+  const checks = new Map((transcript.references ?? []).map((r) => [r.reference, r.exists]));
   if (all.length === 0) {
     return <p className="text-sm text-muted-foreground">No messages in this conversation yet.</p>;
   }
@@ -67,17 +104,24 @@ export function TranscriptView({ transcript }: { transcript: Transcript }) {
                   {formatStaffTimestamp(m.at)}
                 </time>
               </p>
-              <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{m.content}</p>
+              {UNVERIFIED[m.role] ? (
+                <Claim label={UNVERIFIED[m.role]!}>
+                  <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{m.content}</p>
+                  <ReferenceChecks text={m.content} checks={checks} />
+                </Claim>
+              ) : (
+                <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{m.content}</p>
+              )}
             </div>
           ))}
-          {(turn.calls.length > 0 || turn.actions.length > 0) && <TraceDetails turn={turn} />}
+          {(turn.calls.length > 0 || turn.actions.length > 0) && <TraceDetails turn={turn} checks={checks} />}
         </li>
       ))}
     </ol>
   );
 }
 
-function TraceDetails({ turn }: { turn: Turn }) {
+function TraceDetails({ turn, checks }: { turn: Turn; checks: Map<string, boolean> }) {
   const label = turn.id === "decisions" ? "Staff decisions" : `Tool trace · ${turn.calls.length} call${turn.calls.length === 1 ? "" : "s"}`;
   return (
     <details className="group rounded-xl border bg-card">
@@ -93,7 +137,11 @@ function TraceDetails({ turn }: { turn: Turn }) {
               <span className="text-muted-foreground">{c.outcome}</span>
               <span className="text-muted-foreground tabular-nums">{c.latency_ms} ms</span>
             </p>
-            <pre className="overflow-x-auto rounded-lg bg-muted/60 px-2 py-1 whitespace-pre-wrap break-all">{JSON.stringify(c.arguments)}</pre>
+            {/* tool arguments are model-written: a ticket summary can carry a customer's claim as if it were fact */}
+            <Claim label="Unverified · written by the assistant">
+              <pre className="overflow-x-auto rounded-lg bg-muted/60 px-2 py-1 whitespace-pre-wrap break-all">{JSON.stringify(c.arguments)}</pre>
+              <ReferenceChecks text={JSON.stringify(c.arguments)} checks={checks} />
+            </Claim>
           </div>
         ))}
         {turn.actions.map((a) => (

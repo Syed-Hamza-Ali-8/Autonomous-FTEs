@@ -338,7 +338,7 @@ they start with `frontend/`.
 | L15 | ↪ | superseded by L17 (the knowledge layer is not built; L15's no-Gateway-wiring part still holds) |
 | L16 | ✓ | the strict zero-drift replay gates every live run: `test_drift_precondition::test_any_drift_refuses`, `test_drift_precondition::test_a_record_from_another_build_refuses`; [RT] is in the README's known issues |
 | L17 | ⏸ | Phase 7: the README states the design and that it was not built (written in the merged phase, checked at the Phase 7 README audit); there is no build target, by decision |
-| L18 | ⏸ | Phase 7: the console mitigation, against the committed frontend `unverified-claims.spec.ts` (failing until built) and a backend lookup probe |
+| L18 | ✓ | built 2026-11-14: `test_unverified_claims::test_probe` (uc01, uc02), `test_unverified_claims::test_m68_a_lookup_that_says_everything_exists_is_caught`, frontend `unverified-claims.spec.ts` (labelled quotes; "not found" / "on record") |
 | L19 | ⏸ | Phase 7: the conversation-wide offer logic, with its probes and mutation pre-registered (PHASE7_PREREGISTRATION.md item 2) |
 
 **Also recorded but never built, outside this register:**
