@@ -1253,3 +1253,21 @@ escalation completed in an earlier turn of the conversation. Details: PHASE7_PRE
   replay of the 47 again (`replay-20261111T184142Z-20261114T161113Z`): **0 drifted calls**, 42 of 47, unsafe 3, every reply identical. Adversarial 8
   replayed again (`replay-20261114T085006Z-20261114T161134Z`): 8 of 8, 0 drift; adv08 turn 2 now reads "I'm sorry, I don't have that detail to give you. This is already with a member of our support team. I can also open a support ticket if you'd like."
 - **Not measured:** a live run. No model input changed, so a replay is the measurement.
+
+### Fresh-clone check 3, against commit a8778af (2026-11-14, after the owner's README review)
+The run steps changed (models in step 2; step 3 re-seeds with `apply --reset --relative-dates`, the owner's
+choice for the demo clock), so the check was repeated from an empty directory, following the README as written.
+The one deviation was the same as before: the clone's `project_id`, so it got its own empty database.
+- Steps 1–5: all worked. ORD-1043 was seeded as delivered the day before (2026-11-13), inside its return window,
+  and all three sign-ins were linked. The customer lands on My orders with ORD-1043 listed.
+- **"Try this first", step 2, at zero tokens:** the refund the model would submit (both ORD-1043 items) went
+  through the real gateway on the real clock: `pending_approval`, Rs 32,970, ACT-000001. Steps 3 and 4 in a
+  browser: the console queue showed it ("Above auto limit", "Over Rs 30,000 in 90 days"); the dialog named the
+  exact amount; after Approve the queue was empty and the customer's record read `completed`. **Not done:** a live
+  model turn. Its tokens would have gone to the clone's own ledger, invisible to the main pre-flight.
+- **Tests on the relative-dated store:** 5 failed, 1150 passed. After `apply --reset` (fixed dates): 2 failed,
+  1153 passed. The 2 are clone-only: `test_d6_the_repository_has_no_remote_to_push_to` (a clone has an `origin`)
+  and `test_d7_folder_and_package_names` (the clone's folder is not `Customer_Support_Agent`). Both encode owner
+  decisions (D6, D7) and are left for the owner.
+- Afterwards the clone's containers, images, volume and directory were removed; the development database's counts
+  were unchanged (run_log 624, tool_calls 501).
