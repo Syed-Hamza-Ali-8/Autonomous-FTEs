@@ -1323,3 +1323,21 @@ Speaker and the USB-C Charger both arrived broken."), typed as the demo customer
   drift, every reply identical. The new customers changed no existing input, as CUS-048 to CUS-050 did not.
 - **Committed screenshots** were left as reviewed; the e2e run's regenerated copies (now showing the e2e
   customers' names) were not committed.
+
+### Fresh-clone check 4 and the final pre-push checklist (2026-11-15, against commit 4b97f37)
+The run steps' text was unchanged since check 3, but 11 code files under it had changed (a migration, the seed,
+the throttle, the gateway), so the check was repeated from an empty directory, following the README as written
+(deviation as before: the clone's own `project_id`).
+- **Steps 1–5:** all worked. 10 migrations; 52 customers; ORD-1043 inside its window; three sign-ins linked;
+  both images built (166 s); `/healthz` 200; the API image carries the throttle and only the run summaries.
+- **"Try this first":** the refund submitted through the real gateway on the real clock went to staff
+  (`pending_approval`, Rs 32,970); in a browser the console queue showed it, the dialog named the exact amount,
+  Approve emptied the queue, and the customer's record read `completed`. No live model turn (0 tokens).
+- **Tests in the clone:** after `apply --reset`, 1197 passed (the clone has an `origin` remote and lives in a
+  folder named `tollgate`: D6 and D7 as amended hold for any cloner).
+- **Checklist:** every secret path ignored (`.env*`, `.tollgate/`, `supabase/.temp`, the e2e sign-in file);
+  `.env.example` holds no values beyond defaults and the fictional demo emails; no credential in any tracked file;
+  gitleaks: 58 commits, no leaks; the 114 committed images unchanged since they were reviewed; LICENSE MIT,
+  2026, Syed Hamza Ali.
+- Afterwards the clone's containers, images, volume and directory were removed; the development database's counts
+  were unchanged (run_log 759, tool_calls 608).
